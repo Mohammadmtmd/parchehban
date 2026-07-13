@@ -2,6 +2,11 @@
 <html lang="fa" dir="rtl">
 <head>
 <meta name="theme-color" content="#0f172a">
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="پارچه‌بان">
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%232563eb' rx='20' width='100' height='100'/><text x='50' y='68' font-size='55' font-weight='bold' fill='white' text-anchor='middle' font-family='sans-serif'>پ</text></svg>">
 <meta name="description" content="سیستم مدیریت انبار و فروش پارچه‌بان">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%232563eb' rx='20' width='100' height='100'/><text x='50' y='68' font-size='55' font-weight='bold' fill='white' text-anchor='middle' font-family='sans-serif'>پ</text></svg>">
 <meta charset="UTF-8">
@@ -94,7 +99,7 @@ td.cd{color:var(--d);font-weight:600}td.cc{color:var(--ok);font-weight:600}td.bp
 <div class="lg-logo">پ</div>
 <h2 style="margin-bottom:4px">پارچه‌بان</h2>
 <p style="color:var(--txs);font-size:.85rem;margin-bottom:24px">سیستم مدیریت انبار و فروش</p>
-<div class="fg"><label>نام کاربری</label><input class="fc" id="loginUser" value="admin"></div>
+<div class="fg"><label>نام کاربری</label><input class="fc" id="loginUser" placeholder="نام کاربری"></div>
 <div class="fg"><label>رمز عبور</label><input class="fc" id="loginPass" type="password" placeholder="پیش‌فرض: admin123"></div>
 <button class="btn bp" style="width:100%;padding:12px;font-size:.95rem" onclick="Auth.login()">ورود</button>
 <p id="loginErr" style="color:var(--d);font-size:.82rem;margin-top:12px;display:none"></p>
@@ -570,6 +575,14 @@ await Auth.onLogin();
 console.log('پارچه‌بان v7 آماده');
 }catch(err){console.error(err);}
 })();
+/* ══ SERVICE WORKER ══ */
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').then(function(reg) {
+    console.log('SW registered');
+  }).catch(function(err) {
+    console.log('SW error:', err);
+  });
+}
 </script>
 </body>
 </html>
