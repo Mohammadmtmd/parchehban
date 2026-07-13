@@ -558,31 +558,89 @@ var Settings={render:async function(){currentPage='settings';UI.nav('settings');
 changePass:async function(){var o=document.getElementById('setOld').value;var n=document.getElementById('setNew').value;var c=document.getElementById('setConf').value;if(!o){UI.toast('رمز فعلی','e');return;}if(!n||n.length<4){UI.toast('رمز جدید حداقل ۴ کاراکتر','e');return;}if(n!==c){UI.toast('تکرار مطابقت ندارد','e');return;}var user=await DB.get('users',STATE.userId);if(!user||user.password!==Auth.hash(o)){UI.toast('رمز فعلی اشتباه','e');return;}user.password=Auth.hash(n);await DB.put('users',user);UI.toast('رمز تغییر کرد');document.getElementById('setOld').value='';document.getElementById('setNew').value='';document.getElementById('setConf').value='';}};
 
 /* ══ ROUTER & BOOT ══ */
-var ROUTES={dashboard:function(){Dash.render();},categories:function(){Cat.render();},products:function(){Prod.render();},contacts:function(){Con.render();},purchase:function(){Inv.render('purchase');},sales:function(){Inv.render('sale');},payments:function(){Pay.render();},checks:function(){Chk.render();},ledger:function(){Led.render();},reports:function(){Rep.render();},years:function(){FY.render();},settings:function(){Settings.render();}};
+/* ══ SETTINGS ══ */
+var Settings = {
+  render: async function() {
+    currentPage = 'settings';
+    UI.nav('settings');
+    UI.title('bi-gear-fill', 'حساب کاربری');
+    UI.act('');
+    var user = await DB.get('users', STATE.userId);
+    var h = '<div class="g2">';
 
-document.getElementById('sidebarNav').addEventListener('click',function(e){var item=e.target.closest('.ni');if(!item)return;var p=item.dataset.page;if(ROUTES[p])ROUTES[p]();});
+    h += '<div class="cd"><div class="cd-h"><i class="bi bi-person-circle" style="margin-left:8px"></i>اطلاعات کاربری</div><div class="cd-b">';
+    h += '<div class="fg"><label>نام کاربری</label><input class="fc" id="setUser" value="' + (user ? user.username : '') + '"></div>';
+    h += '<div class="fg"><label>نام نمایشی</label><input class="fc" id="setDisp" value="' + (user ? (user.displayName || '') : '') + '"></div>';
+    h += '<button class="btn bp" onclick="Settings.saveInfo()"><i class="bi bi-check-lg"></i>ذخیره</button>';
+    h += '</div></div>';
 
-(async function(){
-try{
-await DB.init();
-if(localStorage.getItem('pb_dark')==='true')document.body.classList.add('dark');
-await Auth.ensureDefaultUser();
-if(Auth.checkSession()){
-document.getElementById('loginPage').style.display='none';
-document.getElementById('appContainer').style.display='';
-await Auth.onLogin();
-}
-console.log('پارچه‌بان v7 آماده');
-}catch(err){console.error(err);}
-})();
-/* ══ SERVICE WORKER ══ */
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').then(function(reg) {
-    console.log('SW registered');
-  }).catch(function(err) {
-    console.log('SW error:', err);
-  });
-}
+    h += '<div class="cd"><div class="cd-h"><i class="bi bi-key" style="margin-left:8px"></i>تغییر رمز عبور</div><div class="cd-b">';
+    h += '<div class="fg"><label>رمز فعلی</label><input class="fc" id="setOld" type="password"></div>';
+    h += '<div class="fg"><label>رمز جدید</label><input class="fc" id="setNew" type="password"></div>';
+    h += '<div class="fg"><label>تکرار رمز جدید</label><input class="fc" id="setConf" type="password"></div>';
+    h += '<button class="btn bp" onclick="Settings.changePass()"><i class="bi bi-key"></i>تغییر رمز</button>';
+    h += '</div></div>';
+
+    h += '</div>';
+
+    h += '<div class="cd" style="margin-top:18px"><div class="cd-h"><i class="bi bi-info-circle" style="margin-left:8px"></i>راهنما</div><div class="cd-b">';
+    h += '<p style="font-size:.85rem;color:var(--txs);line-height:2">';
+    h += '<i class="bi bi-check-circle" style="color:var(--ok)"></i> نام کاربری باید یکتا باشد<br>';
+    h += '<i class="bi bi-check-circle" style="color:var(--ok)"></i> نام نمایشی در گزارشات استفاده می‌شود<br>';
+    h += '<i class="bi bi-check-circle" style="color:var(--ok)"></i> رمز عبور حداقل ۴ کاراکتر<br>';
+    h += '<i class="bi bi-info-circle" style="color:var(--p)"></i> رمز پیش‌فرض: admin123';
+    h += '</p></div></div>';
+
+    UI.content(h);
+  },
+
+  saveInfo: async function() {
+    var newUsername = document.getElementById('setUser').value.trim();
+    var newDisplay = document.getElementById('setDisp').value.trim();
+    if (!newUsername) { UI.toast('نام کاربری خالی است', 'e'); return; }
+    if (newUsername.length < 3) { UI.toast('نام کاربری حداقل ۳ کاراکتر', 'e'); return; }
+
+    /* check duplicate username */
+    var users = await DB.all('users');
+    var exists = users.find(function(u) { return u.username === newUsername && u.id !== STATE.userId; });
+    if (exists) { UI.toast('این نام کاربری قبلاً ثبت شده', 'e'); return; }
+
+    var user = await DB.get('users', STATE.userId);
+    user.username = newUsername;
+    user.displayName = newDisplay || newUsername;
+    await DB.put('users', user);
+
+    /* update session */
+    STATE.username = newUsername;
+    sessionStorage.setItem('pb_auth', JSON.stringify({
+      userId: user.id,
+      username: newUsername,
+      name: user.displayName
+    }));
+
+    UI.toast('اطلاعات ذخیره شد');
+  },
+
+  changePass: async function() {
+    var oldPass = document.getElementById('setOld').value;
+    var newPass = document.getElementById('setNew').value;
+    var confPass = document.getElementById('setConf').value;
+    if (!oldPass) { UI.toast('رمز فعلی را وارد کنید', 'e'); return; }
+    if (!newPass || newPass.length < 4) { UI.toast('رمز جدید حداقل ۴ کاراکتر', 'e'); return; }
+    if (newPass !== confPass) { UI.toast('تکرار رمز مطابقت ندارد', 'e'); return; }
+
+    var user = await DB.get('users', STATE.userId);
+    if (!user || user.password !== Auth.hash(oldPass)) { UI.toast('رمز فعلی اشتباه است', 'e'); return; }
+
+    user.password = Auth.hash(newPass);
+    await DB.put('users', user);
+    UI.toast('رمز عبور تغییر کرد');
+
+    document.getElementById('setOld').value = '';
+    document.getElementById('setNew').value = '';
+    document.getElementById('setConf').value = '';
+  }
+};
 </script>
 </body>
 </html>
