@@ -143,6 +143,7 @@ td.cd{color:var(--d);font-weight:600}td.cc{color:var(--ok);font-weight:600}td.bp
 <div class="pr-area" id="printArea"></div>
 
 <script>
+var APP_READY = false;
 var STATE={yearId:null,userId:null,username:''};
 var currentPage='dashboard';
 
@@ -153,7 +154,62 @@ function getPeriodStart(pr){var now=new Date(),ps=now.toLocaleDateString('fa-IR'
 
 var DB={db:null,init:function(){return new Promise(function(ok,no){var r=indexedDB.open('parchehban_v8',1);r.onupgradeneeded=function(e){var d=e.target.result;['categories','products','contacts','invoices','payments','checks','fiscalYears','yearOpenings','users'].forEach(function(n){if(!d.objectStoreNames.contains(n))d.createObjectStore(n,{keyPath:'id',autoIncrement:true});});};r.onsuccess=function(e){DB.db=e.target.result;ok();};r.onerror=function(e){no(e.target.error);};});},gs:function(n,m){return this.db.transaction(n,m||'readonly').objectStore(n);},all:function(n){return new Promise(function(ok){var r=DB.gs(n).getAll();r.onsuccess=function(){ok(r.result);};});},get:function(n,id){return new Promise(function(ok){var r=DB.gs(n).get(id);r.onsuccess=function(){ok(r.result);};});},add:function(n,d){return new Promise(function(ok){d.createdAt=new Date().toISOString();var r=DB.gs(n,'readwrite').add(d);r.onsuccess=function(){ok(r.result);};});},put:function(n,d){return new Promise(function(ok){d.updatedAt=new Date().toISOString();var r=DB.gs(n,'readwrite').put(d);r.onsuccess=function(){ok(r.result);};});},del:function(n,id){return new Promise(function(ok){var r=DB.gs(n,'readwrite').delete(id);r.onsuccess=function(){ok();};});},cnt:function(n){return new Promise(function(ok){var r=DB.gs(n).count();r.onsuccess=function(){ok(r.result);};});}};
 
-var Auth={hash:function(p){return btoa(unescape(encodeURIComponent(p+'_pb7_salt')));},login:async function(){try{var errEl=document.getElementById('loginErr');if(!DB.db){errEl.textContent='دیتابیس آماده نیست — رفرش کنید';errEl.style.display='block';return;}var u=document.getElementById('loginUser').value.trim();var p=document.getElementById('loginPass').value;if(!u||!p){errEl.textContent='نام کاربری و رمز را وارد کنید';errEl.style.display='block';return;}var users=await DB.all('users');var hash=Auth.hash(p);var user=users.find(function(x){return x.username===u&&x.password===hash;});if(!user){errEl.textContent='نام کاربری یا رمز اشتباه است (کیبورد انگلیسی؟)';errEl.style.display='block';return;}sessionStorage.setItem('pb_auth',JSON.stringify({userId:user.id,username:user.username,name:user.displayName||user.username}));STATE.userId=user.id;STATE.username=user.username;document.getElementById('loginPage').style.display='none';document.getElementById('appContainer').style.display='';await Auth.onLogin();}catch(err){console.error('Login error:',err);document.getElementById('loginErr').textContent='خطا: '+err.message;document.getElementById('loginErr').style.display='block';}},logout:function(){sessionStorage.removeItem('pb_auth');STATE.userId=null;document.getElementById('loginPage').style.display='';document.getElementById('appContainer').style.display='none';document.getElementById('loginPass').value='';document.getElementById('loginErr').style.display='none';},checkSession:function(){var a=sessionStorage.getItem('pb_auth');if(a){try{var d=JSON.parse(a);STATE.userId=d.userId;STATE.username=d.username;return true;}catch(e){}}return false;},ensureDefaultUser:async function(){var users=await DB.all('users');if(!users.length){await DB.add('users',{username:'admin',password:Auth.hash('admin123'),displayName:'مدیر سیستم'});}},onLogin:async function(){await FY.ensureDefault();await FY.migrate();if(document.body.classList.contains('dark'))document.getElementById('darkBtn').innerHTML='<i class="bi bi-sun"></i>';Dash.render();}};
+var Auth={hash:function(p){return btoa(unescape(encodeURIComponent(p+'_pb7_salt')));},
+login: async function() {
+    try {
+      var errEl = document.getElementById('loginErr');
+      errEl.style.display = 'none';
+
+      if (!APP_READY) {
+        errEl.textContent = 'سیستم در حال آماده‌سازی... چند لحظه صبر کنید';
+        errEl.style.display = 'block';
+        return;
+      }
+
+      var u = document.getElementById('loginUser').value.trim();
+      var p = document.getElementById('loginPass').value;
+
+      if (!u || !p) {
+        errEl.textContent = 'نام کاربری و رمز را وارد کنید';
+        errEl.style.display = 'block';
+        return;
+      }
+
+      var users = await DB.all('users');
+      var hash = Auth.hash(p);
+      var user = users.find(function(x) {
+        return x.username === u && x.password === hash;
+      });
+
+      if (!user) {
+        if (users.length === 0) {
+          errEl.textContent = 'کاربری یافت نشد — صفحه را Ctrl+Shift+R کنید';
+        } else {
+          errEl.textContent = 'نام کاربری یا رمز اشتباه (کیبورد انگلیسی؟)';
+        }
+        errEl.style.display = 'block';
+        return;
+      }
+
+      sessionStorage.setItem('pb_auth', JSON.stringify({
+        userId: user.id,
+        username: user.username,
+        name: user.displayName || user.username
+      }));
+      STATE.userId = user.id;
+      STATE.username = user.username;
+
+      document.getElementById('loginPage').style.display = 'none';
+      document.getElementById('appContainer').style.display = '';
+      await Auth.onLogin();
+
+    } catch (err) {
+      console.error('Login error:', err);
+      document.getElementById('loginErr').textContent = 'خطا: ' + err.message;
+      document.getElementById('loginErr').style.display = 'block';
+    }
+  },
+
 document.getElementById('loginBtn').addEventListener('click',function(){Auth.login();});
 document.getElementById('loginPass').addEventListener('keydown',function(e){if(e.key==='Enter')Auth.login();});
 document.getElementById('logoutBtn').addEventListener('click',function(){Auth.logout();});
@@ -168,19 +224,23 @@ var EXP={csv:function(hd,rows,fn){var lines=[hd.join(',')];for(var i=0;i<rows.le
 
 var FY={refreshSel:async function(){var ys=await DB.all('fiscalYears');var sel=document.getElementById('yearSel');if(!ys.length){sel.innerHTML='<option>تعریف نشده</option>';return;}var h='';ys.forEach(function(y){h+='<option value="'+y.id+'"'+(y.id===STATE.yearId?' selected':'')+'>'+y.name+(y.isClosed?' (بسته)':'')+'</option>';});sel.innerHTML=h;},ensureDefault:async function(){var ys=await DB.all('fiscalYears');if(!ys.length){var now=new Date();var py=now.getFullYear()+621;var id=await DB.add('fiscalYears',{name:py+'-'+(py+1),startDate:py+'/01/01',endDate:py+'/12/29',isCurrent:true,isClosed:false});STATE.yearId=id;localStorage.setItem('pb_year',id);}else if(!STATE.yearId||!ys.find(function(y){return y.id===STATE.yearId;})){var cur=ys.find(function(y){return y.isCurrent&&!y.isClosed;})||ys[ys.length-1];STATE.yearId=cur.id;localStorage.setItem('pb_year',cur.id);}await this.refreshSel();},migrate:async function(){var stores=['invoices','payments','checks'];for(var s=0;s<stores.length;s++){var all=await DB.all(stores[s]);for(var i=0;i<all.length;i++){if(!all[i].fiscalYearId){all[i].fiscalYearId=STATE.yearId;await DB.put(stores[s],all[i]);}}}},byYear:async function(store){var all=await DB.all(store);return all.filter(function(r){return r.fiscalYearId===STATE.yearId;});},render:async function(){currentPage='years';UI.nav('years');UI.title('bi-calendar3','سال مالی');UI.act('<button class="btn bp" onclick="FY.form()"><i class="bi bi-plus-lg"></i>سال جدید</button>');var ys=await DB.all('fiscalYears');if(!ys.length){UI.content('<div class="cd"><div class="em"><i class="bi bi-calendar3"></i><p>سال مالی ندارید</p></div></div>');return;}var r='';for(var i=0;i<ys.length;i++){var y=ys[i];var tags='';if(y.id===STATE.yearId)tags+='<span class="tg tg-b">جاری</span> ';if(y.isClosed)tags+='<span class="tg tg-r">بسته</span> ';r+='<tr><td>'+(i+1)+'</td><td><strong>'+y.name+'</strong></td><td>'+y.startDate+'</td><td>'+y.endDate+'</td><td>'+tags+'</td><td style="white-space:nowrap">';if(!y.isClosed&&y.id!==STATE.yearId)r+='<button class="btn bs bo" onclick="FY.setCurrent('+y.id+')">انتخاب</button> ';if(!y.isClosed)r+='<button class="btn bs bw" onclick="FY.closeYear('+y.id+')">بستن</button> ';r+='<button class="bi2" onclick="FY.form('+y.id+')"><i class="bi bi-pencil"></i></button> <button class="bi2 d" onclick="FY.remove('+y.id+')"><i class="bi bi-trash3"></i></button></td></tr>';}UI.content('<div class="cd"><div class="cd-h">سال‌های مالی</div><div class="tw"><table><thead><tr><th>#</th><th>نام</th><th>شروع</th><th>پایان</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>'+r+'</tbody></table></div></div>');},form:async function(id){var y=id?await DB.get('fiscalYears',id):null;UI.open(y?'ویرایش':'سال جدید','<div class="fg"><label>نام</label><input class="fc" id="fyName" value="'+(y?y.name:'')+'" placeholder="1404-1405"></div><div class="fr"><div class="fg"><label>شروع</label><input class="fc" id="fyStart" value="'+(y?y.startDate:'')+'" placeholder="1404/01/01"></div><div class="fg"><label>پایان</label><input class="fc" id="fyEnd" value="'+(y?y.endDate:'')+'" placeholder="1404/12/29"></div></div>','<button class="btn bp" onclick="FY.save('+(id||'null')+')">'+(y?'ذخیره':'ثبت')+'</button><button class="btn bo" onclick="UI.close()">انصراف</button>');document.getElementById('fyName').focus();},save:async function(id){var d={name:document.getElementById('fyName').value.trim(),startDate:document.getElementById('fyStart').value.trim(),endDate:document.getElementById('fyEnd').value.trim()};if(!d.name){UI.toast('نام','e');return;}if(id){var ex=await DB.get('fiscalYears',id);Object.assign(ex,d);await DB.put('fiscalYears',ex);}else{d.isCurrent=false;d.isClosed=false;await DB.add('fiscalYears',d);}UI.close();await FY.refreshSel();await FY.render();UI.toast('ذخیره شد');},setCurrent:async function(id){var ys=await DB.all('fiscalYears');for(var i=0;i<ys.length;i++){ys[i].isCurrent=ys[i].id===id;await DB.put('fiscalYears',ys[i]);}STATE.yearId=id;localStorage.setItem('pb_year',id);await FY.refreshSel();UI.toast('سال مالی تغییر کرد');await FY.render();},closeYear:async function(yearId){var year=await DB.get('fiscalYears',yearId);if(!year)return;if(!await UI.confirm('سال مالی «'+year.name+'» بسته شود؟'))return;var contacts=await DB.all('contacts');var invs=(await DB.all('invoices')).filter(function(i){return i.fiscalYearId===yearId;});var pays=(await DB.all('payments')).filter(function(p){return p.fiscalYearId===yearId;});var obs=await DB.all('yearOpenings');var balances=[];for(var ci=0;ci<contacts.length;ci++){var c=contacts[ci];var ob=obs.find(function(o){return o.fiscalYearId===yearId&&o.contactId===c.id;});var bal=ob?ob.balance:-(c.balance||0);invs.forEach(function(inv){if(inv.contactId===c.id)bal+=inv.type==='sale'?inv.grandTotal:-inv.grandTotal;if(inv.brokerId===c.id&&inv.brokerCommission)bal-=inv.brokerCommission;});pays.forEach(function(pay){if(pay.contactId===c.id)bal+=pay.type==='payment'?pay.amount:-pay.amount;});if(bal!==0)balances.push({contactId:c.id,name:c.name,bal:bal});}var msg='<p style="margin-bottom:12px">مانده '+balances.length+' شخص:</p>';if(balances.length){msg+='<table class="inv-tbl"><thead><tr><th>شخص</th><th>مانده</th></tr></thead><tbody>';balances.forEach(function(b){msg+='<tr><td>'+b.name+'</td><td style="font-weight:700;color:'+(b.bal>0?'var(--d)':'var(--ok)')+'">'+UI.fn(Math.abs(b.bal))+'</td></tr>';});msg+='</tbody></table>';}msg+='<p style="margin-top:12px;color:var(--w)">مانده‌ها به سال بعد منتقل شود؟</p>';UI.open('بستن سال مالی',msg,'<button class="btn bp" onclick="FY.doClose('+yearId+',true)">بله منتقل شود</button><button class="btn bw" onclick="FY.doClose('+yearId+',false)">خیر فقط بستن</button><button class="btn bo" onclick="UI.close()">انصراف</button>');STATE._cb=balances;},doClose:async function(yearId,transfer){var year=await DB.get('fiscalYears',yearId);year.isClosed=true;year.isCurrent=false;await DB.put('fiscalYears',year);if(transfer&&STATE._cb&&STATE._cb.length){var ys=await DB.all('fiscalYears');var next=ys.find(function(y){return !y.isClosed&&y.id!==yearId;});if(!next){var nm=parseInt(year.name)||1404;next={name:(nm+1)+'-'+(nm+2),startDate:(nm+1)+'/01/01',endDate:(nm+1)+'/12/29',isCurrent:true,isClosed:false};next.id=await DB.add('fiscalYears',next);}for(var i=0;i<STATE._cb.length;i++){await DB.add('yearOpenings',{fiscalYearId:next.id,contactId:STATE._cb[i].contactId,balance:STATE._cb[i].bal});}STATE.yearId=next.id;localStorage.setItem('pb_year',next.id);}else{var others=(await DB.all('fiscalYears')).filter(function(y){return !y.isClosed;});if(others.length){STATE.yearId=others[0].id;localStorage.setItem('pb_year',others[0].id);}}UI.close();await FY.refreshSel();await FY.render();UI.toast('سال مالی بسته شد');delete STATE._cb;},remove:async function(id){if(!await UI.confirm('حذف شود؟'))return;await DB.del('fiscalYears',id);if(STATE.yearId===id){STATE.yearId=null;await FY.ensureDefault();}await FY.refreshSel();await FY.render();UI.toast('حذف شد');}};
 
-var Backup={exportAll:async function(){var data={version:'8.0',date:new Date().toISOString(),categories:await DB.all('categories'),products:await DB.all('products'),contacts:await DB.all('contacts'),invoices:await DB.all('invoices'),payments:await DB.all('payments'),checks:await DB.all('checks'),fiscalYears:await DB.all('fiscalYears'),yearOpenings:await DB.all('yearOpenings')};var b=new Blob([JSON.stringify(data,null,2)],{type:'application/json;charset=utf-8;'});var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='parchehban-backup-'+new Date().toLocaleDateString('fa-IR').replace(/\//g,'-')+'.json';document.body.appendChild(a);a.click();document.body.removeChild(a);UI.toast('بکاپ ذخیره شد');},importAll:function(){UI.open('بازیابی بکاپ','<div style="text-align:center;padding:20px"><i class="bi bi-cloud-upload" style="font-size:2.5rem;color:var(--p);display:block;margin-bottom:14px"></i><p style="margin-bottom:14px;color:var(--txs)">فایل بکاپ JSON را انتخاب کنید</p><p style="font-size:.78rem;color:var(--d);margin-bottom:16px">اطلاعات فعلی جایگزین می‌شوند</p><input type="file" id="bkFile" accept=".json" style="display:block;margin:0 auto"></div>','<button class="btn bdn" onclick="Backup.doImport()"><i class="bi bi-upload"></i>بازیابی</button><button class="btn bo" onclick="UI.close()">انصراف</button>');},  doImport: async function() {
+var Backup={exportAll:async function(){var data={version:'8.0',date:new Date().toISOString(),categories:await DB.all('categories'),products:await DB.all('products'),contacts:await DB.all('contacts'),invoices:await DB.all('invoices'),payments:await DB.all('payments'),checks:await DB.all('checks'),fiscalYears:await DB.all('fiscalYears'),yearOpenings:await DB.all('yearOpenings')};var b=new Blob([JSON.stringify(data,null,2)],{type:'application/json;charset=utf-8;'});var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='parchehban-backup-'+new Date().toLocaleDateString('fa-IR').replace(/\//g,'-')+'.json';document.body.appendChild(a);a.click();document.body.removeChild(a);UI.toast('بکاپ ذخیره شد');},importAll:function(){UI.open('بازیابی بکاپ','<div style="text-align:center;padding:20px"><i class="bi bi-cloud-upload" style="font-size:2.5rem;color:var(--p);display:block;margin-bottom:14px"></i><p style="margin-bottom:14px;color:var(--txs)">فایل بکاپ JSON را انتخاب کنید</p><p style="font-size:.78rem;color:var(--d);margin-bottom:16px">اطلاعات فعلی جایگزین می‌شوند</p><input type="file" id="bkFile" accept=".json" style="display:block;margin:0 auto"></div>','<button class="btn bdn" onclick="Backup.doImport()"><i class="bi bi-upload"></i>بازیابی</button><button class="btn bo" onclick="UI.close()">انصراف</button>');},
+  doImport: async function() {
     var fi = document.getElementById('bkFile');
-    if (!fi || !fi.files.length) { UI.toast('فایل', 'e'); return; }
+    if (!fi || !fi.files.length) { UI.toast('فایل را انتخاب کنید', 'e'); return; }
     try {
       var d = JSON.parse(await fi.files[0].text());
-      if (!d.categories) { UI.toast('فرمت نامعتبر', 'e'); return; }
+      if (!d.categories) { UI.toast('فرمت فایل نامعتبر', 'e'); return; }
       if (!await UI.confirm('اطلاعات فعلی حذف و بکاپ جایگزین شود؟')) return;
 
+      /* حذف داده‌های فعلی (بجز users) */
       var stores = ['categories','products','contacts','invoices','payments','checks','fiscalYears','yearOpenings'];
       for (var s = 0; s < stores.length; s++) {
         var all = await DB.all(stores[s]);
         for (var i = 0; i < all.length; i++) await DB.del(stores[s], all[i].id);
       }
+
+      /* وارد کردن بکاپ */
       for (var t = 0; t < stores.length; t++) {
         var arr = d[stores[t]] || [];
         for (var i = 0; i < arr.length; i++) {
@@ -189,17 +249,19 @@ var Backup={exportAll:async function(){var data={version:'8.0',date:new Date().t
         }
       }
 
-      /* ← مایگریشن بعد از بازیابی */
+      /* مایگریشن */
       STATE.yearId = null;
       await FY.ensureDefault();
       await FY.migrate();
 
       UI.close();
-      UI.toast('بازیابی شد — در حال بارگذاری...');
-      setTimeout(function() { location.reload(true); }, 500);
+      UI.toast('بازیابی انجام شد');
+
+      /* رندر مجدد — بدون رفرش */
+      await Dash.render();
 
     } catch (e) {
-      console.error(e);
+      console.error('Import error:', e);
       UI.toast('خطا: ' + e.message, 'e');
     }
   }
@@ -234,9 +296,23 @@ var Dash={period:'month',_wc:null,_cc:null,render:async function(){currentPage='
 var ROUTES={dashboard:function(){Dash.render();},categories:function(){Cat.render();},products:function(){Prod.render();},contacts:function(){Con.render();},purchase:function(){Inv.render('purchase');},sales:function(){Inv.render('sale');},payments:function(){Pay.render();},checks:function(){Chk.render();},ledger:function(){Led.render();},reports:function(){Rep.render();},years:function(){FY.render();},settings:function(){Settings.render();}};
 
 document.getElementById('sidebarNav').addEventListener('click',function(e){var item=e.target.closest('.ni');if(!item)return;var p=item.dataset.page;if(ROUTES[p])ROUTES[p]();});
-
-(async function(){try{await DB.init();if(localStorage.getItem('pb_dark')==='true')document.body.classList.add('dark');await Auth.ensureDefaultUser();if(Auth.checkSession()){document.getElementById('loginPage').style.display='none';document.getElementById('appContainer').style.display='';await Auth.onLogin();}console.log('پارچه‌بان v8 آماده');}catch(err){console.error('Boot error:',err);}})();
-
+(async function() {
+  try {
+    await DB.init();
+    if (localStorage.getItem('pb_dark') === 'true') document.body.classList.add('dark');
+    await Auth.ensureDefaultUser();
+    APP_READY = true;
+    if (Auth.checkSession()) {
+      document.getElementById('loginPage').style.display = 'none';
+      document.getElementById('appContainer').style.display = '';
+      await Auth.onLogin();
+    }
+    console.log('پارچه‌بان v8 آماده');
+  } catch (err) {
+    console.error('Boot error:', err);
+    APP_READY = true;
+  }
+})();
 if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(function(){});}
 </script>
 </body>
