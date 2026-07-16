@@ -1,19 +1,6 @@
-var CACHE_NAME = 'parchehban-v7';
-var URLS_TO_CACHE = [
-  '/parchehban/',
-  '/parchehban/index.html',
-  'https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800&display=swap',
-  'https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css'
-];
+var CACHE_NAME = 'parchehban-v8';
 
 self.addEventListener('install', function(event) {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(function(cache) {
-      return cache.addAll(URLS_TO_CACHE).catch(function(err) {
-        console.log('Cache addAll partial fail:', err);
-      });
-    })
-  );
   self.skipWaiting();
 });
 
@@ -30,23 +17,20 @@ self.addEventListener('activate', function(event) {
 });
 
 self.addEventListener('fetch', function(event) {
-  event.respondWith(
-    caches.match(event.request).then(function(cached) {
-      if (cached) return cached;
-      return fetch(event.request).then(function(response) {
-        if (!response || response.status !== 200 || response.type !== 'basic') {
+  /* فقط فونت و آیکون را کش کن، فایل اصلی همیشه از سرور بیاد */
+  if (event.request.url.indexOf('fonts.googleapis.com') > -1 ||
+      event.request.url.indexOf('cdn.jsdelivr.net') > -1) {
+    event.respondWith(
+      caches.match(event.request).then(function(cached) {
+        return cached || fetch(event.request).then(function(response) {
+          var clone = response.clone();
+          caches.open(CACHE_NAME).then(function(cache) {
+            cache.put(event.request, clone);
+          });
           return response;
-        }
-        var clone = response.clone();
-        caches.open(CACHE_NAME).then(function(cache) {
-          cache.put(event.request, clone);
         });
-        return response;
-      }).catch(function() {
-        return new Response('<h1 style="text-align:center;margin-top:50px;font-family:sans-serif">آفلاین هستید</h1>', {
-          headers: { 'Content-Type': 'text/html; charset=utf-8' }
-        });
-      });
-    })
-  );
+      })
+    );
+  }
+  /* فایل اصلی HTML — همیشه از سرور */
 });
