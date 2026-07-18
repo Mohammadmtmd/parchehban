@@ -178,8 +178,316 @@ var Cat={render:async function(){currentPage='categories';UI.nav('categories');U
 
 var Prod={stock:async function(pid){var invs=await DB.all('invoices');var s=0;invs.forEach(function(inv){(inv.items||[]).forEach(function(it){if(it.productId===pid)s+=inv.type==='purchase'?it.quantity:-it.quantity;});});return s;},render:async function(){currentPage='products';UI.nav('products');UI.title('bi-box-seam-fill','کالا');UI.act('<button class="btn bp" onclick="Prod.form()"><i class="bi bi-plus-lg"></i>کالای جدید</button>');var ps=await DB.all('products'),cs=await DB.all('categories'),cm={};cs.forEach(function(c){cm[c.id]=c.name;});if(!ps.length){UI.content('<div class="cd"><div class="em"><i class="bi bi-box-seam"></i><p>کالایی نیست</p></div></div>');return;}var r='';for(var i=0;i<ps.length;i++){var p=ps[i];var st=await Prod.stock(p.id);var sc=(p.minStock&&st<=p.minStock)||st<0?'color:var(--d);font-weight:700':'';r+='<tr><td>'+(i+1)+'</td><td><strong>'+p.name+'</strong></td><td>'+(cm[p.categoryId]||'—')+'</td><td>'+(p.colorShade||'—')+'</td><td>'+(p.colorCatalog||'—')+'</td><td style="'+sc+'">'+UI.fn(st)+'</td><td><button class="bi2" onclick="Prod.form('+p.id+')"><i class="bi bi-pencil"></i></button> <button class="bi2 d" onclick="Prod.rm('+p.id+')"><i class="bi bi-trash3"></i></button></td></tr>';}UI.content('<div class="cd"><div class="cd-h">کالاها</div><div class="tw"><table><thead><tr><th>#</th><th>نام</th><th>گروه</th><th>شید</th><th>کالیته</th><th>موجودی</th><th></th></tr></thead><tbody>'+r+'</tbody></table></div></div>');},form:async function(id){var p=id?await DB.get('products',id):null;var cs=await DB.all('categories');var co='<option value="">—</option>';cs.forEach(function(c){co+='<option value="'+c.id+'"'+(p&&p.categoryId===c.id?' selected':'')+'>'+c.name+'</option>';});var uo='';['متر','طاقه','رول','عدد'].forEach(function(u){uo+='<option value="'+u+'"'+(p&&p.unit===u?' selected':'')+'>'+u+'</option>';});UI.open(p?'ویرایش':'کالای جدید','<div class="fg"><label>گروه</label><select class="fc" id="pCt">'+co+'</select></div><div class="fg"><label>نام</label><input class="fc" id="pNm" value="'+(p?p.name:'')+'"></div><div class="fr"><div class="fg"><label>شید</label><input class="fc" id="pSh" value="'+(p?(p.colorShade||''):'')+'"></div><div class="fg"><label>کالیته</label><input class="fc" id="pCa" value="'+(p?(p.colorCatalog||''):'')+'"></div></div><div class="fr"><div class="fg"><label>واحد</label><select class="fc" id="pUn">'+uo+'</select></div><div class="fg"><label>حداقل</label><input class="fc" id="pMn" type="number" value="'+(p?(p.minStock||0):0)+'"></div></div>','<button class="btn bp" onclick="Prod.save('+(id||'null')+')">'+(p?'ذخیره':'ثبت')+'</button><button class="btn bo" onclick="UI.close()">انصراف</button>',true);document.getElementById('pNm').focus();},save:async function(id){var d={categoryId:parseInt(document.getElementById('pCt').value)||null,name:document.getElementById('pNm').value.trim(),colorShade:document.getElementById('pSh').value.trim(),colorCatalog:document.getElementById('pCa').value.trim(),unit:document.getElementById('pUn').value,minStock:parseInt(document.getElementById('pMn').value)||0};if(!d.name){UI.toast('نام','e');return;}if(id){var ex=await DB.get('products',id);Object.assign(ex,d);await DB.put('products',ex);}else{await DB.add('products',d);}UI.close();await this.render();UI.toast('ذخیره شد');},rm:async function(id){if(!await UI.confirm('حذف شود؟'))return;await DB.del('products',id);await this.render();}};
 
-var Inv={items:[],prodOpts:'',render:async function(type){currentPage=type==='sale'?'sales':'purchase';var isS=type==='sale';UI.nav(currentPage);UI.title(isS?'bi-receipt-cutoff':'bi-cart-fill',isS?'فروش':'خرید');UI.act('<button class="btn bp" onclick="Inv.showF(\''+type+'\')"><i class="bi bi-plus-lg"></i>جدید</button>');await this.ll(type);},ll:async function(type){var all=await FY.byYear('invoices');var ls=all.filter(function(i){return i.type===type;}).sort(function(a,b){return(b.id||0)-(a.id||0);});var ct=await DB.all('contacts'),cm={};ct.forEach(function(c){cm[c.id]=c.name;});if(!ls.length){UI.content('<div class="cd"><div class="em"><i class="bi bi-receipt"></i><p>فاکتوری نیست</p></div></div>');return;}var r='';for(var i=0;i<ls.length;i++){var v=ls[i];var rm=(v.grandTotal||0)-(v.paidAmount||0);var sg=rm<=0?'tg-g':v.paidAmount>0?'tg-o':'tg-r';var sl=rm<=0?'تسویه':v.paidAmount>0?'جزئی':'باز';r+='<tr><td>'+(v.invoiceNumber||'—')+'</td><td>'+v.date+'</td><td>'+(cm[v.contactId]||'—')+'</td><td>'+UI.fn(v.grandTotal)+'</td><td>'+UI.fn(v.paidAmount)+'</td><td style="color:'+(rm>0?'var(--d)':'var(--ok)')+';font-weight:700">'+UI.fn(rm)+'</td><td><span class="tg '+sg+'">'+sl+'</span></td><td style="white-space:nowrap"><button class="bi2" onclick="Inv.vw('+v.id+')"><i class="bi bi-eye"></i></button> <button class="bi2" onclick="Inv.pr('+v.id+')"><i class="bi bi-printer"></i></button> <button class="bi2" onclick="Inv.showF(\''+type+'\','+v.id+')"><i class="bi bi-pencil"></i></button> <button class="bi2 d" onclick="Inv.rm('+v.id+',\''+type+'\')"><i class="bi bi-trash3"></i></button></td></tr>';}UI.content('<div class="cd"><div class="cd-h">'+(type==='sale'?'فروش':'خرید')+'</div><div class="tw"><table><thead><tr><th>شماره</th><th>تاریخ</th><th>شخص</th><th>کل</th><th>پرداختی</th><th>مانده</th><th>وضعیت</th><th></th></tr></thead><tbody>'+r+'</tbody></table></div></div>');},nn:async function(type){var all=await DB.all('invoices');var pf=type==='sale'?'ف-':'خ-';var mx=0;all.forEach(function(i){if(i.type===type&&i.invoiceNumber){var n=parseInt(i.invoiceNumber.replace(pf,''));if(n>mx)mx=n;}});return pf+String(mx+1).padStart(4,'0');},showF:async function(type,id){var inv=id?await DB.get('invoices',id):null;var isS=type==='sale';var ct=await DB.all('contacts'),pr=await DB.all('products');this.prodOpts='';pr.forEach(function(p){Inv.prodOpts+='<option value="'+p.id+'">'+p.name+(p.colorCatalog?' ('+p.colorCatalog+')':'')+'</option>';});var rc=ct.filter(function(c){return isS?(c.type==='customer'||c.type==='both'):(c.type==='supplier'||c.type==='both');});var cO='<option value="">—</option>';rc.forEach(function(c){cO+='<option value="'+c.id+'"'+(inv&&inv.contactId===c.id?' selected':'')+'>'+c.name+'</option>';});this.items=inv?JSON.parse(JSON.stringify(inv.items||[])):[];var iN=inv?inv.invoiceNumber:await this.nn(type);var td=new Date().toLocaleDateString('fa-IR');var h='<div class="fr mb"><div class="fg"><label>شماره</label><input class="fc" id="iNm" value="'+iN+'" readonly style="background:var(--bg)"></div><div class="fg"><label>تاریخ</label><input class="fc" id="iDt" value="'+(inv?inv.date:td)+'"></div></div>';h+='<div class="fr mb"><div class="fg"><label>'+(isS?'مشتری':'تأمین‌کننده')+'</label><select class="fc" id="iCt">'+cO+'</select></div><div class="fg"><label>حمل</label><input class="fc" id="iSh" type="number" value="'+(inv?(inv.shippingCost||0):0)+'" dir="ltr" oninput="Inv.calc()"></div></div>';h+='<div class="cd mb"><div class="cd-h">اقلام <button class="btn bs bo" onclick="Inv.ai()" style="margin-right:auto">+</button></div><div id="iW"></div></div><div class="inv-totals" id="iT"></div>';h+='<div class="fr" style="margin-top:14px"><div class="fg"><label>پرداختی</label><input class="fc" id="iPd" type="number" value="'+(inv?(inv.paidAmount||0):0)+'" dir="ltr" oninput="Inv.calc()"></div><div class="fg"><label>توضیحات</label><input class="fc" id="iNt" value="'+(inv?(inv.notes||''):'')+'"></div></div>';UI.open(inv?'ویرایش':'فاکتور',h,'<button class="btn bp" onclick="Inv.save(\''+type+'\','+(id||'null')+')">'+(inv?'ذخیره':'ثبت')+'</button><button class="btn bo" onclick="UI.close()">انصراف</button>',true);this.ri();this.calc();},ai:function(){this.items.push({productId:'',quantity:0,unitPrice:0,total:0});this.ri();},ri2:function(i){this.items.splice(i,1);this.ri();this.calc();},oc:function(i,f,v){var it=this.items[i];if(f==='p')it.productId=parseInt(v)||'';else if(f==='q')it.quantity=parseFloat(v)||0;else if(f==='u')it.unitPrice=parseInt(v)||0;it.total=it.quantity*it.unitPrice;var tc=document.getElementById('t'+i);if(tc)tc.textContent=UI.fn(it.total);this.calc();},ri:function(){var w=document.getElementById('iW');if(!w)return;if(!this.items.length){w.innerHTML='<div style="text-align:center;padding:20px;color:var(--txm)">یک قلم اضافه کنید</div>';return;}var opts=this.prodOpts;var h='<table class="inv-tbl"><thead><tr><th>#</th><th>کالا</th><th>تعداد</th><th>قیمت</th><th>جمع</th><th></th></tr></thead><tbody>';for(var i=0;i<this.items.length;i++){var it=this.items[i];var sel=it.productId?opts.replace('value="'+it.productId+'"','value="'+it.productId+'" selected'):opts;h+='<tr><td>'+(i+1)+'</td><td><select onchange="Inv.oc('+i+',\'p\',this.value)"><option value="">—</option>'+sel+'</select></td><td><input type="number" value="'+(it.quantity||'')+'" oninput="Inv.oc('+i+',\'q\',this.value)" style="text-align:center"></td><td><input type="number" value="'+(it.unitPrice||'')+'" oninput="Inv.oc('+i+',\'u\',this.value)" style="text-align:center"></td><td class="it-total" id="t'+i+'">'+UI.fn(it.total)+'</td><td><button class="bi2 d" onclick="Inv.ri2('+i+')" style="width:28px;height:28px">x</button></td></tr>';}h+='</tbody></table>';w.innerHTML=h;},calc:function(){var sub=0;this.items.forEach(function(it){sub+=(it.total||0);});var sh=parseInt(document.getElementById('iSh')?document.getElementById('iSh').value:0)||0;var pd=parseInt(document.getElementById('iPd')?document.getElementById('iPd').value:0)||0;var gr=sub+sh;var rm=gr-pd;var el=document.getElementById('iT');if(!el)return;el.innerHTML='<div class="inv-ti"><label>جمع</label><div class="val">'+UI.fn(sub)+'</div></div><div class="inv-ti"><label>نهایی</label><div class="val g">'+UI.fn(gr)+'</div></div><div class="inv-ti"><label>پرداختی</label><div class="val">'+UI.fn(pd)+'</div></div><div class="inv-ti"><label>مانده</label><div class="val '+(rm>0?'r':'g')+'">'+UI.fn(rm)+'</div></div>';},save:async function(type,id){var cid=parseInt(document.getElementById('iCt').value)||null;if(!cid){UI.toast('شخص','e');return;}if(!this.items.length){UI.toast('یک قلم','e');return;}for(var i=0;i<this.items.length;i++){if(!this.items[i].productId){UI.toast('کالای ردیف '+(i+1),'e');return;}}var pr=await DB.all('products'),pm={};pr.forEach(function(p){pm[p.id]=p.name;});var items=this.items.map(function(it){return{productId:it.productId,productName:pm[it.productId]||'—',quantity:it.quantity,unitPrice:it.unitPrice,total:it.total};});var sub=0;items.forEach(function(it){sub+=it.total;});var sh=parseInt(document.getElementById('iSh').value)||0;var pd=parseInt(document.getElementById('iPd').value)||0;var d={type:type,fiscalYearId:STATE.yearId,invoiceNumber:document.getElementById('iNm').value,date:document.getElementById('iDt').value,contactId:cid,items:items,subtotal:sub,shippingCost:sh,grandTotal:sub+sh,paidAmount:pd,notes:document.getElementById('iNt').value.trim()};if(id){var ex=await DB.get('invoices',id);Object.assign(ex,d);await DB.put('invoices',ex);UI.toast('ویرایش شد');}else{await DB.add('invoices',d);UI.toast('ثبت شد');}UI.close();await this.ll(type);},vw:async function(id){var v=await DB.get('invoices',id);if(!v)return;var ct=await DB.all('contacts'),cm={};ct.forEach(function(c){cm[c.id]=c.name;});var rm=v.grandTotal-v.paidAmount;var r='';v.items.forEach(function(it,i){r+='<tr><td>'+(i+1)+'</td><td>'+it.productName+'</td><td>'+UI.fn(it.quantity)+'</td><td>'+UI.fn(it.unitPrice)+'</td><td>'+UI.fn(it.total)+'</td></tr>';});var h='<div class="mb"><strong>شخص:</strong> '+(cm[v.contactId]||'—')+'</div>';h+='<table class="inv-tbl"><thead><tr><th>#</th><th>کالا</th><th>تعداد</th><th>قیمت</th><th>جمع</th></tr></thead><tbody>'+r+'</tbody></table>';h+='<div class="inv-totals"><div class="inv-ti"><label>نهایی</label><div class="val g">'+UI.fn(v.grandTotal)+'</div></div><div class="inv-ti"><label>پرداختی</label><div class="val">'+UI.fn(v.paidAmount)+'</div></div><div class="inv-ti"><label>مانده</label><div class="val '+(rm>0?'r':'g')+'">'+UI.fn(rm)+'</div></div></div>';UI.open('فاکتور '+v.invoiceNumber,h,'<button class="btn bo" onclick="UI.close()">بستن</button>',true);},pr:async function(id){var v=await DB.get('invoices',id);if(!v)return;var ct=await DB.all('contacts'),cm={};ct.forEach(function(c){cm[c.id]=c.name;});var isS=v.type==='sale';var rm=v.grandTotal-v.paidAmount;var r='';v.items.forEach(function(it,i){r+='<tr><td style="border:1px solid #ccc;padding:6px">'+(i+1)+'</td><td style="border:1px solid #ccc;padding:6px">'+it.productName+'</td><td style="border:1px solid #ccc;padding:6px;text-align:center">'+UI.fn(it.quantity)+'</td><td style="border:1px solid #ccc;padding:6px;text-align:center">'+UI.fn(it.unitPrice)+'</td><td style="border:1px solid #ccc;padding:6px;text-align:center">'+UI.fn(it.total)+'</td></tr>';});var h='<div style="direction:rtl;font-family:Vazirmatn,sans-serif;padding:15mm;font-size:12px">';h+='<h1 style="font-size:16px;border-bottom:2px solid #000;padding-bottom:8px;margin-bottom:12px">'+(isS?'فاکتور فروش':'فاکتور خرید')+' — '+v.invoiceNumber+'</h1>';h+='<p style="margin-bottom:10px">شخص: '+(cm[v.contactId]||'—')+' | تاریخ: '+v.date+'</p>';h+='<table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr><th style="border:1px solid #ccc;padding:6px;background:#f0f0f0">#</th><th style="border:1px solid #ccc;padding:6px;background:#f0f0f0">شرح</th><th style="border:1px solid #ccc;padding:6px;background:#f0f0f0">تعداد</th><th style="border:1px solid #ccc;padding:6px;background:#f0f0f0">قیمت</th><th style="border:1px solid #ccc;padding:6px;background:#f0f0f0">جمع</th></tr></thead><tbody>'+r+'</tbody></table>';h+='<div style="margin-top:12px">نهایی: '+UI.fn(v.grandTotal)+' | پرداختی: '+UI.fn(v.paidAmount)+' | مانده: '+UI.fn(rm)+'</div></div>';document.getElementById('printArea').innerHTML=h;window.print();},rm:async function(id,type){if(!await UI.confirm('حذف شود؟'))return;await DB.del('invoices',id);await this.ll(type);}};
+var Inv = {
+  items: [],
+  prodOpts: '',
 
+  render: async function(type) {
+    currentPage = type === 'sale' ? 'sales' : 'purchase';
+    var isS = type === 'sale';
+    UI.nav(currentPage);
+    UI.title(isS ? 'bi-receipt-cutoff' : 'bi-cart-fill', isS ? 'فاکتور فروش' : 'فاکتور خرید');
+    UI.act('<button class="btn bp" onclick="Inv.showF(\'' + type + '\')"><i class="bi bi-plus-lg"></i>جدید</button> <button class="btn bo" onclick="Inv.ec(\'' + type + '\')"><i class="bi bi-download"></i>Excel</button>');
+    await this.ll(type);
+  },
+
+  ll: async function(type) {
+    var all = await FY.byYear('invoices');
+    var ls = all.filter(function(i) { return i.type === type; }).sort(function(a, b) { return (b.id || 0) - (a.id || 0); });
+    var ct = await DB.all('contacts'), cm = {};
+    ct.forEach(function(c) { cm[c.id] = c.name; });
+    if (!ls.length) { UI.content('<div class="cd"><div class="em"><i class="bi bi-receipt"></i><p>فاکتوری نیست</p><button class="btn bp" style="margin-top:16px" onclick="Inv.showF(\'' + type + '\')">اولین فاکتور</button></div></div>'); return; }
+    var r = '';
+    for (var i = 0; i < ls.length; i++) {
+      var v = ls[i];
+      var rm = (v.grandTotal || 0) - (v.paidAmount || 0);
+      var sg = rm <= 0 ? 'tg-g' : v.paidAmount > 0 ? 'tg-o' : 'tg-r';
+      var sl = rm <= 0 ? 'تسویه' : v.paidAmount > 0 ? 'جزئی' : 'باز';
+      r += '<tr><td>' + (v.invoiceNumber || '—') + '</td><td>' + v.date + '</td><td>' + (cm[v.contactId] || '—') + '</td>';
+      r += '<td>' + UI.fn(v.grandTotal) + '</td>';
+      if (v.discount) r += '<td style="color:var(--ok)">' + UI.fn(v.discount) + '</td>';
+      r += '<td>' + UI.fn(v.paidAmount) + '</td>';
+      r += '<td style="color:' + (rm > 0 ? 'var(--d)' : 'var(--ok)') + ';font-weight:700">' + UI.fn(rm) + '</td>';
+      r += '<td><span class="tg ' + sg + '">' + sl + '</span></td>';
+      r += '<td style="white-space:nowrap">';
+      r += '<button class="bi2" onclick="Inv.vw(' + v.id + ')" title="مشاهده"><i class="bi bi-eye"></i></button> ';
+      r += '<button class="bi2" onclick="Inv.pr(' + v.id + ',\'a4\')" title="پرینت A4"><span style="font-size:.6rem;font-weight:800">A4</span></button> ';
+      r += '<button class="bi2" onclick="Inv.pr(' + v.id + ',\'a5\')" title="پرینت A5"><span style="font-size:.6rem;font-weight:800">A5</span></button> ';
+      r += '<button class="bi2" onclick="Inv.showF(\'' + type + '\',' + v.id + ')" title="ویرایش"><i class="bi bi-pencil"></i></button> ';
+      r += '<button class="bi2 d" onclick="Inv.rm(' + v.id + ',\'' + type + '\')" title="حذف"><i class="bi bi-trash3"></i></button>';
+      r += '</td></tr>';
+    }
+    var thExtra = '<th>تخفیف</th>';
+    UI.content('<div class="cd"><div class="cd-h">' + (type === 'sale' ? 'فروش' : 'خرید') + '</div>' +
+      '<div class="tw"><table><thead><tr><th>شماره</th><th>تاریخ</th><th>شخص</th><th>کل</th>' + thExtra + '<th>پرداختی</th><th>مانده</th><th>وضعیت</th><th></th></tr></thead><tbody>' + r + '</tbody></table></div></div>');
+  },
+
+  ec: async function(type) {
+    var all = await FY.byYear('invoices');
+    var ls = all.filter(function(i) { return i.type === type; });
+    var ct = await DB.all('contacts'), cm = {};
+    ct.forEach(function(c) { cm[c.id] = c.name; });
+    var hd = ['شماره', 'تاریخ', 'شخص', 'حمل', 'تخفیف', 'کل', 'پرداختی', 'مانده'];
+    var rows = [];
+    ls.forEach(function(v) { rows.push([v.invoiceNumber, v.date, cm[v.contactId] || '', v.shippingCost || 0, v.discount || 0, v.grandTotal || 0, v.paidAmount || 0, (v.grandTotal || 0) - (v.paidAmount || 0)]); });
+    EXP.csv(hd, rows, 'invoices-' + type + '.csv');
+    UI.toast('ذخیره شد');
+  },
+
+  nn: async function(type) {
+    var all = await DB.all('invoices');
+    var pf = type === 'sale' ? 'ف-' : 'خ-';
+    var mx = 0;
+    all.forEach(function(i) { if (i.type === type && i.invoiceNumber) { var n = parseInt(i.invoiceNumber.replace(pf, '')); if (n > mx) mx = n; } });
+    return pf + String(mx + 1).padStart(4, '0');
+  },
+
+  showF: async function(type, id) {
+    var inv = id ? await DB.get('invoices', id) : null;
+    var isS = type === 'sale';
+    var ct = await DB.all('contacts'), pr = await DB.all('products');
+    this.prodOpts = '';
+    pr.forEach(function(p) { Inv.prodOpts += '<option value="' + p.id + '">' + p.name + (p.colorCatalog ? ' (' + p.colorCatalog + ')' : '') + '</option>'; });
+    var rc = ct.filter(function(c) { return isS ? (c.type === 'customer' || c.type === 'both') : (c.type === 'supplier' || c.type === 'both'); });
+    var bk = ct.filter(function(c) { return c.type === 'broker'; });
+    var cO = '<option value="">— انتخاب —</option>';
+    rc.forEach(function(c) { cO += '<option value="' + c.id + '"' + (inv && inv.contactId === c.id ? ' selected' : '') + '>' + c.name + '</option>'; });
+    var bO = '<option value="">— بدون —</option>';
+    bk.forEach(function(c) { bO += '<option value="' + c.id + '"' + (inv && inv.brokerId === c.id ? ' selected' : '') + '>' + c.name + '</option>'; });
+    this.items = inv ? JSON.parse(JSON.stringify(inv.items || [])) : [];
+    var iN = inv ? inv.invoiceNumber : await this.nn(type), td = new Date().toLocaleDateString('fa-IR');
+
+    var h = '<div class="fr mb"><div class="fg"><label>شماره</label><input class="fc" id="iNm" value="' + iN + '" readonly style="background:var(--bg)"></div>';
+    h += '<div class="fg"><label>تاریخ</label><input class="fc" id="iDt" value="' + (inv ? inv.date : td) + '"></div></div>';
+    h += '<div class="fr mb"><div class="fg"><label>' + (isS ? 'مشتری' : 'تأمین‌کننده') + '</label><select class="fc" id="iCt">' + cO + '</select></div>';
+    h += '<div class="fg"><label>حمل (ریال)</label><input class="fc" id="iSh" type="number" value="' + (inv ? (inv.shippingCost || 0) : 0) + '" dir="ltr" oninput="Inv.calc()"></div></div>';
+
+    /* بخش واسطه */
+    h += '<div class="sec-div" onclick="var e=document.getElementById(\'iBs\');e.style.display=e.style.display===\'none\'?\'block\':\'none\'"><i class="bi bi-chevron-down"></i>واسطه (اختیاری)</div>';
+    h += '<div id="iBs" style="display:' + (inv && inv.brokerId ? 'block' : 'none') + ';padding:16px 0">';
+    h += '<div class="fr"><div class="fg"><label>واسطه</label><select class="fc" id="iBr">' + bO + '</select></div>';
+    h += '<div class="fg"><label>کمیسیون (ریال)</label><input class="fc" id="iCm" type="number" value="' + (inv ? (inv.brokerCommission || 0) : 0) + '" dir="ltr"></div></div></div>';
+
+    /* اقلام */
+    h += '<div class="cd mb"><div class="cd-h">اقلام <button class="btn bs bo" onclick="Inv.ai()" style="margin-right:auto"><i class="bi bi-plus-lg"></i></button></div><div id="iW"></div></div>';
+
+    /* تخفیف */
+    h += '<div class="fr mb"><div class="fg"><label>تخفیف (ریال)</label><input class="fc" id="iDis" type="number" value="' + (inv ? (inv.discount || 0) : 0) + '" dir="ltr" oninput="Inv.calc()"></div>';
+    h += '<div class="fg"><label></label></div></div>';
+
+    h += '<div class="inv-totals" id="iT"></div>';
+    h += '<div class="fr" style="margin-top:14px"><div class="fg"><label>پرداختی (ریال)</label><input class="fc" id="iPd" type="number" value="' + (inv ? (inv.paidAmount || 0) : 0) + '" dir="ltr" oninput="Inv.calc()"></div>';
+    h += '<div class="fg"><label>توضیحات</label><input class="fc" id="iNt" value="' + (inv ? (inv.notes || '') : '') + '"></div></div>';
+
+    /* انتخاب سایز پرینت */
+    h += '<div class="fr" style="margin-top:10px"><div class="fg"><label>سایز پرینت</label><select class="fc" id="iPrt">';
+    h += '<option value="a4"' + (!inv || inv.printSize !== 'a5' ? ' selected' : '') + '>A4</option>';
+    h += '<option value="a5"' + (inv && inv.printSize === 'a5' ? ' selected' : '') + '>A5</option>';
+    h += '</select></div><div class="fg"></div></div>';
+
+    UI.open(inv ? 'ویرایش فاکتور' : 'فاکتور جدید', h,
+      '<button class="btn bp" onclick="Inv.save(\'' + type + '\',' + (id || 'null') + ')">' + (inv ? 'ذخیره' : 'ثبت') + '</button>' +
+      (inv ? '<button class="btn bg" onclick="Inv.pr(' + inv.id + ',document.getElementById(\'iPrt\').value)"><i class="bi bi-printer"></i>پرینت</button>' : '') +
+      '<button class="btn bo" onclick="UI.close()">انصراف</button>', true);
+    this.ri();
+    this.calc();
+  },
+
+  ai: function() { this.items.push({ productId: '', quantity: 0, unitPrice: 0, total: 0 }); this.ri(); },
+  ri2: function(i) { this.items.splice(i, 1); this.ri(); this.calc(); },
+  oc: function(i, f, v) {
+    var it = this.items[i];
+    if (f === 'p') it.productId = parseInt(v) || '';
+    else if (f === 'q') it.quantity = parseFloat(v) || 0;
+    else if (f === 'u') it.unitPrice = parseInt(v) || 0;
+    it.total = it.quantity * it.unitPrice;
+    var tc = document.getElementById('t' + i);
+    if (tc) tc.textContent = UI.fn(it.total);
+    this.calc();
+  },
+
+  ri: function() {
+    var w = document.getElementById('iW');
+    if (!w) return;
+    if (!this.items.length) { w.innerHTML = '<div style="text-align:center;padding:20px;color:var(--txm)">یک قلم اضافه کنید</div>'; return; }
+    var opts = this.prodOpts;
+    var h = '<table class="inv-tbl"><thead><tr><th>#</th><th>کالا</th><th>تعداد</th><th>قیمت واحد</th><th>جمع</th><th></th></tr></thead><tbody>';
+    for (var i = 0; i < this.items.length; i++) {
+      var it = this.items[i];
+      var sel = it.productId ? opts.replace('value="' + it.productId + '"', 'value="' + it.productId + '" selected') : opts;
+      h += '<tr><td>' + (i + 1) + '</td>';
+      h += '<td><select onchange="Inv.oc(' + i + ',\'p\',this.value)"><option value="">— انتخاب —</option>' + sel + '</select></td>';
+      h += '<td><input type="number" value="' + (it.quantity || '') + '" oninput="Inv.oc(' + i + ',\'q\',this.value)" style="text-align:center"></td>';
+      h += '<td><input type="number" value="' + (it.unitPrice || '') + '" oninput="Inv.oc(' + i + ',\'u\',this.value)" style="text-align:center"></td>';
+      h += '<td class="it-total" id="t' + i + '">' + UI.fn(it.total) + '</td>';
+      h += '<td style="text-align:center"><button class="bi2 d" onclick="Inv.ri2(' + i + ')" style="width:28px;height:28px"><i class="bi bi-x" style="font-size:.8rem"></i></button></td></tr>';
+    }
+    h += '</tbody></table>';
+    w.innerHTML = h;
+  },
+
+  calc: function() {
+    var sub = 0;
+    this.items.forEach(function(it) { sub += (it.total || 0); });
+    var sh = parseInt(document.getElementById('iSh') ? document.getElementById('iSh').value : 0) || 0;
+    var dis = parseInt(document.getElementById('iDis') ? document.getElementById('iDis').value : 0) || 0;
+    var pd = parseInt(document.getElementById('iPd') ? document.getElementById('iPd').value : 0) || 0;
+    var gr = sub + sh - dis;
+    if (gr < 0) gr = 0;
+    var rm = gr - pd;
+    var el = document.getElementById('iT');
+    if (!el) return;
+    var h = '<div class="inv-ti"><label>جمع اقلام</label><div class="val">' + UI.fn(sub) + ' ریال</div></div>';
+    if (sh > 0) h += '<div class="inv-ti"><label>حمل</label><div class="val">' + UI.fn(sh) + ' ریال</div></div>';
+    if (dis > 0) h += '<div class="inv-ti"><label>تخفیف</label><div class="val g">−' + UI.fn(dis) + ' ریال</div></div>';
+    h += '<div class="inv-ti"><label>نهایی</label><div class="val g">' + UI.fn(gr) + ' ریال</div></div>';
+    h += '<div class="inv-ti"><label>پرداختی</label><div class="val">' + UI.fn(pd) + ' ریال</div></div>';
+    h += '<div class="inv-ti"><label>مانده</label><div class="val ' + (rm > 0 ? 'r' : 'g') + '">' + UI.fn(rm) + ' ریال</div></div>';
+    el.innerHTML = h;
+  },
+
+  save: async function(type, id) {
+    var cid = parseInt(document.getElementById('iCt').value) || null;
+    if (!cid) { UI.toast('شخص', 'e'); return; }
+    if (!this.items.length) { UI.toast('یک قلم', 'e'); return; }
+    for (var i = 0; i < this.items.length; i++) {
+      if (!this.items[i].productId) { UI.toast('کالای ردیف ' + (i + 1), 'e'); return; }
+    }
+    var pr = await DB.all('products'), pm = {};
+    pr.forEach(function(p) { pm[p.id] = p.name; });
+    var items = this.items.map(function(it) {
+      return { productId: it.productId, productName: pm[it.productId] || '—', quantity: it.quantity, unitPrice: it.unitPrice, total: it.total };
+    });
+    var sub = 0;
+    items.forEach(function(it) { sub += it.total; });
+    var sh = parseInt(document.getElementById('iSh').value) || 0;
+    var dis = parseInt(document.getElementById('iDis').value) || 0;
+    var pd = parseInt(document.getElementById('iPd').value) || 0;
+    var isS = type === 'sale';
+    var brId = isS ? (parseInt(document.getElementById('iBr').value) || null) : null;
+    var brCm = isS ? (parseInt(document.getElementById('iCm').value) || 0) : 0;
+
+    var d = {
+      type: type,
+      fiscalYearId: STATE.yearId,
+      invoiceNumber: document.getElementById('iNm').value,
+      date: document.getElementById('iDt').value,
+      contactId: cid,
+      brokerId: brId,
+      brokerCommission: brCm,
+      items: items,
+      subtotal: sub,
+      shippingCost: sh,
+      discount: dis,
+      grandTotal: Math.max(0, sub + sh - dis),
+      paidAmount: pd,
+      printSize: document.getElementById('iPrt') ? document.getElementById('iPrt').value : 'a4',
+      notes: document.getElementById('iNt').value.trim()
+    };
+
+    if (id) {
+      var ex = await DB.get('invoices', id);
+      Object.assign(ex, d);
+      await DB.put('invoices', ex);
+      UI.toast('ویرایش شد');
+    } else {
+      await DB.add('invoices', d);
+      UI.toast('فاکتور ثبت شد');
+    }
+    UI.close();
+    await this.ll(type);
+  },
+
+  vw: async function(id) {
+    var v = await DB.get('invoices', id);
+    if (!v) return;
+    var ct = await DB.all('contacts'), cm = {};
+    ct.forEach(function(c) { cm[c.id] = c.name; });
+    var rm = (v.grandTotal || 0) - (v.paidAmount || 0);
+    var r = '';
+    v.items.forEach(function(it, i) {
+      r += '<tr><td>' + (i + 1) + '</td><td>' + (it.productName || '—') + '</td><td>' + UI.fn(it.quantity) + '</td><td>' + UI.fn(it.unitPrice) + '</td><td>' + UI.fn(it.total) + '</td></tr>';
+    });
+    var h = '<div class="fr mb"><div><strong>شماره:</strong> ' + v.invoiceNumber + '</div><div><strong>تاریخ:</strong> ' + v.date + '</div></div>';
+    h += '<div class="mb"><strong>شخص:</strong> ' + (cm[v.contactId] || '—') + '</div>';
+    h += '<table class="inv-tbl"><thead><tr><th>#</th><th>کالا</th><th>تعداد</th><th>قیمت</th><th>جمع</th></tr></thead><tbody>' + r + '</tbody></table>';
+    h += '<div class="inv-totals" style="margin-top:14px">';
+    h += '<div class="inv-ti"><label>جمع</label><div class="val">' + UI.fn(v.subtotal) + '</div></div>';
+    if (v.shippingCost) h += '<div class="inv-ti"><label>حمل</label><div class="val">' + UI.fn(v.shippingCost) + '</div></div>';
+    if (v.discount) h += '<div class="inv-ti"><label>تخفیف</label><div class="val g">−' + UI.fn(v.discount) + '</div></div>';
+    h += '<div class="inv-ti"><label>نهایی</label><div class="val g">' + UI.fn(v.grandTotal) + '</div></div>';
+    h += '<div class="inv-ti"><label>پرداختی</label><div class="val">' + UI.fn(v.paidAmount) + '</div></div>';
+    h += '<div class="inv-ti"><label>مانده</label><div class="val ' + (rm > 0 ? 'r' : 'g') + '">' + UI.fn(rm) + '</div></div></div>';
+    if (v.notes) h += '<p style="margin-top:12px;color:var(--txs)"><strong>توضیحات:</strong> ' + v.notes + '</p>';
+    UI.open('فاکتور ' + v.invoiceNumber, h,
+      '<button class="btn bp" onclick="Inv.pr(' + v.id + ',\'a4\')">A4</button>' +
+      '<button class="btn bw" onclick="Inv.pr(' + v.id + ',\'a5\')">A5</button>' +
+      '<button class="btn bo" onclick="UI.close()">بستن</button>', true);
+  },
+
+  pr: async function(id, sz) {
+    var v = await DB.get('invoices', id);
+    if (!v) return;
+    var ct = await DB.all('contacts'), cm = {};
+    ct.forEach(function(c) { cm[c.id] = c.name; });
+    var isS = v.type === 'sale';
+    var rm = (v.grandTotal || 0) - (v.paidAmount || 0);
+    var r = '';
+    v.items.forEach(function(it, i) {
+      r += '<tr><td style="border:1px solid #ccc;padding:6px;text-align:center">' + (i + 1) + '</td>';
+      r += '<td style="border:1px solid #ccc;padding:6px">' + (it.productName || '—') + '</td>';
+      r += '<td style="border:1px solid #ccc;padding:6px;text-align:center">' + UI.fn(it.quantity) + '</td>';
+      r += '<td style="border:1px solid #ccc;padding:6px;text-align:center">' + UI.fn(it.unitPrice) + '</td>';
+      r += '<td style="border:1px solid #ccc;padding:6px;text-align:center">' + UI.fn(it.total) + '</td></tr>';
+    });
+
+    var pd = sz === 'a5' ? '8mm' : '15mm';
+    var fs = sz === 'a5' ? '10px' : '12px';
+
+    var h = '<div style="direction:rtl;font-family:Vazirmatn,sans-serif;padding:' + pd + ';font-size:' + fs + '">';
+    h += '<div style="display:flex;justify-content:space-between;border-bottom:3px double #000;padding-bottom:10px;margin-bottom:12px">';
+    h += '<div><h1 style="font-size:' + (sz === 'a5' ? '14px' : '18px') + ';margin:0">' + (isS ? 'فاکتور فروش' : 'فاکتور خرید') + '</h1>';
+    h += '<div style="font-size:10px;color:#666">پارچه‌بان</div></div>';
+    h += '<div style="text-align:left;font-size:10px;line-height:1.8">شماره: <strong>' + v.invoiceNumber + '</strong><br>تاریخ: ' + v.date + '</div></div>';
+
+    h += '<div style="margin-bottom:12px;border:1px solid #ddd;padding:8px;border-radius:6px;font-size:10px">';
+    h += '<strong>' + (isS ? 'مشتری' : 'تأمین‌کننده') + ':</strong> ' + (cm[v.contactId] || '—') + '</div>';
+
+    h += '<table style="width:100%;border-collapse:collapse;margin-bottom:12px">';
+    h += '<thead><tr>';
+    h += '<th style="border:1px solid #ccc;padding:6px;background:#f0f0f0">#</th>';
+    h += '<th style="border:1px solid #ccc;padding:6px;background:#f0f0f0">شرح</th>';
+    h += '<th style="border:1px solid #ccc;padding:6px;background:#f0f0f0">تعداد</th>';
+    h += '<th style="border:1px solid #ccc;padding:6px;background:#f0f0f0">قیمت واحد</th>';
+    h += '<th style="border:1px solid #ccc;padding:6px;background:#f0f0f0">جمع</th>';
+    h += '</tr></thead><tbody>' + r + '</tbody></table>';
+
+    h += '<div style="display:flex;flex-wrap:wrap;gap:16px;font-size:10px;margin-bottom:14px">';
+    h += '<div>جمع: <strong>' + UI.fn(v.subtotal) + '</strong></div>';
+    if (v.shippingCost) h += '<div>حمل: <strong>' + UI.fn(v.shippingCost) + '</strong></div>';
+    if (v.discount) h += '<div style="color:#16a34a">تخفیف: <strong>−' + UI.fn(v.discount) + '</strong></div>';
+    h += '<div>نهایی: <strong>' + UI.fn(v.grandTotal) + '</strong></div>';
+    h += '<div>پرداختی: <strong>' + UI.fn(v.paidAmount) + '</strong></div>';
+    h += '<div>مانده: <strong>' + UI.fn(rm) + '</strong></div></div>';
+
+    if (v.notes) h += '<div style="margin-bottom:10px;font-size:10px"><strong>توضیحات:</strong> ' + v.notes + '</div>';
+
+    h += '<div style="display:flex;justify-content:space-between;margin-top:24px;padding-top:10px;border-top:1px solid #ccc">';
+    h += '<div style="width:180px;text-align:center;font-size:9px;padding-top:24px;border-top:1px solid #999">مهر و امضای ' + (isS ? 'فروشنده' : 'خریدار') + '</div>';
+    h += '<div style="width:180px;text-align:center;font-size:9px;padding-top:24px;border-top:1px solid #999">مهر و امضای ' + (isS ? 'خریدار' : 'فروشنده') + '</div>';
+    h += '</div></div>';
+
+    document.getElementById('printArea').innerHTML = h;
+    window.print();
+  },
+
+  rm: async function(id, type) {
+    if (!await UI.confirm('حذف شود؟')) return;
+    await DB.del('invoices', id);
+    UI.toast('حذف شد');
+    await this.ll(type);
+  }
+};
 var Pay={
   render: async function() {
     currentPage = 'payments';
