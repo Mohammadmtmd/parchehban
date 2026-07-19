@@ -506,9 +506,10 @@ var Inv = {
     var fs = sz === 'a5' ? '9.5px' : '11px';
     var h = '<div style="direction:rtl;font-family:Vazirmatn,sans-serif;padding:' + pd + ';font-size:' + fs + ';position:relative;min-height:' + (sz === 'a5' ? '180mm' : '250mm') + '">';
 
-    /* ── سربرگ وسط‌چین ── */
+        /* ── سربرگ وسط‌چین ── */
     h += '<div style="text-align:center;border-bottom:2.5px double #000;padding-bottom:10px;margin-bottom:14px">';
     h += '<h1 style="font-size:' + (sz === 'a5' ? '15px' : '20px') + ';margin:0;font-weight:800">' + (isS ? 'صورتحساب فروش' : 'صورتحساب خرید') + '</h1>';
+    h += '<div style="font-size:11px;color:#555;margin-top:2px">پارچه‌بان</div>';
     h += '<div style="display:flex;justify-content:space-between;margin-top:8px;font-size:10px;color:#444">';
     h += '<div>شماره: <strong>' + v.invoiceNumber + '</strong></div>';
     h += '<div>تاریخ: ' + v.date + '</div>';
@@ -530,16 +531,16 @@ var Inv = {
     h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:90px">جمع (ریال)</th>';
     h += '</tr></thead><tbody>' + r + '</tbody></table>';
 
-    /* ── جمع‌بندی سمت چپ ── */
-    h += '<div style="display:flex;justify-content:flex-start;margin-bottom:20px">';
-    h += '<table style="border-collapse:collapse;font-size:' + fs + ';min-width:260px">';
+        /* ── جمع‌بندی سمت چپ ── */
+    h += '<div style="display:flex;justify-content:flex-end;margin-bottom:20px">';
+    h += '<table style="border-collapse:collapse;font-size:' + fs + ';width:auto">';
     var addRow = function(label, value, bold, color) {
       var bg = bold ? 'background:#f0f0f0;' : '';
       var fw = bold ? 'font-weight:800;' : '';
       var cl = color ? 'color:' + color + ';' : '';
       return '<tr>' +
-        '<td style="padding:5px 12px;border:1px solid #ddd;' + bg + fw + cl + '">' + label + '</td>' +
-        '<td style="padding:5px 12px;border:1px solid #ddd;text-align:left;' + bg + fw + cl + 'white-space:nowrap">' + value + '</td></tr>';
+        '<td style="padding:4px 10px;border:1px solid #ddd;white-space:nowrap;' + bg + fw + cl + '">' + label + '</td>' +
+        '<td style="padding:4px 10px;border:1px solid #ddd;text-align:left;white-space:nowrap;' + bg + fw + cl + '">' + value + '</td></tr>';
     };
     h += addRow('جمع اقلام', UI.fn(v.subtotal) + ' ریال', false);
     if (v.shippingCost) h += addRow('هزینه حمل', UI.fn(v.shippingCost) + ' ریال', false);
@@ -548,11 +549,11 @@ var Inv = {
     if (v.paidAmount) h += addRow('پرداخت شده', UI.fn(v.paidAmount) + ' ریال', false, '#16a34a');
     if (rm > 0) h += addRow('مانده فاکتور', UI.fn(rm) + ' ریال', true, '#dc2626');
     h += '</table></div>';
-
-    /* ── مبلغ به حروف ── */
-    h += '<div style="margin-bottom:20px;padding:8px 12px;border:1px dashed #bbb;border-radius:6px;font-size:10px;background:#fafafa">';
-    h += '<strong>مبلغ کل:</strong> ' + num2fa(v.grandTotal) + ' ریال';
-    if (rm > 0) h += ' — <strong>مانده:</strong> ' + num2fa(rm) + ' ریال';
+    
+        /* ── مبلغ به حروف ── */
+    h += '<div style="margin-bottom:20px;padding:8px 12px;border:1px dashed #bbb;border-radius:6px;font-size:10px;background:#fafafa;line-height:2">';
+    h += '<div><strong>مبلغ کل:</strong> ' + num2fa(v.grandTotal) + ' ریال</div>';
+    if (rm > 0) h += '<div><strong>مانده:</strong> ' + num2fa(rm) + ' ریال</div>';
     h += '</div>';
 
     /* ── توضیحات ── */
