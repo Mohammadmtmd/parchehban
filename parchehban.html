@@ -547,13 +547,13 @@ var Inv = {
     if (v.discount) h += addRow('تخفیف', '−' + UI.fn(v.discount) + ' ریال', false, '#16a34a');
     h += addRow('مبلغ قابل پرداخت', UI.fn(v.grandTotal) + ' ریال', true);
     if (v.paidAmount) h += addRow('پرداخت شده', UI.fn(v.paidAmount) + ' ریال', false, '#16a34a');
-    if (rm > 0) h += addRow('مانده فاکتور', UI.fn(rm) + ' ریال', true, '#dc2626');
+    if (rm > 0) h += addRow('مانده حساب کل', UI.fn(Math.abs(cBal)) + ' ریال', true, '#dc2626');
     h += '</table></div>';
     
-        /* ── مبلغ به حروف ── */
+           /* ── مبلغ به حروف ── */
     h += '<div style="margin-bottom:20px;padding:8px 12px;border:1px dashed #bbb;border-radius:6px;font-size:10px;background:#fafafa;line-height:2">';
     h += '<div><strong>مبلغ کل:</strong> ' + num2fa(v.grandTotal) + ' ریال</div>';
-    if (rm > 0) h += '<div><strong>مانده:</strong> ' + num2fa(rm) + ' ریال</div>';
+    if (Math.abs(cBal) > 0) h += '<div><strong>مانده حساب کل:</strong> ' + num2fa(Math.abs(cBal)) + ' ریال</div>';
     h += '</div>';
 
     /* ── توضیحات ── */
