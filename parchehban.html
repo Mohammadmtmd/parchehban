@@ -91,7 +91,12 @@ textarea.fc{resize:vertical;min-height:70px}.fr{display:grid;grid-template-colum
 .lg-box{flex:1;min-width:140px;padding:14px;border-radius:10px;text-align:center}.lg-box.bl{background:var(--pl);color:var(--p)}.lg-box.gn{background:var(--okl);color:var(--ok)}.lg-box.rd{background:var(--dl);color:var(--d)}.lg-box h4{font-size:1.2rem;font-weight:800}.lg-box p{font-size:.76rem;margin-top:2px;font-weight:600}
 td.cd{color:var(--d);font-weight:600}td.cc{color:var(--ok);font-weight:600}td.bp2{color:var(--d);font-weight:700}td.bn{color:var(--ok);font-weight:700}
 .pr-area{display:none}
-@media print{body *{visibility:hidden}.pr-area,.pr-area *{visibility:visible}.pr-area{display:block!important;position:fixed;top:0;left:0;width:100%;background:#fff;z-index:9999}}
+@media print {
+  body * { visibility: hidden; }
+  .pr-area, .pr-area * { visibility: visible; }
+  .pr-area { display: block !important; position: absolute; top: 0; left: 0; width: 100%; background: #fff; z-index: 9999; }
+  @page { margin: 10mm; }
+}
 @media(max-width:768px){.sb{transform:translateX(100%)}.mn{margin-right:0}.fr{grid-template-columns:1fr}.sg{grid-template-columns:1fr 1fr}.ct{padding:14px}.md.w{max-width:100%}.tp{flex-wrap:wrap;height:auto;padding:10px 14px}.g2{grid-template-columns:1fr}}
 </style>
 </head>
@@ -177,7 +182,33 @@ var Con={tl:function(t){return{customer:'مشتری',supplier:'تأمین‌کن
 var Cat={render:async function(){currentPage='categories';UI.nav('categories');UI.title('bi-bookmark-fill','گروه‌بندی');UI.act('<button class="btn bp" onclick="Cat.form()"><i class="bi bi-plus-lg"></i>گروه جدید</button>');var cs=await DB.all('categories');if(!cs.length){UI.content('<div class="cd"><div class="em"><i class="bi bi-bookmark"></i><p>گروهی نیست</p></div></div>');return;}var r='';for(var i=0;i<cs.length;i++){r+='<tr><td>'+(i+1)+'</td><td><strong>'+cs[i].name+'</strong></td><td><button class="bi2" onclick="Cat.form('+cs[i].id+')"><i class="bi bi-pencil"></i></button> <button class="bi2 d" onclick="Cat.rm('+cs[i].id+')"><i class="bi bi-trash3"></i></button></td></tr>';}UI.content('<div class="cd"><div class="cd-h">گروه‌ها</div><div class="tw"><table><thead><tr><th>#</th><th>نام</th><th></th></tr></thead><tbody>'+r+'</tbody></table></div></div>');},form:async function(id){var c=id?await DB.get('categories',id):null;UI.open(c?'ویرایش':'گروه جدید','<div class="fg"><label>نام</label><input class="fc" id="cNm" value="'+(c?c.name:'')+'"></div>','<button class="btn bp" onclick="Cat.save('+(id||'null')+')">'+(c?'ذخیره':'ثبت')+'</button><button class="btn bo" onclick="UI.close()">انصراف</button>');document.getElementById('cNm').focus();},save:async function(id){var n=document.getElementById('cNm').value.trim();if(!n){UI.toast('نام','e');return;}if(id){var c=await DB.get('categories',id);c.name=n;await DB.put('categories',c);}else{await DB.add('categories',{name:n});}UI.close();await this.render();UI.toast('ذخیره شد');},rm:async function(id){if(!await UI.confirm('حذف شود؟'))return;await DB.del('categories',id);await this.render();}};
 
 var Prod={stock:async function(pid){var invs=await DB.all('invoices');var s=0;invs.forEach(function(inv){(inv.items||[]).forEach(function(it){if(it.productId===pid)s+=inv.type==='purchase'?it.quantity:-it.quantity;});});return s;},render:async function(){currentPage='products';UI.nav('products');UI.title('bi-box-seam-fill','کالا');UI.act('<button class="btn bp" onclick="Prod.form()"><i class="bi bi-plus-lg"></i>کالای جدید</button>');var ps=await DB.all('products'),cs=await DB.all('categories'),cm={};cs.forEach(function(c){cm[c.id]=c.name;});if(!ps.length){UI.content('<div class="cd"><div class="em"><i class="bi bi-box-seam"></i><p>کالایی نیست</p></div></div>');return;}var r='';for(var i=0;i<ps.length;i++){var p=ps[i];var st=await Prod.stock(p.id);var sc=(p.minStock&&st<=p.minStock)||st<0?'color:var(--d);font-weight:700':'';r+='<tr><td>'+(i+1)+'</td><td><strong>'+p.name+'</strong></td><td>'+(cm[p.categoryId]||'—')+'</td><td>'+(p.colorShade||'—')+'</td><td>'+(p.colorCatalog||'—')+'</td><td style="'+sc+'">'+UI.fn(st)+'</td><td><button class="bi2" onclick="Prod.form('+p.id+')"><i class="bi bi-pencil"></i></button> <button class="bi2 d" onclick="Prod.rm('+p.id+')"><i class="bi bi-trash3"></i></button></td></tr>';}UI.content('<div class="cd"><div class="cd-h">کالاها</div><div class="tw"><table><thead><tr><th>#</th><th>نام</th><th>گروه</th><th>شید</th><th>کالیته</th><th>موجودی</th><th></th></tr></thead><tbody>'+r+'</tbody></table></div></div>');},form:async function(id){var p=id?await DB.get('products',id):null;var cs=await DB.all('categories');var co='<option value="">—</option>';cs.forEach(function(c){co+='<option value="'+c.id+'"'+(p&&p.categoryId===c.id?' selected':'')+'>'+c.name+'</option>';});var uo='';['متر','طاقه','رول','عدد'].forEach(function(u){uo+='<option value="'+u+'"'+(p&&p.unit===u?' selected':'')+'>'+u+'</option>';});UI.open(p?'ویرایش':'کالای جدید','<div class="fg"><label>گروه</label><select class="fc" id="pCt">'+co+'</select></div><div class="fg"><label>نام</label><input class="fc" id="pNm" value="'+(p?p.name:'')+'"></div><div class="fr"><div class="fg"><label>شید</label><input class="fc" id="pSh" value="'+(p?(p.colorShade||''):'')+'"></div><div class="fg"><label>کالیته</label><input class="fc" id="pCa" value="'+(p?(p.colorCatalog||''):'')+'"></div></div><div class="fr"><div class="fg"><label>واحد</label><select class="fc" id="pUn">'+uo+'</select></div><div class="fg"><label>حداقل</label><input class="fc" id="pMn" type="number" value="'+(p?(p.minStock||0):0)+'"></div></div>','<button class="btn bp" onclick="Prod.save('+(id||'null')+')">'+(p?'ذخیره':'ثبت')+'</button><button class="btn bo" onclick="UI.close()">انصراف</button>',true);document.getElementById('pNm').focus();},save:async function(id){var d={categoryId:parseInt(document.getElementById('pCt').value)||null,name:document.getElementById('pNm').value.trim(),colorShade:document.getElementById('pSh').value.trim(),colorCatalog:document.getElementById('pCa').value.trim(),unit:document.getElementById('pUn').value,minStock:parseInt(document.getElementById('pMn').value)||0};if(!d.name){UI.toast('نام','e');return;}if(id){var ex=await DB.get('products',id);Object.assign(ex,d);await DB.put('products',ex);}else{await DB.add('products',d);}UI.close();await this.render();UI.toast('ذخیره شد');},rm:async function(id){if(!await UI.confirm('حذف شود؟'))return;await DB.del('products',id);await this.render();}};
-
+function num2fa(n) {
+  if (n === 0) return 'صفر';
+  var yekan = ['','یک','دو','سه','چهار','پنج','شش','هفت','هشت','نه'];
+  var dahgan = ['','','بیست','سی','چهل','پنجاه','شصت','هفتاد','هشتاد','نود'];
+  var sadgan = ['','یکصد','دویست','سیصد','چهارصد','پانصد','ششصد','هفتصد','هشتصد','نهصد'];
+  var bakhsh = ['','هزار','میلیون','میلیارد'];
+  var str = '', grp = 0, neg = false;
+  if (n < 0) { neg = true; n = -n; }
+  n = Math.floor(n);
+  while (n > 0) {
+    var g = n % 1000, s = '';
+    if (g > 0) {
+      var s0 = Math.floor(g / 100), s1 = Math.floor((g % 100) / 10), s2 = g % 10;
+      if (s0) s += sadgan[s0] + ' و ';
+      if (s1 >= 2) { s += dahgan[s1]; if (s2) s += ' و ' + yekan[s2]; }
+      else if (s1 === 1) {
+        var teen = ['ده','یازده','دوازده','سیزده','چهارده','پانزده','شانزده','هفده','هجده','نوزده'];
+        s += teen[s2];
+      } else if (s2) { s += yekan[s2]; }
+      if (bakhsh[grp]) s += ' ' + bakhsh[grp];
+      if (str) str = s + ' و ' + str; else str = s;
+    }
+    n = Math.floor(n / 1000); grp++;
+  }
+  return (neg ? 'منفی ' : '') + str;
+}
+  
 var Inv = {
   items: [],
   prodOpts: '',
@@ -449,7 +480,7 @@ var Inv = {
       '<button class="btn bo" onclick="UI.close()">بستن</button>', true);
   },
 
-  pr: async function(id, sz) {
+    pr: async function(id, sz) {
     var v = await DB.get('invoices', id);
     if (!v) return;
     var ct = await DB.all('contacts'), cm = {};
@@ -457,67 +488,89 @@ var Inv = {
     var isS = v.type === 'sale';
     var rm = (v.grandTotal || 0) - (v.paidAmount || 0);
     var cBal = await this.contactBal(v.contactId);
-    var r = '';
-    v.items.forEach(function(it, i) {
-      r += '<tr><td style="border:1px solid #ccc;padding:6px;text-align:center">' + (i + 1) + '</td>';
-      r += '<td style="border:1px solid #ccc;padding:6px">' + (it.productName || '—') + '</td>';
-      r += '<td style="border:1px solid #ccc;padding:6px;text-align:center">' + UI.fn(it.quantity) + '</td>';
-      r += '<td style="border:1px solid #ccc;padding:6px;text-align:center">' + UI.fn(it.unitPrice) + '</td>';
-      r += '<td style="border:1px solid #ccc;padding:6px;text-align:center">' + UI.fn(it.total) + '</td></tr>';
-    });
-
-    var pd = sz === 'a5' ? '8mm' : '15mm';
-    var fs = sz === 'a5' ? '10px' : '12px';
-    var h = '<div style="direction:rtl;font-family:Vazirmatn,sans-serif;padding:' + pd + ';font-size:' + fs + '">';
-
-    /* سربرگ */
-    h += '<div style="display:flex;justify-content:space-between;border-bottom:3px double #000;padding-bottom:10px;margin-bottom:12px">';
-    h += '<div><h1 style="font-size:' + (sz === 'a5' ? '14px' : '18px') + ';margin:0">' + (isS ? 'صورتحساب فروش' : 'صورتحساب خرید') + '</h1>';
-    h += '<div style="font-size:10px;color:#666">پارچه‌بان</div></div>';
-    h += '<div style="text-align:left;font-size:10px;line-height:1.8">';
-    h += 'شماره: <strong>' + v.invoiceNumber + '</strong><br>';
-    h += 'تاریخ: ' + v.date + '</div></div>';
-
-    /* اطلاعات شخص */
-    h += '<div style="display:flex;justify-content:space-between;margin-bottom:12px;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:10px">';
-    h += '<div><strong>' + (isS ? 'مشتری:' : 'تأمین‌کننده:') + '</strong> ' + (cm[v.contactId] || '—') + '</div>';
-    var balLabel = cBal > 0 ? 'بدهکار' : cBal < 0 ? 'بستانکار' : 'تسویه';
-    h += '<div><strong>مانده حساب:</strong> ' + UI.fn(Math.abs(cBal)) + ' ریال ' + balLabel + '</div></div>';
+    var custName = cm[v.contactId] || '—';
 
     /* جدول اقلام */
-    h += '<table style="width:100%;border-collapse:collapse;margin-bottom:12px">';
+    var r = '';
+    v.items.forEach(function(it, i) {
+      r += '<tr>';
+      r += '<td style="border:1px solid #ccc;padding:5px 8px;text-align:center;width:30px">' + (i + 1) + '</td>';
+      r += '<td style="border:1px solid #ccc;padding:5px 8px">' + (it.productName || '—') + '</td>';
+      r += '<td style="border:1px solid #ccc;padding:5px 8px;text-align:center;width:60px">' + UI.fn(it.quantity) + '</td>';
+      r += '<td style="border:1px solid #ccc;padding:5px 8px;text-align:center;width:90px">' + UI.fn(it.unitPrice) + '</td>';
+      r += '<td style="border:1px solid #ccc;padding:5px 8px;text-align:center;width:90px">' + UI.fn(it.total) + '</td>';
+      r += '</tr>';
+    });
+
+    var pd = sz === 'a5' ? '8mm' : '12mm';
+    var fs = sz === 'a5' ? '9.5px' : '11px';
+    var h = '<div style="direction:rtl;font-family:Vazirmatn,sans-serif;padding:' + pd + ';font-size:' + fs + ';position:relative;min-height:' + (sz === 'a5' ? '180mm' : '250mm') + '">';
+
+    /* ── سربرگ وسط‌چین ── */
+    h += '<div style="text-align:center;border-bottom:2.5px double #000;padding-bottom:10px;margin-bottom:14px">';
+    h += '<h1 style="font-size:' + (sz === 'a5' ? '15px' : '20px') + ';margin:0;font-weight:800">' + (isS ? 'صورتحساب فروش' : 'صورتحساب خرید') + '</h1>';
+    h += '<div style="display:flex;justify-content:space-between;margin-top:8px;font-size:10px;color:#444">';
+    h += '<div>شماره: <strong>' + v.invoiceNumber + '</strong></div>';
+    h += '<div>تاریخ: ' + v.date + '</div>';
+    h += '</div></div>';
+
+    /* ── اطلاعات شخص ── */
+    var balLabel = cBal > 0 ? 'بدهکار' : cBal < 0 ? 'بستانکار' : 'تسویه';
+    h += '<div style="display:flex;justify-content:space-between;margin-bottom:14px;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:10px;background:#fafafa">';
+    h += '<div><strong>' + (isS ? 'مشتری:' : 'تأمین‌کننده:') + '</strong> ' + custName + '</div>';
+    h += '<div><strong>کل مانده حساب:</strong> ' + UI.fn(Math.abs(cBal)) + ' ریال ' + balLabel + '</div></div>';
+
+    /* ── جدول اقلام ── */
+    h += '<table style="width:100%;border-collapse:collapse;margin-bottom:14px">';
     h += '<thead><tr>';
-    h += '<th style="border:1px solid #ccc;padding:6px;background:#f0f0f0;width:30px">#</th>';
-    h += '<th style="border:1px solid #ccc;padding:6px;background:#f0f0f0">شرح کالا</th>';
-    h += '<th style="border:1px solid #ccc;padding:6px;background:#f0f0f0;width:60px">تعداد</th>';
-    h += '<th style="border:1px solid #ccc;padding:6px;background:#f0f0f0;width:90px">فی</th>';
-    h += '<th style="border:1px solid #ccc;padding:6px;background:#f0f0f0;width:90px">جمع</th>';
+    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:30px">#</th>';
+    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0">شرح کالا</th>';
+    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:60px">تعداد</th>';
+    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:90px">فی (ریال)</th>';
+    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:90px">جمع (ریال)</th>';
     h += '</tr></thead><tbody>' + r + '</tbody></table>';
 
-    /* جمع‌بندی */
-    h += '<table style="width:100%;border-collapse:collapse;margin-bottom:14px;font-size:10px">';
+    /* ── جمع‌بندی سمت چپ ── */
+    h += '<div style="display:flex;justify-content:flex-start;margin-bottom:20px">';
+    h += '<table style="border-collapse:collapse;font-size:' + fs + ';min-width:260px">';
     var addRow = function(label, value, bold, color) {
-      return '<tr><td style="padding:5px 10px;border:1px solid #ddd;text-align:left;font-weight:' + (bold ? '700' : '400') + (color ? ';color:' + color : '') + '">' + label + '</td>' +
-             '<td style="padding:5px 10px;border:1px solid #ddd;text-align:right;font-weight:' + (bold ? '700' : '400') + (color ? ';color:' + color : '') + '">' + value + '</td></tr>';
+      var bg = bold ? 'background:#f0f0f0;' : '';
+      var fw = bold ? 'font-weight:800;' : '';
+      var cl = color ? 'color:' + color + ';' : '';
+      return '<tr>' +
+        '<td style="padding:5px 12px;border:1px solid #ddd;' + bg + fw + cl + '">' + label + '</td>' +
+        '<td style="padding:5px 12px;border:1px solid #ddd;text-align:left;' + bg + fw + cl + 'white-space:nowrap">' + value + '</td></tr>';
     };
     h += addRow('جمع اقلام', UI.fn(v.subtotal) + ' ریال', false);
     if (v.shippingCost) h += addRow('هزینه حمل', UI.fn(v.shippingCost) + ' ریال', false);
     if (v.discount) h += addRow('تخفیف', '−' + UI.fn(v.discount) + ' ریال', false, '#16a34a');
     h += addRow('مبلغ قابل پرداخت', UI.fn(v.grandTotal) + ' ریال', true);
     if (v.paidAmount) h += addRow('پرداخت شده', UI.fn(v.paidAmount) + ' ریال', false, '#16a34a');
-    if (rm > 0) h += addRow('مانده', UI.fn(rm) + ' ریال', true, '#dc2626');
-    h += '</table>';
+    if (rm > 0) h += addRow('مانده فاکتور', UI.fn(rm) + ' ریال', true, '#dc2626');
+    h += '</table></div>';
 
-    if (v.notes) h += '<div style="margin-bottom:10px;font-size:10px"><strong>توضیحات:</strong> ' + v.notes + '</div>';
+    /* ── مبلغ به حروف ── */
+    h += '<div style="margin-bottom:20px;padding:8px 12px;border:1px dashed #bbb;border-radius:6px;font-size:10px;background:#fafafa">';
+    h += '<strong>مبلغ کل:</strong> ' + num2fa(v.grandTotal) + ' ریال';
+    if (rm > 0) h += ' — <strong>مانده:</strong> ' + num2fa(rm) + ' ریال';
+    h += '</div>';
 
-    /* مهر و امضا */
-    h += '<div style="display:flex;justify-content:space-between;margin-top:24px;padding-top:10px;border-top:1px solid #ccc">';
-    h += '<div style="width:180px;text-align:center;font-size:9px;padding-top:24px;border-top:1px solid #999">مهر و امضای ' + (isS ? 'فروشنده' : 'خریدار') + '</div>';
-    h += '<div style="width:180px;text-align:center;font-size:9px;padding-top:24px;border-top:1px solid #999">مهر و امضای ' + (isS ? 'خریدار' : 'فروشنده') + '</div>';
-    h += '</div></div>';
+    /* ── توضیحات ── */
+    if (v.notes) h += '<div style="margin-bottom:14px;font-size:10px"><strong>توضیحات:</strong> ' + v.notes + '</div>';
 
+    /* ── مهر و امضا (پایین سمت چپ) ── */
+    h += '<div style="position:absolute;bottom:' + pd + ';left:' + pd + ';right:' + pd + ';display:flex;justify-content:space-between;padding-top:10px;border-top:1px solid #ccc">';
+    h += '<div style="width:160px;text-align:center;font-size:9px;padding-top:20px;border-top:1px solid #999">مهر و امضای ' + (isS ? 'فروشنده' : 'خریدار') + '</div>';
+    h += '<div style="width:160px;text-align:center;font-size:9px;padding-top:20px;border-top:1px solid #999">مهر و امضای ' + (isS ? 'خریدار' : 'فروشنده') + '</div>';
+    h += '</div>';
+
+    h += '</div>';
+
+    /* پاک کردن قبل از رندر */
     document.getElementById('printArea').innerHTML = h;
-    window.print();
+
+    /* تأخیر کوتاه برای رندر کامل، سپس پرینت */
+    setTimeout(function() { window.print(); }, 300);
   },
 
   rm: async function(id, type) {
