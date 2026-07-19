@@ -308,6 +308,9 @@ var Inv = {
     var inv = id ? await DB.get('invoices', id) : null;
     var isS = type === 'sale';
     var ct = await DB.all('contacts'), pr = await DB.all('products');
+        /* ذخیره نقشه کالاها برای دسترسی سریع */
+    this.prodMap = {};
+    pr.forEach(function(p) { Inv.prodMap[p.id] = p; });
     this.prodOpts = '';
     pr.forEach(function(p) { Inv.prodOpts += '<option value="' + p.id + '">' + p.name + (p.colorCatalog ? ' (' + p.colorCatalog + ')' : '') + '</option>'; });
     var rc = ct.filter(function(c) { return isS ? (c.type === 'customer' || c.type === 'both') : (c.type === 'supplier' || c.type === 'both'); });
@@ -365,28 +368,52 @@ var Inv = {
 
   ai: function() { this.items.push({ productId: '', quantity: 0, unitPrice: 0, total: 0 }); this.ri(); },
   ri2: function(i) { this.items.splice(i, 1); this.ri(); this.calc(); },
-  oc: function(i, f, v) {
+    oc: function(i, f, v) {
     var it = this.items[i];
-    if (f === 'p') it.productId = parseInt(v) || '';
+    if (f === 'p') {
+      it.productId = parseInt(v) || '';
+      if (it.productId && this.prodMap && this.prodMap[it.productId]) {
+        var pr = this.prodMap[it.productId];
+        if (!it.catalog) it.catalog = pr.colorCatalog || '';
+        if (!it.shade) it.shade = pr.colorShade || '';
+      }
+      /* بروزرسانی فیلدهای کالیته و شید */
+      var catEl = document.getElementById('cat' + i);
+      if (catEl) catEl.value = it.catalog || '';
+      var shEl = document.getElementById('sh' + i);
+      if (shEl) shEl.value = it.shade || '';
+    }
     else if (f === 'q') it.quantity = parseFloat(v) || 0;
     else if (f === 'u') it.unitPrice = parseInt(v) || 0;
+    else if (f === 'cat') it.catalog = v;
+    else if (f === 'sh') it.shade = v;
     it.total = it.quantity * it.unitPrice;
     var tc = document.getElementById('t' + i);
     if (tc) tc.textContent = UI.fn(it.total);
     this.calc();
   },
 
-  ri: function() {
+    ri: function() {
     var w = document.getElementById('iW');
     if (!w) return;
     if (!this.items.length) { w.innerHTML = '<div style="text-align:center;padding:20px;color:var(--txm)">یک قلم اضافه کنید</div>'; return; }
     var opts = this.prodOpts;
-    var h = '<table class="inv-tbl"><thead><tr><th>#</th><th>کالا</th><th>تعداد</th><th>قیمت واحد</th><th>جمع</th><th></th></tr></thead><tbody>';
+    var h = '<table class="inv-tbl"><thead><tr>';
+    h += '<th style="width:30px">#</th>';
+    h += '<th>کالا</th>';
+    h += '<th style="width:90px">کالیته</th>';
+    h += '<th style="width:80px">شید</th>';
+    h += '<th style="width:80px">تعداد</th>';
+    h += '<th style="width:100px">قیمت واحد</th>';
+    h += '<th style="width:90px">جمع</th>';
+    h += '<th style="width:30px"></th></tr></thead><tbody>';
     for (var i = 0; i < this.items.length; i++) {
       var it = this.items[i];
       var sel = it.productId ? opts.replace('value="' + it.productId + '"', 'value="' + it.productId + '" selected') : opts;
       h += '<tr><td>' + (i + 1) + '</td>';
       h += '<td><select onchange="Inv.oc(' + i + ',\'p\',this.value)"><option value="">—</option>' + sel + '</select></td>';
+      h += '<td><input id="cat' + i + '" type="text" value="' + (it.catalog || '') + '" oninput="Inv.oc(' + i + ',\'cat\',this.value)" style="text-align:center;font-size:.8rem"></td>';
+      h += '<td><input id="sh' + i + '" type="text" value="' + (it.shade || '') + '" oninput="Inv.oc(' + i + ',\'sh\',this.value)" style="text-align:center;font-size:.8rem"></td>';
       h += '<td><input type="number" value="' + (it.quantity || '') + '" oninput="Inv.oc(' + i + ',\'q\',this.value)" style="text-align:center"></td>';
       h += '<td><input type="number" value="' + (it.unitPrice || '') + '" oninput="Inv.oc(' + i + ',\'u\',this.value)" style="text-align:center"></td>';
       h += '<td class="it-total" id="t' + i + '">' + UI.fn(it.total) + '</td>';
@@ -424,8 +451,8 @@ var Inv = {
     }
     var pr = await DB.all('products'), pm = {};
     pr.forEach(function(p) { pm[p.id] = p.name; });
-    var items = this.items.map(function(it) {
-      return { productId: it.productId, productName: pm[it.productId] || '—', quantity: it.quantity, unitPrice: it.unitPrice, total: it.total };
+        var items = this.items.map(function(it) {
+      return { productId: it.productId, productName: pm[it.productId] || '—', catalog: it.catalog || '', shade: it.shade || '', quantity: it.quantity, unitPrice: it.unitPrice, total: it.total };
     });
     var sub = 0; items.forEach(function(it) { sub += it.total; });
     var sh = parseInt(document.getElementById('iSh').value) || 0;
@@ -490,14 +517,16 @@ var Inv = {
     var cBal = await this.contactBal(v.contactId);
     var custName = cm[v.contactId] || '—';
 
-    /* جدول اقلام */
+        /* جدول اقلام */
     var r = '';
     v.items.forEach(function(it, i) {
       r += '<tr>';
       r += '<td style="border:1px solid #ccc;padding:5px 8px;text-align:center;width:30px">' + (i + 1) + '</td>';
       r += '<td style="border:1px solid #ccc;padding:5px 8px">' + (it.productName || '—') + '</td>';
+      r += '<td style="border:1px solid #ccc;padding:5px 8px;text-align:center;width:80px">' + (it.catalog || '—') + '</td>';
+      r += '<td style="border:1px solid #ccc;padding:5px 8px;text-align:center;width:70px">' + (it.shade || '—') + '</td>';
       r += '<td style="border:1px solid #ccc;padding:5px 8px;text-align:center;width:60px">' + UI.fn(it.quantity) + '</td>';
-      r += '<td style="border:1px solid #ccc;padding:5px 8px;text-align:center;width:90px">' + UI.fn(it.unitPrice) + '</td>';
+      r += '<td style="border:1px solid #ccc;padding:5px 8px;text-align:center;width:80px">' + UI.fn(it.unitPrice) + '</td>';
       r += '<td style="border:1px solid #ccc;padding:5px 8px;text-align:center;width:90px">' + UI.fn(it.total) + '</td>';
       r += '</tr>';
     });
@@ -520,15 +549,17 @@ var Inv = {
         h += '<div style="margin-bottom:14px;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:10px;background:#fafafa">';
     h += '<strong>' + (isS ? 'مشتری:' : 'تأمین‌کننده:') + '</strong> ' + custName + '</div>';
 
-    /* ── جدول اقلام ── */
+    /* ── هدر ── */
     h += '<table style="width:100%;border-collapse:collapse;margin-bottom:14px">';
     h += '<thead><tr>';
     h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:30px">#</th>';
     h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0">شرح کالا</th>';
+    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:80px">کالیته</th>';
+    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:70px">شید</th>';
     h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:60px">تعداد</th>';
-    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:90px">فی (ریال)</th>';
-    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:90px">جمع (ریال)</th>';
-    h += '</tr></thead><tbody>' + r + '</tbody></table>';
+    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:80px">فی</th>';
+    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:90px">جمع</th>';
+    h += '</tr></thead>';
 
         /* ── جمع‌بندی سمت چپ ── */
     h += '<div style="display:flex;justify-content:flex-end;margin-bottom:20px">';
