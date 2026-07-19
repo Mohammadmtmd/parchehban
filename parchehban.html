@@ -517,9 +517,8 @@ var Inv = {
 
     /* ── اطلاعات شخص ── */
     var balLabel = cBal > 0 ? 'بدهکار' : cBal < 0 ? 'بستانکار' : 'تسویه';
-    h += '<div style="display:flex;justify-content:space-between;margin-bottom:14px;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:10px;background:#fafafa">';
-    h += '<div><strong>' + (isS ? 'مشتری:' : 'تأمین‌کننده:') + '</strong> ' + custName + '</div>';
-    h += '<div><strong>کل مانده حساب:</strong> ' + UI.fn(Math.abs(cBal)) + ' ریال ' + balLabel + '</div></div>';
+        h += '<div style="margin-bottom:14px;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:10px;background:#fafafa">';
+    h += '<strong>' + (isS ? 'مشتری:' : 'تأمین‌کننده:') + '</strong> ' + custName + '</div>';
 
     /* ── جدول اقلام ── */
     h += '<table style="width:100%;border-collapse:collapse;margin-bottom:14px">';
