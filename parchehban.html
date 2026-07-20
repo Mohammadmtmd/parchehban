@@ -370,12 +370,16 @@ var Inv = {
   ri2: function(i) { this.items.splice(i, 1); this.ri(); this.calc(); },
   oc: function(i, f, v) {
     var it = this.items[i];
-    if (f === 'p') {
+        if (f === 'p') {
       it.productId = parseInt(v) || '';
+      /* همیشه کالیته و شید کالای جدید را بگذار */
       if (it.productId && this.prodMap && this.prodMap[it.productId]) {
         var pp = this.prodMap[it.productId];
-        if (!it.catalog) it.catalog = pp.colorCatalog || '';
-        if (!it.shade) it.shade = pp.colorShade || '';
+        it.catalog = pp.colorCatalog || '';
+        it.shade = pp.colorShade || '';
+      } else {
+        it.catalog = '';
+        it.shade = '';
       }
       var catEl = document.getElementById('cat' + i);
       if (catEl) catEl.value = it.catalog || '';
@@ -480,37 +484,95 @@ var Inv = {
     UI.close(); await this.ll(type);
   },
 
-  vw: async function(id) {
+    vw: async function(id) {
     var v = await DB.get('invoices', id);
     if (!v) return;
     var ct = await DB.all('contacts'), cm = {};
     ct.forEach(function(c) { cm[c.id] = c.name; });
+    var isS = v.type === 'sale';
     var rm = (v.grandTotal || 0) - (v.paidAmount || 0);
     var cBal = await this.contactBal(v.contactId);
+    var custName = cm[v.contactId] || '—';
+
     var r = '';
     v.items.forEach(function(it, i) {
-      r += '<tr><td>' + (i + 1) + '</td><td>' + (it.productName || '—') + '</td><td>' + UI.fn(it.quantity) + '</td><td>' + UI.fn(it.unitPrice) + '</td><td>' + UI.fn(it.total) + '</td></tr>';
+      r += '<tr style="white-space:nowrap">';
+      r += '<td style="border:1px solid #ccc;padding:3px 6px;text-align:center">' + (i + 1) + '</td>';
+      r += '<td style="border:1px solid #ccc;padding:3px 6px;white-space:nowrap">' + (it.productName || '—') + '</td>';
+      r += '<td style="border:1px solid #ccc;padding:3px 6px;text-align:center">' + (it.catalog || '—') + '</td>';
+      r += '<td style="border:1px solid #ccc;padding:3px 6px;text-align:center">' + (it.shade || '—') + '</td>';
+      r += '<td style="border:1px solid #ccc;padding:3px 6px;text-align:center">' + UI.fn(it.quantity) + '</td>';
+      r += '<td style="border:1px solid #ccc;padding:3px 6px;text-align:center">' + UI.fn(it.unitPrice) + '</td>';
+      r += '<td style="border:1px solid #ccc;padding:3px 6px;text-align:center">' + UI.fn(it.total) + '</td>';
+      r += '</tr>';
     });
-    var h = '<div class="fr mb"><div><strong>شماره:</strong> ' + v.invoiceNumber + '</div><div><strong>تاریخ:</strong> ' + v.date + '</div></div>';
-    h += '<div class="mb"><strong>شخص:</strong> ' + (cm[v.contactId] || '—') + '</div>';
-    h += '<table class="inv-tbl"><thead><tr><th>#</th><th>کالا</th><th>تعداد</th><th>قیمت</th><th>جمع</th></tr></thead><tbody>' + r + '</tbody></table>';
-    h += '<div class="inv-totals" style="margin-top:14px">';
-    h += '<div class="inv-ti"><label>جمع</label><div class="val">' + UI.fn(v.subtotal) + '</div></div>';
-    if (v.shippingCost) h += '<div class="inv-ti"><label>حمل</label><div class="val">' + UI.fn(v.shippingCost) + '</div></div>';
-    if (v.discount) h += '<div class="inv-ti"><label>تخفیف</label><div class="val g">−' + UI.fn(v.discount) + '</div></div>';
-    h += '<div class="inv-ti"><label>نهایی</label><div class="val g">' + UI.fn(v.grandTotal) + '</div></div>';
-    h += '<div class="inv-ti"><label>پرداختی</label><div class="val">' + UI.fn(v.paidAmount) + '</div></div>';
-    h += '<div class="inv-ti"><label>مانده فاکتور</label><div class="val ' + (rm > 0 ? 'r' : 'g') + '">' + UI.fn(rm) + '</div></div></div>';
-    var balLabel = cBal > 0 ? 'بدهکار' : cBal < 0 ? 'بستانکار' : 'تسویه';
-    var balColor = cBal > 0 ? 'var(--d)' : cBal < 0 ? 'var(--ok)' : 'var(--txs)';
-    h += '<div style="margin-top:10px;padding:10px;background:var(--bg);border-radius:8px;font-size:.85rem"><strong>مانده حساب ' + (cm[v.contactId] || '') + ':</strong> <span style="color:' + balColor + ';font-weight:700">' + UI.fn(Math.abs(cBal)) + ' ریال ' + balLabel + '</span></div>';
-    if (v.notes) h += '<p style="margin-top:10px;color:var(--txs)"><strong>توضیحات:</strong> ' + v.notes + '</p>';
-    UI.open('فاکتور ' + v.invoiceNumber, h,
-      '<button class="btn bp" onclick="Inv.pr(' + v.id + ',\'a4\')">A4</button>' +
-      '<button class="btn bw" onclick="Inv.pr(' + v.id + ',\'a5\')">A5</button>' +
+
+    var addRow = function(label, value, bold, color) {
+      var bg = bold ? 'background:#f0f0f0;' : '';
+      var fw = bold ? 'font-weight:800;' : '';
+      var cl = color ? 'color:' + color + ';' : '';
+      return '<tr>' +
+        '<td style="padding:4px 10px;border:1px solid #ddd;white-space:nowrap;' + bg + fw + cl + '">' + label + '</td>' +
+        '<td style="padding:4px 10px;border:1px solid #ddd;text-align:left;white-space:nowrap;' + bg + fw + cl + '">' + value + '</td></tr>';
+    };
+
+    var h = '<div style="direction:rtl;font-family:Vazirmatn,sans-serif;padding:12mm;font-size:11px;position:relative;min-height:250mm;background:#fff">';
+
+    /* سربرگ */
+    h += '<div style="text-align:center;border-bottom:2.5px double #000;padding-bottom:10px;margin-bottom:14px">';
+    h += '<h1 style="font-size:20px;margin:0;font-weight:800">' + (isS ? 'صورتحساب فروش' : 'صورتحساب خرید') + '</h1>';
+    h += '<div style="font-size:11px;color:#555;margin-top:2px">پارچه‌بان</div>';
+    h += '<div style="display:flex;justify-content:space-between;margin-top:8px;font-size:10px;color:#444">';
+    h += '<div>شماره: <strong>' + v.invoiceNumber + '</strong></div>';
+    h += '<div>تاریخ: ' + v.date + '</div>';
+    h += '</div></div>';
+
+    /* شخص */
+    h += '<div style="margin-bottom:14px;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:10px;background:#fafafa">';
+    h += '<strong>' + (isS ? 'مشتری:' : 'تأمین‌کننده:') + '</strong> ' + custName + '</div>';
+
+    /* جدول اقلام */
+    h += '<table style="width:100%;border-collapse:collapse;margin-bottom:14px;font-size:10px">';
+    h += '<thead><tr>';
+    h += '<th style="border:1px solid #ccc;padding:4px 6px;background:#f0f0f0;width:25px;text-align:center">#</th>';
+    h += '<th style="border:1px solid #ccc;padding:4px 6px;background:#f0f0f0;text-align:center;white-space:nowrap">شرح کالا</th>';
+    h += '<th style="border:1px solid #ccc;padding:4px 6px;background:#f0f0f0;width:65px;text-align:center;white-space:nowrap">کالیته</th>';
+    h += '<th style="border:1px solid #ccc;padding:4px 6px;background:#f0f0f0;width:55px;text-align:center;white-space:nowrap">شید</th>';
+    h += '<th style="border:1px solid #ccc;padding:4px 6px;background:#f0f0f0;width:45px;text-align:center;white-space:nowrap">تعداد</th>';
+    h += '<th style="border:1px solid #ccc;padding:4px 6px;background:#f0f0f0;width:70px;text-align:center;white-space:nowrap">فی (ریال)</th>';
+    h += '<th style="border:1px solid #ccc;padding:4px 6px;background:#f0f0f0;width:80px;text-align:center;white-space:nowrap">جمع (ریال)</th>';
+    h += '</tr></thead><tbody>' + r + '</tbody></table>';
+
+    /* جمع‌بندی */
+    h += '<div style="display:flex;justify-content:flex-end;margin-bottom:16px">';
+    h += '<table style="border-collapse:collapse;font-size:9.5px;width:auto">';
+    h += addRow('جمع اقلام', UI.fn(v.subtotal) + ' ریال', false);
+    if (v.shippingCost) h += addRow('هزینه حمل', UI.fn(v.shippingCost) + ' ریال', false);
+    if (v.discount) h += addRow('تخفیف', '−' + UI.fn(v.discount) + ' ریال', false, '#16a34a');
+    h += addRow('مبلغ قابل پرداخت', UI.fn(v.grandTotal) + ' ریال', true);
+    if (v.paidAmount) h += addRow('پرداخت شده', UI.fn(v.paidAmount) + ' ریال', false, '#16a34a');
+    if (rm > 0) h += addRow('مانده حساب کل', UI.fn(Math.abs(cBal)) + ' ریال', true, '#dc2626');
+    h += '</table></div>';
+
+    /* مبلغ فارسی */
+    h += '<div style="margin-bottom:16px;padding:6px 10px;border:1px dashed #bbb;border-radius:6px;font-size:9px;background:#fafafa;line-height:1.8">';
+    h += '<div><strong>مبلغ کل:</strong> ' + num2fa(v.grandTotal) + ' ریال</div>';
+    if (Math.abs(cBal) > 0) h += '<div><strong>مانده حساب کل:</strong> ' + num2fa(Math.abs(cBal)) + ' ریال</div>';
+    h += '</div>';
+
+    if (v.notes) h += '<div style="margin-bottom:14px;font-size:10px"><strong>توضیحات:</strong> ' + v.notes + '</div>';
+
+    /* امضا */
+    h += '<div style="position:absolute;bottom:12mm;left:12mm;right:12mm;display:flex;justify-content:space-between;padding-top:10px;border-top:1px solid #ccc">';
+    h += '<div style="width:160px;text-align:center;font-size:9px;padding-top:20px;border-top:1px solid #999">مهر و امضای ' + (isS ? 'فروشنده' : 'خریدار') + '</div>';
+    h += '<div style="width:160px;text-align:center;font-size:9px;padding-top:20px;border-top:1px solid #999">مهر و امضای ' + (isS ? 'خریدار' : 'فروشنده') + '</div>';
+    h += '</div></div>';
+
+    UI.open('پیش‌نمایش ' + v.invoiceNumber, h,
+      '<button class="btn bp" onclick="Inv.pr(' + v.id + ',\'a4\')"><i class="bi bi-printer"></i>A4</button>' +
+      '<button class="btn bw" onclick="Inv.pr(' + v.id + ',\'a5\')"><i class="bi bi-printer"></i>A5</button>' +
       '<button class="btn bo" onclick="UI.close()">بستن</button>', true);
   },
-
       pr: async function(id, sz) {
     var v = await DB.get('invoices', id);
     if (!v) return;
