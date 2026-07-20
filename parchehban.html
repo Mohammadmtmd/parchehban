@@ -511,7 +511,7 @@ var Inv = {
       '<button class="btn bo" onclick="UI.close()">بستن</button>', true);
   },
 
-    pr: async function(id, sz) {
+      pr: async function(id, sz) {
     var v = await DB.get('invoices', id);
     if (!v) return;
     var ct = await DB.all('contacts'), cm = {};
@@ -521,7 +521,6 @@ var Inv = {
     var cBal = await this.contactBal(v.contactId);
     var custName = cm[v.contactId] || '—';
 
-        /* جدول اقلام */
     var r = '';
     v.items.forEach(function(it, i) {
       r += '<tr>';
@@ -535,6 +534,24 @@ var Inv = {
       r += '</tr>';
     });
 
+    var pd = sz === 'a5' ? '8mm' : '12mm';
+    var fs = sz === 'a5' ? '9.5px' : '11px';
+    var h = '<div style="direction:rtl;font-family:Vazirmatn,sans-serif;padding:' + pd + ';font-size:' + fs + ';position:relative;min-height:' + (sz === 'a5' ? '180mm' : '250mm') + '">';
+
+    /* سربرگ */
+    h += '<div style="text-align:center;border-bottom:2.5px double #000;padding-bottom:10px;margin-bottom:14px">';
+    h += '<h1 style="font-size:' + (sz === 'a5' ? '15px' : '20px') + ';margin:0;font-weight:800">' + (isS ? 'صورتحساب فروش' : 'صورتحساب خرید') + '</h1>';
+    h += '<div style="font-size:11px;color:#555;margin-top:2px">پارچه‌بان</div>';
+    h += '<div style="display:flex;justify-content:space-between;margin-top:8px;font-size:10px;color:#444">';
+    h += '<div>شماره: <strong>' + v.invoiceNumber + '</strong></div>';
+    h += '<div>تاریخ: ' + v.date + '</div>';
+    h += '</div></div>';
+
+    /* اطلاعات شخص */
+    h += '<div style="margin-bottom:14px;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:10px;background:#fafafa">';
+    h += '<strong>' + (isS ? 'مشتری:' : 'تأمین‌کننده:') + '</strong> ' + custName + '</div>';
+
+    /* جدول اقلام */
     h += '<table style="width:100%;border-collapse:collapse;margin-bottom:14px">';
     h += '<thead><tr>';
     h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:30px">#</th>';
@@ -545,34 +562,8 @@ var Inv = {
     h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:80px">فی</th>';
     h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:90px">جمع</th>';
     h += '</tr></thead><tbody>' + r + '</tbody></table>';
-      
-        /* ── سربرگ وسط‌چین ── */
-    h += '<div style="text-align:center;border-bottom:2.5px double #000;padding-bottom:10px;margin-bottom:14px">';
-    h += '<h1 style="font-size:' + (sz === 'a5' ? '15px' : '20px') + ';margin:0;font-weight:800">' + (isS ? 'صورتحساب فروش' : 'صورتحساب خرید') + '</h1>';
-    h += '<div style="font-size:11px;color:#555;margin-top:2px">پارچه‌بان</div>';
-    h += '<div style="display:flex;justify-content:space-between;margin-top:8px;font-size:10px;color:#444">';
-    h += '<div>شماره: <strong>' + v.invoiceNumber + '</strong></div>';
-    h += '<div>تاریخ: ' + v.date + '</div>';
-    h += '</div></div>';
 
-    /* ── اطلاعات شخص ── */
-    var balLabel = cBal > 0 ? 'بدهکار' : cBal < 0 ? 'بستانکار' : 'تسویه';
-        h += '<div style="margin-bottom:14px;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:10px;background:#fafafa">';
-    h += '<strong>' + (isS ? 'مشتری:' : 'تأمین‌کننده:') + '</strong> ' + custName + '</div>';
-
-    /* ── هدر ── */
-    h += '<table style="width:100%;border-collapse:collapse;margin-bottom:14px">';
-    h += '<thead><tr>';
-    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:30px">#</th>';
-    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0">شرح کالا</th>';
-    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:80px">کالیته</th>';
-    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:70px">شید</th>';
-    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:60px">تعداد</th>';
-    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:80px">فی</th>';
-    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:90px">جمع</th>';
-    h += '</tr></thead>';
-
-        /* ── جمع‌بندی سمت چپ ── */
+    /* جمع‌بندی سمت چپ */
     h += '<div style="display:flex;justify-content:flex-end;margin-bottom:20px">';
     h += '<table style="border-collapse:collapse;font-size:' + fs + ';width:auto">';
     var addRow = function(label, value, bold, color) {
@@ -590,28 +581,22 @@ var Inv = {
     if (v.paidAmount) h += addRow('پرداخت شده', UI.fn(v.paidAmount) + ' ریال', false, '#16a34a');
     if (rm > 0) h += addRow('مانده حساب کل', UI.fn(Math.abs(cBal)) + ' ریال', true, '#dc2626');
     h += '</table></div>';
-    
-           /* ── مبلغ به حروف ── */
+
+    /* مبلغ به حروف */
     h += '<div style="margin-bottom:20px;padding:8px 12px;border:1px dashed #bbb;border-radius:6px;font-size:10px;background:#fafafa;line-height:2">';
     h += '<div><strong>مبلغ کل:</strong> ' + num2fa(v.grandTotal) + ' ریال</div>';
     if (Math.abs(cBal) > 0) h += '<div><strong>مانده حساب کل:</strong> ' + num2fa(Math.abs(cBal)) + ' ریال</div>';
     h += '</div>';
 
-    /* ── توضیحات ── */
     if (v.notes) h += '<div style="margin-bottom:14px;font-size:10px"><strong>توضیحات:</strong> ' + v.notes + '</div>';
 
-    /* ── مهر و امضا (پایین سمت چپ) ── */
+    /* مهر و امضا */
     h += '<div style="position:absolute;bottom:' + pd + ';left:' + pd + ';right:' + pd + ';display:flex;justify-content:space-between;padding-top:10px;border-top:1px solid #ccc">';
     h += '<div style="width:160px;text-align:center;font-size:9px;padding-top:20px;border-top:1px solid #999">مهر و امضای ' + (isS ? 'فروشنده' : 'خریدار') + '</div>';
     h += '<div style="width:160px;text-align:center;font-size:9px;padding-top:20px;border-top:1px solid #999">مهر و امضای ' + (isS ? 'خریدار' : 'فروشنده') + '</div>';
-    h += '</div>';
+    h += '</div></div>';
 
-    h += '</div>';
-
-    /* پاک کردن قبل از رندر */
     document.getElementById('printArea').innerHTML = h;
-
-    /* تأخیر کوتاه برای رندر کامل، سپس پرینت */
     setTimeout(function() { window.print(); }, 300);
   },
 
