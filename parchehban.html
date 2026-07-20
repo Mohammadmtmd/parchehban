@@ -368,16 +368,15 @@ var Inv = {
 
   ai: function() { this.items.push({ productId: '', quantity: 0, unitPrice: 0, total: 0 }); this.ri(); },
   ri2: function(i) { this.items.splice(i, 1); this.ri(); this.calc(); },
-    oc: function(i, f, v) {
+  oc: function(i, f, v) {
     var it = this.items[i];
     if (f === 'p') {
       it.productId = parseInt(v) || '';
       if (it.productId && this.prodMap && this.prodMap[it.productId]) {
-        var pr = this.prodMap[it.productId];
-        if (!it.catalog) it.catalog = pr.colorCatalog || '';
-        if (!it.shade) it.shade = pr.colorShade || '';
+        var pp = this.prodMap[it.productId];
+        if (!it.catalog) it.catalog = pp.colorCatalog || '';
+        if (!it.shade) it.shade = pp.colorShade || '';
       }
-      /* بروزرسانی فیلدهای کالیته و شید */
       var catEl = document.getElementById('cat' + i);
       if (catEl) catEl.value = it.catalog || '';
       var shEl = document.getElementById('sh' + i);
@@ -393,31 +392,36 @@ var Inv = {
     this.calc();
   },
 
-    ri: function() {
+      ri: function() {
     var w = document.getElementById('iW');
     if (!w) return;
-    if (!this.items.length) { w.innerHTML = '<div style="text-align:center;padding:20px;color:var(--txm)">یک قلم اضافه کنید</div>'; return; }
+    if (!this.items.length) {
+      w.innerHTML = '<div style="text-align:center;padding:20px;color:var(--txm)">یک قلم اضافه کنید</div>';
+      return;
+    }
     var opts = this.prodOpts;
     var h = '<table class="inv-tbl"><thead><tr>';
     h += '<th style="width:30px">#</th>';
     h += '<th>کالا</th>';
     h += '<th style="width:90px">کالیته</th>';
     h += '<th style="width:80px">شید</th>';
-    h += '<th style="width:80px">تعداد</th>';
-    h += '<th style="width:100px">قیمت واحد</th>';
+    h += '<th style="width:70px">تعداد</th>';
+    h += '<th style="width:100px">قیمت</th>';
     h += '<th style="width:90px">جمع</th>';
     h += '<th style="width:30px"></th></tr></thead><tbody>';
     for (var i = 0; i < this.items.length; i++) {
       var it = this.items[i];
       var sel = it.productId ? opts.replace('value="' + it.productId + '"', 'value="' + it.productId + '" selected') : opts;
-      h += '<tr><td>' + (i + 1) + '</td>';
+      h += '<tr>';
+      h += '<td style="text-align:center">' + (i + 1) + '</td>';
       h += '<td><select onchange="Inv.oc(' + i + ',\'p\',this.value)"><option value="">—</option>' + sel + '</select></td>';
       h += '<td><input id="cat' + i + '" type="text" value="' + (it.catalog || '') + '" oninput="Inv.oc(' + i + ',\'cat\',this.value)" style="text-align:center;font-size:.8rem"></td>';
       h += '<td><input id="sh' + i + '" type="text" value="' + (it.shade || '') + '" oninput="Inv.oc(' + i + ',\'sh\',this.value)" style="text-align:center;font-size:.8rem"></td>';
       h += '<td><input type="number" value="' + (it.quantity || '') + '" oninput="Inv.oc(' + i + ',\'q\',this.value)" style="text-align:center"></td>';
       h += '<td><input type="number" value="' + (it.unitPrice || '') + '" oninput="Inv.oc(' + i + ',\'u\',this.value)" style="text-align:center"></td>';
       h += '<td class="it-total" id="t' + i + '">' + UI.fn(it.total) + '</td>';
-      h += '<td style="text-align:center"><button class="bi2 d" onclick="Inv.ri2(' + i + ')" style="width:28px;height:28px"><i class="bi bi-x" style="font-size:.8rem"></i></button></td></tr>';
+      h += '<td style="text-align:center"><button class="bi2 d" onclick="Inv.ri2(' + i + ')" style="width:28px;height:28px"><i class="bi bi-x" style="font-size:.8rem"></i></button></td>';
+      h += '</tr>';
     }
     h += '</tbody></table>';
     w.innerHTML = h;
@@ -525,16 +529,23 @@ var Inv = {
       r += '<td style="border:1px solid #ccc;padding:5px 8px">' + (it.productName || '—') + '</td>';
       r += '<td style="border:1px solid #ccc;padding:5px 8px;text-align:center;width:80px">' + (it.catalog || '—') + '</td>';
       r += '<td style="border:1px solid #ccc;padding:5px 8px;text-align:center;width:70px">' + (it.shade || '—') + '</td>';
-      r += '<td style="border:1px solid #ccc;padding:5px 8px;text-align:center;width:60px">' + UI.fn(it.quantity) + '</td>';
+      r += '<td style="border:1px solid #ccc;padding:5px 8px;text-align:center;width:55px">' + UI.fn(it.quantity) + '</td>';
       r += '<td style="border:1px solid #ccc;padding:5px 8px;text-align:center;width:80px">' + UI.fn(it.unitPrice) + '</td>';
       r += '<td style="border:1px solid #ccc;padding:5px 8px;text-align:center;width:90px">' + UI.fn(it.total) + '</td>';
       r += '</tr>';
     });
 
-    var pd = sz === 'a5' ? '8mm' : '12mm';
-    var fs = sz === 'a5' ? '9.5px' : '11px';
-    var h = '<div style="direction:rtl;font-family:Vazirmatn,sans-serif;padding:' + pd + ';font-size:' + fs + ';position:relative;min-height:' + (sz === 'a5' ? '180mm' : '250mm') + '">';
-
+    h += '<table style="width:100%;border-collapse:collapse;margin-bottom:14px">';
+    h += '<thead><tr>';
+    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:30px">#</th>';
+    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0">شرح کالا</th>';
+    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:80px">کالیته</th>';
+    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:70px">شید</th>';
+    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:55px">تعداد</th>';
+    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:80px">فی</th>';
+    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:90px">جمع</th>';
+    h += '</tr></thead><tbody>' + r + '</tbody></table>';
+      
         /* ── سربرگ وسط‌چین ── */
     h += '<div style="text-align:center;border-bottom:2.5px double #000;padding-bottom:10px;margin-bottom:14px">';
     h += '<h1 style="font-size:' + (sz === 'a5' ? '15px' : '20px') + ';margin:0;font-weight:800">' + (isS ? 'صورتحساب فروش' : 'صورتحساب خرید') + '</h1>';
