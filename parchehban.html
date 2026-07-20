@@ -521,16 +521,16 @@ var Inv = {
     var cBal = await this.contactBal(v.contactId);
     var custName = cm[v.contactId] || '—';
 
-    var r = '';
+        var r = '';
     v.items.forEach(function(it, i) {
-      r += '<tr>';
-      r += '<td style="border:1px solid #ccc;padding:5px 8px;text-align:center;width:30px">' + (i + 1) + '</td>';
-      r += '<td style="border:1px solid #ccc;padding:5px 8px">' + (it.productName || '—') + '</td>';
-      r += '<td style="border:1px solid #ccc;padding:5px 8px;text-align:center;width:80px">' + (it.catalog || '—') + '</td>';
-      r += '<td style="border:1px solid #ccc;padding:5px 8px;text-align:center;width:70px">' + (it.shade || '—') + '</td>';
-      r += '<td style="border:1px solid #ccc;padding:5px 8px;text-align:center;width:55px">' + UI.fn(it.quantity) + '</td>';
-      r += '<td style="border:1px solid #ccc;padding:5px 8px;text-align:center;width:80px">' + UI.fn(it.unitPrice) + '</td>';
-      r += '<td style="border:1px solid #ccc;padding:5px 8px;text-align:center;width:90px">' + UI.fn(it.total) + '</td>';
+      r += '<tr style="white-space:nowrap">';
+      r += '<td style="border:1px solid #ccc;padding:3px 6px;text-align:center">' + (i + 1) + '</td>';
+      r += '<td style="border:1px solid #ccc;padding:3px 6px;white-space:nowrap">' + (it.productName || '—') + '</td>';
+      r += '<td style="border:1px solid #ccc;padding:3px 6px;text-align:center">' + (it.catalog || '—') + '</td>';
+      r += '<td style="border:1px solid #ccc;padding:3px 6px;text-align:center">' + (it.shade || '—') + '</td>';
+      r += '<td style="border:1px solid #ccc;padding:3px 6px;text-align:center">' + UI.fn(it.quantity) + '</td>';
+      r += '<td style="border:1px solid #ccc;padding:3px 6px;text-align:center">' + UI.fn(it.unitPrice) + '</td>';
+      r += '<td style="border:1px solid #ccc;padding:3px 6px;text-align:center">' + UI.fn(it.total) + '</td>';
       r += '</tr>';
     });
 
@@ -551,21 +551,21 @@ var Inv = {
     h += '<div style="margin-bottom:14px;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:10px;background:#fafafa">';
     h += '<strong>' + (isS ? 'مشتری:' : 'تأمین‌کننده:') + '</strong> ' + custName + '</div>';
 
-    /* جدول اقلام */
-    h += '<table style="width:100%;border-collapse:collapse;margin-bottom:14px">';
+        /* جدول اقلام */
+    h += '<table style="width:100%;border-collapse:collapse;margin-bottom:14px;font-size:' + (sz === 'a5' ? '8.5px' : '10px') + '">';
     h += '<thead><tr>';
-    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:30px">#</th>';
-    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0">شرح کالا</th>';
-    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:80px">کالیته</th>';
-    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:70px">شید</th>';
-    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:55px">تعداد</th>';
-    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:80px">فی</th>';
-    h += '<th style="border:1px solid #ccc;padding:6px 8px;background:#f0f0f0;width:90px">جمع</th>';
+    h += '<th style="border:1px solid #ccc;padding:4px 6px;background:#f0f0f0;width:25px;text-align:center">#</th>';
+    h += '<th style="border:1px solid #ccc;padding:4px 6px;background:#f0f0f0;text-align:center;white-space:nowrap">شرح کالا</th>';
+    h += '<th style="border:1px solid #ccc;padding:4px 6px;background:#f0f0f0;width:65px;text-align:center;white-space:nowrap">کالیته</th>';
+    h += '<th style="border:1px solid #ccc;padding:4px 6px;background:#f0f0f0;width:55px;text-align:center;white-space:nowrap">شید</th>';
+    h += '<th style="border:1px solid #ccc;padding:4px 6px;background:#f0f0f0;width:45px;text-align:center;white-space:nowrap">تعداد</th>';
+    h += '<th style="border:1px solid #ccc;padding:4px 6px;background:#f0f0f0;width:70px;text-align:center;white-space:nowrap">فی (ریال)</th>';
+    h += '<th style="border:1px solid #ccc;padding:4px 6px;background:#f0f0f0;width:80px;text-align:center;white-space:nowrap">جمع (ریال)</th>';
     h += '</tr></thead><tbody>' + r + '</tbody></table>';
 
-    /* جمع‌بندی سمت چپ */
-    h += '<div style="display:flex;justify-content:flex-end;margin-bottom:20px">';
-    h += '<table style="border-collapse:collapse;font-size:' + fs + ';width:auto">';
+        /* جمع‌بندی */
+    h += '<div style="display:flex;justify-content:flex-end;margin-bottom:16px">';
+    h += '<table style="border-collapse:collapse;font-size:' + (sz === 'a5' ? '8px' : '9.5px') + ';width:auto">';
     var addRow = function(label, value, bold, color) {
       var bg = bold ? 'background:#f0f0f0;' : '';
       var fw = bold ? 'font-weight:800;' : '';
@@ -583,7 +583,7 @@ var Inv = {
     h += '</table></div>';
 
     /* مبلغ به حروف */
-    h += '<div style="margin-bottom:20px;padding:8px 12px;border:1px dashed #bbb;border-radius:6px;font-size:10px;background:#fafafa;line-height:2">';
+    h += '<div style="margin-bottom:16px;padding:6px 10px;border:1px dashed #bbb;border-radius:6px;font-size:9px;background:#fafafa;line-height:1.8">';
     h += '<div><strong>مبلغ کل:</strong> ' + num2fa(v.grandTotal) + ' ریال</div>';
     if (Math.abs(cBal) > 0) h += '<div><strong>مانده حساب کل:</strong> ' + num2fa(Math.abs(cBal)) + ' ریال</div>';
     h += '</div>';
