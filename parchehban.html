@@ -238,11 +238,14 @@ var Inv = {
   },
 
   render: async function(type) {
-    currentPage = type === 'sale' ? 'sales' : 'purchase';
+    currentPage = type === 'sale' ? 'sales' : type === 'proforma' ? 'proforma' : 'purchase';
+    var isP = type === 'proforma';
     var isS = type === 'sale';
+    var title = isP ? 'پیش فاکتور' : isS ? 'فاکتور فروش' : 'فاکتور خرید';
+    var icon = isP ? 'bi-file-earmark-text' : isS ? 'bi-receipt-cutoff' : 'bi-cart-fill';
     UI.nav(currentPage);
-    UI.title(isS ? 'bi-receipt-cutoff' : 'bi-cart-fill', isS ? 'فاکتور فروش' : 'فاکتور خرید');
-    UI.act('<button class="btn bp" onclick="Inv.showF(\'' + type + '\')"><i class="bi bi-plus-lg"></i>جدید</button> <button class="btn bo" onclick="Inv.ec(\'' + type + '\')"><i class="bi bi-download"></i>Excel</button>');
+    UI.title(icon, title);
+    UI.act('<button class="btn bp" onclick="Inv.showF(\'' + type + '\')"><i class="bi bi-plus-lg"></i>جدید</button>');
     await this.ll(type);
   },
 
