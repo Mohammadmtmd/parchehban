@@ -322,7 +322,10 @@ var Inv = {
     pr.forEach(function(p) { Inv.prodMap[p.id] = p; });
     this.prodOpts = '';
     pr.forEach(function(p) { Inv.prodOpts += '<option value="' + p.id + '">' + p.name + (p.colorCatalog ? ' (' + p.colorCatalog + ')' : '') + '</option>'; });
-    var rc = ct.filter(function(c) { return isS ? (c.type === 'customer' || c.type === 'both') : (c.type === 'supplier' || c.type === 'both'); });
+    var rc = ct.filter(function(c) {
+      if (type === 'proforma') return c.type === 'customer' || c.type === 'both';
+      return isS ? (c.type === 'customer' || c.type === 'both') : (c.type === 'supplier' || c.type === 'both');
+    });
     var bk = ct.filter(function(c) { return c.type === 'broker'; });
     var cO = '<option value="">— انتخاب —</option>';
     rc.forEach(function(c) { cO += '<option value="' + c.id + '"' + (inv && inv.contactId === c.id ? ' selected' : '') + '>' + c.name + '</option>'; });
@@ -355,7 +358,8 @@ var Inv = {
     h += '</select></div>';
     h += '<div class="fg"><label>توضیحات</label><input class="fc" id="iNt" value="' + (inv ? (inv.notes || '') : '') + '"></div></div>';
 
-    UI.open(inv ? 'ویرایش فاکتور' : 'فاکتور جدید', h,
+    var formTitle = inv ? (type === 'proforma' ? 'ویرایش پیش فاکتور' : 'ویرایش فاکتور') : (type === 'proforma' ? 'پیش فاکتور جدید' : 'فاکتور جدید');
+    UI.open(formTitle, h,
       '<button class="btn bp" onclick="Inv.save(\'' + type + '\',' + (id || 'null') + ')">' + (inv ? 'ذخیره' : 'ثبت') + '</button>' +
       (inv ? '<button class="btn bg" onclick="Inv.pr(' + inv.id + ',document.getElementById(\'iPrt\').value)"><i class="bi bi-printer"></i>پرینت</button>' : '') +
       '<button class="btn bo" onclick="UI.close()">انصراف</button>', true);
@@ -529,7 +533,7 @@ var Inv = {
 
     /* سربرگ */
     h += '<div style="text-align:center;border-bottom:2.5px double #000;padding-bottom:10px;margin-bottom:14px">';
-    h += '<h1 style="font-size:20px;margin:0;font-weight:800">' + (isS ? 'صورتحساب فروش' : 'صورتحساب خرید') + '</h1>';
+    h += '<h1 style="...">' + (v.type === 'proforma' ? 'پیش فاکتور فروش' : isS ? 'صورتحساب فروش' : 'صورتحساب خرید') + '</h1>';
     h += '<div style="font-size:11px;color:#555;margin-top:2px">پارچه‌بان</div>';
     h += '<div style="display:flex;justify-content:space-between;margin-top:8px;font-size:10px;color:#444">';
     h += '<div>شماره: <strong>' + v.invoiceNumber + '</strong></div>';
@@ -611,7 +615,7 @@ var Inv = {
 
     /* سربرگ */
     h += '<div style="text-align:center;border-bottom:2.5px double #000;padding-bottom:10px;margin-bottom:14px">';
-    h += '<h1 style="font-size:' + (sz === 'a5' ? '15px' : '20px') + ';margin:0;font-weight:800">' + (isS ? 'صورتحساب فروش' : 'صورتحساب خرید') + '</h1>';
+    h += '<h1 style="font-size:20px;margin:0;font-weight:800">' + (v.type === 'proforma' ? 'پیش فاکتور فروش' : isS ? 'صورتحساب فروش' : 'صورتحساب خرید') + '</h1>';
     h += '<div style="font-size:11px;color:#555;margin-top:2px">پارچه‌بان</div>';
     h += '<div style="display:flex;justify-content:space-between;margin-top:8px;font-size:10px;color:#444">';
     h += '<div>شماره: <strong>' + v.invoiceNumber + '</strong></div>';
