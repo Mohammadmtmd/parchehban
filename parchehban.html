@@ -302,9 +302,14 @@ var Inv = {
 
   nn: async function(type) {
     var all = await DB.all('invoices');
-    var pf = type === 'sale' ? 'ف-' : 'خ-';
+    var pf = type === 'sale' ? 'ف-' : type === 'proforma' ? 'پ-' : 'خ-';
     var mx = 0;
-    all.forEach(function(i) { if (i.type === type && i.invoiceNumber) { var n = parseInt(i.invoiceNumber.replace(pf, '')); if (n > mx) mx = n; } });
+    all.forEach(function(i) {
+      if (i.type === type && i.invoiceNumber) {
+        var n = parseInt(i.invoiceNumber.replace(pf, ''));
+        if (n > mx) mx = n;
+      }
+    });
     return pf + String(mx + 1).padStart(4, '0');
   },
 
