@@ -542,7 +542,7 @@ var Inv = {
 
     /* شخص */
     h += '<div style="margin-bottom:14px;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:10px;background:#fafafa">';
-    h += '<strong>' + (isS ? 'مشتری:' : 'تأمین‌کننده:') + '</strong> ' + custName + '</div>';
+    h += '<strong>' + (v.type === 'proforma' ? 'مشتری:' : isS ? 'مشتری:' : 'تأمین‌کننده:') + '</strong> ' + custName + '</div>';
 
     /* جدول اقلام */
     h += '<table style="width:100%;border-collapse:collapse;margin-bottom:14px;font-size:10px">';
@@ -586,7 +586,7 @@ var Inv = {
       '<button class="btn bw" onclick="Inv.pr(' + v.id + ',\'a5\')"><i class="bi bi-printer"></i>A5</button>' +
       '<button class="btn bo" onclick="UI.close()">بستن</button>', true);
   },
-      pr: async function(id, sz) {
+     pr: async function(id, sz) {
     var v = await DB.get('invoices', id);
     if (!v) return;
     var ct = await DB.all('contacts'), cm = {};
@@ -624,7 +624,7 @@ var Inv = {
 
     /* اطلاعات شخص */
     h += '<div style="margin-bottom:14px;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:10px;background:#fafafa">';
-    h += '<strong>' + (isS ? 'مشتری:' : 'تأمین‌کننده:') + '</strong> ' + custName + '</div>';
+        h += '<strong>' + (v.type === 'proforma' ? 'مشتری:' : isS ? 'مشتری:' : 'تأمین‌کننده:') + '</strong> ' + custName + '</div>';
 
         /* جدول اقلام */
     h += '<table style="width:100%;border-collapse:collapse;margin-bottom:14px;font-size:' + (sz === 'a5' ? '8.5px' : '10px') + '">';
