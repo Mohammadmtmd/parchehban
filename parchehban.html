@@ -109,6 +109,7 @@ td.cd{color:var(--d);font-weight:600}td.cc{color:var(--ok);font-weight:600}td.bp
 <div class="fg"><label>نام کاربری</label><input class="fc" id="loginUser" placeholder="نام کاربری"></div>
 <div class="fg"><label>رمز عبور</label><input class="fc" id="loginPass" type="password" placeholder="پیش‌فرض: admin123"></div>
 <button class="btn bp" style="width:100%;padding:12px;font-size:.95rem" id="loginBtn">ورود</button>
+<p style="margin-top:10px"><a href="#" onclick="resetPass();return false" style="color:var(--txs);font-size:.78rem;text-decoration:none">رمز را فراموش کردم</a></p>
 <p id="loginErr" style="color:var(--d);font-size:.82rem;margin-top:12px;display:none"></p>
 </div>
 </div>
@@ -912,6 +913,13 @@ document.getElementById('sidebarNav').addEventListener('click',function(e){var i
 
 (async function(){try{await DB.init();if(localStorage.getItem('pb_dark')==='true')document.body.classList.add('dark');await Auth.ensureDefaultUser();APP_READY=true;if(Auth.checkSession()){document.getElementById('loginPage').style.display='none';document.getElementById('appContainer').style.display='';await Auth.onLogin();}console.log('پارچه‌بان v8 آماده');}catch(err){console.error('Boot:',err);APP_READY=true;}})();
 if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(function(){});}
+function resetPass(){
+  DB.all('users').then(async function(u){
+    for(var i=0;i<u.length;i++){await DB.del('users',u[i].id);}
+    await DB.add('users',{username:'admin',password:btoa(unescape(encodeURIComponent('admin123_pb7_salt'))),displayName:'مدیر سیستم'});
+    alert('رمز ریست شد!\nیوزر: admin\nرمز: admin123');
+  });
+}
 </script>
 </body>
 </html>
