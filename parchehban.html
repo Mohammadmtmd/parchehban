@@ -98,6 +98,13 @@ td.cd{color:var(--d);font-weight:600}td.cc{color:var(--ok);font-weight:600}td.bp
   @page { margin: 10mm; }
 }
 @media(max-width:768px){.sb{transform:translateX(100%)}.mn{margin-right:0}.fr{grid-template-columns:1fr}.sg{grid-template-columns:1fr 1fr}.ct{padding:14px}.md.w{max-width:100%}.tp{flex-wrap:wrap;height:auto;padding:10px 14px}.g2{grid-template-columns:1fr}}
+.sb-drop{display:flex!important;align-items:center;cursor:pointer;transition:color .15s}
+.sb-drop:hover{color:rgba(255,255,255,.5)}
+.sb-drop i{margin-left:6px;font-size:.7rem;transition:transform .2s}
+.sb-drop.open{color:rgba(255,255,255,.6)}
+.sb-drop.open>i{transform:rotate(180deg)}
+.sb-sub{max-height:0;overflow:hidden;transition:max-height .35s ease}
+.sb-drop.open+.sb-sub{max-height:400px}
 </style>
 </head>
 <body>
@@ -116,27 +123,42 @@ td.cd{color:var(--d);font-weight:600}td.cc{color:var(--ok);font-weight:600}td.bp
 <div id="appContainer" style="display:none">
 <aside class="sb">
 <div class="sb-brand"><div class="sb-logo">پ</div><div><h1>پارچه‌بان</h1><small>مدیریت انبار و فروش</small></div></div>
-<nav class="sb-nav" id="sidebarNav">
 <div class="ns">اصلی</div>
 <a class="ni active" data-page="dashboard"><i class="bi bi-grid-1x2-fill"></i>داشبورد</a>
-<div class="ns">موجودیت‌ها</div>
+
+<div class="ns sb-drop" onclick="this.classList.toggle('open')"><i class="bi bi-chevron-down"></i>موجودیت‌ها</div>
+<div class="sb-sub">
 <a class="ni" data-page="categories"><i class="bi bi-bookmark-fill"></i>گروه‌بندی کالا</a>
 <a class="ni" data-page="products"><i class="bi bi-box-seam-fill"></i>تعریف کالا</a>
 <a class="ni" data-page="contacts"><i class="bi bi-people-fill"></i>اشخاص</a>
-<div class="ns">انبار و فروش</div>
+</div>
+
+<div class="ns sb-drop" onclick="this.classList.toggle('open')"><i class="bi bi-chevron-down"></i>انبار و فروش</div>
+<div class="sb-sub">
 <a class="ni" data-page="purchase"><i class="bi bi-cart-fill"></i>فاکتور خرید</a>
 <a class="ni" data-page="sales"><i class="bi bi-receipt-cutoff"></i>فاکتور فروش</a>
 <a class="ni" data-page="proforma"><i class="bi bi-file-earmark-text"></i>پیش فاکتور</a>
-<div class="ns">مالی</div>
+<a class="ni" data-page="warehouse"><i class="bi bi-archive-fill"></i>انبار</a>
+</div>
+
+<div class="ns sb-drop" onclick="this.classList.toggle('open')"><i class="bi bi-chevron-down"></i>مالی</div>
+<div class="sb-sub">
 <a class="ni" data-page="payments"><i class="bi bi-wallet2"></i>پرداخت و دریافت</a>
 <a class="ni" data-page="checks"><i class="bi bi-credit-card-2-front-fill"></i>مدیریت چک‌ها</a>
-<div class="ns">گزارشات</div>
+</div>
+
+<div class="ns sb-drop" onclick="this.classList.toggle('open')"><i class="bi bi-chevron-down"></i>گزارشات</div>
+<div class="sb-sub">
 <a class="ni" data-page="ledger"><i class="bi bi-journal-text"></i>دفتر معین</a>
+<a class="ni" data-page="productLedger"><i class="bi bi-list-check"></i>دفتر کالا</a>
 <a class="ni" data-page="reports"><i class="bi bi-bar-chart-line-fill"></i>گزارشات</a>
-<div class="ns">تنظیمات</div>
+</div>
+
+<div class="ns sb-drop" onclick="this.classList.toggle('open')"><i class="bi bi-chevron-down"></i>تنظیمات</div>
+<div class="sb-sub">
 <a class="ni" data-page="years"><i class="bi bi-calendar3"></i>سال مالی</a>
 <a class="ni" data-page="settings"><i class="bi bi-gear-fill"></i>حساب کاربری</a>
-</nav>
+</div>
 <div class="sb-ft"><button class="dm-btn" id="darkBtn" title="حالت تاریک"><i class="bi bi-moon"></i></button><span>v8</span><button class="dm-btn" id="logoutBtn" title="خروج"><i class="bi bi-box-arrow-right"></i></button></div>
 </aside>
 <div class="mn">
