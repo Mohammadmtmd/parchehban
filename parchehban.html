@@ -95,7 +95,7 @@ td.cd{color:var(--d);font-weight:600}td.cc{color:var(--ok);font-weight:600}td.bp
 </head>
 <body>
 <!-- LOGIN -->
-<div id="loginPage" class="lg-page"><div class="lg-box">
+<div id="loginPage" class="lg-page" style="display:none"><div class="lg-box">
 <div class="lg-logo">پ</div>
 <h2 style="margin-bottom:4px">پارچه‌بان</h2>
 <p style="color:var(--txs);font-size:.85rem;margin-bottom:24px">سیستم مدیریت انبار و فروش</p>
@@ -107,6 +107,7 @@ td.cd{color:var(--d);font-weight:600}td.cc{color:var(--ok);font-weight:600}td.bp
 </div></div>
 
 <!-- APP -->
+<div id="loadingScreen" style="position:fixed;inset:0;background:#0f172a;display:flex;align-items:center;justify-content:center;z-index:99999"><div style="text-align:center;color:#fff"><div style="width:40px;height:40px;border:3px solid rgba(255,255,255,.2);border-top-color:#2563eb;border-radius:50%;animation:spnA .6s linear infinite;margin:0 auto 14px"></div><p style="font-size:.9rem">پارچه‌بان</p></div></div>
 <div id="appContainer" style="display:none">
 <aside class="sb">
 <div class="sb-brand"><div class="sb-logo">پ</div><div><h1>پارچه‌بان</h1><small>v8</small></div></div>
@@ -393,8 +394,30 @@ var darkBtn=document.getElementById('darkBtn');if(darkBtn)darkBtn.onclick=functi
 var yearSel=document.getElementById('yearSel');if(yearSel)yearSel.addEventListener('change',function(){switchYear(this.value);});
 
 /* ══ BOOT ══ */
-(async function(){try{await DB.init();if(localStorage.getItem('pb_dark')==='true')document.body.classList.add('dark');await Auth.ensureDefaultUser();APP_READY=true;if(Auth.checkSession()){document.getElementById('loginPage').style.display='none';document.getElementById('appContainer').style.display='';await Auth.onLogin();var hash=location.hash.replace('#','');if(hash&&ROUTES[hash])ROUTES[hash]();}console.log('پارچه‌بان v8 آماده');}catch(err){console.error('Boot:',err);APP_READY=true;}})();
-if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(function(){});}
+(async function(){
+  try{
+    await DB.init();
+    if(localStorage.getItem('pb_dark')==='true')document.body.classList.add('dark');
+    await Auth.ensureDefaultUser();
+    APP_READY=true;
+    document.getElementById('loadingScreen').style.display='none';
+    if(Auth.checkSession()){
+      document.getElementById('loginPage').style.display='none';
+      document.getElementById('appContainer').style.display='';
+      await Auth.onLogin();
+      var hash=location.hash.replace('#','');
+      if(hash&&ROUTES[hash]) ROUTES[hash]();
+    }else{
+      document.getElementById('loginPage').style.display='';
+      document.getElementById('loginUser').focus();
+    }
+  }catch(err){
+    console.error('Boot:',err);
+    APP_READY=true;
+    document.getElementById('loadingScreen').style.display='none';
+    document.getElementById('loginPage').style.display='';
+  }
+})();
 </script>
 </body>
 </html>
