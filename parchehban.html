@@ -401,9 +401,8 @@ Led.expCSV = function(cid) {
     });
     pays.forEach(function(pay) {
       if (pay.contactId === cid) {
-        if (pay.type === 'receipt') txs.push({ d: pay.date, var pdesc=pay.description||pay.notes||'';txs.push({ d: pay.date, desc: 'دریافت'+(pdesc?' / '+pdesc:''), db: 0, cr: pay.amount, s: 2 });
-        else txs.push({ d: pay.date, var pdesc=pay.description||pay.notes||'';txs.push({ d: pay.date, desc: 'پرداخت'+(pdesc?' / '+pdesc:''), db: pay.amount, cr: 0, s: 2 });
-      }
+        if (pay.type === 'receipt'){var pdesc=pay.description||pay.notes||'';txs.push({ d: pay.date, desc: 'دریافت'+(pdesc?' / '+pdesc:''), db: 0, cr: pay.amount, s: 2 });}
+        else{var pdesc2=pay.description||pay.notes||'';txs.push({ d: pay.date, desc: 'پرداخت'+(pdesc2?' / '+pdesc2:''), db: pay.amount, cr: 0, s: 2 });}
     });
     chks.forEach(function(chk) {
       if (chk.contactId === cid && chk.status !== 'returned') {
@@ -444,9 +443,8 @@ Led.expPDF = function(cid) {
     });
     pays.forEach(function(pay) {
       if (pay.contactId === cid) {
-        if (pay.type === 'receipt') txs.push({ d: pay.date, var pdesc=pay.description||pay.notes||'';txs.push({ d: pay.date, desc: 'دریافت'+(pdesc?' / '+pdesc:''), db: 0, cr: pay.amount, s: 2 });
-        else txs.push({ d: pay.date, var pdesc=pay.description||pay.notes||'';txs.push({ d: pay.date, desc: 'پرداخت'+(pdesc?' / '+pdesc:''), db: pay.amount, cr: 0, s: 2 });
-      }
+       if (pay.type === 'receipt'){var pdesc=pay.description||pay.notes||'';txs.push({ d: pay.date, desc: 'دریافت'+(pdesc?' / '+pdesc:''), db: 0, cr: pay.amount, s: 2 });}
+else{var pdesc2=pay.description||pay.notes||'';txs.push({ d: pay.date, desc: 'پرداخت'+(pdesc2?' / '+pdesc2:''), db: pay.amount, cr: 0, s: 2 });}
     });
     chks.forEach(function(chk) {
       if (chk.contactId === cid && chk.status !== 'returned') {
