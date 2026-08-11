@@ -360,7 +360,7 @@ var Pay={
       h+='<div class="fg"><label>شرح</label><input class="fc" id="trNt" placeholder="بابت..."></div>';
       UI.open('حواله بانکی',h,'<button class="btn bw" onclick="Pay.saveTransfer()">ثبت حواله</button><button class="btn bo" onclick="UI.close()">انصراف</button>');
     });
-  }
+  },
   saveTransfer:async function(){
     var fromId=parseInt(document.getElementById('trFrom').value)||null;
     var toId=parseInt(document.getElementById('trTo').value)||null;
