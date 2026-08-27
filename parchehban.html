@@ -949,7 +949,7 @@ var Bank = {
         if (p.description) desc += ' / ' + p.description;
         txs.push({ d: p.date, desc: desc, db: p.type === 'payment' ? p.amount : 0, cr: p.type === 'receipt' ? p.amount : 0, s: 1 });
       }
-        transfer:function(fromId){
+    transfer:function(fromId){
     DB.all('banks').then(function(bs){
       var to=bs.filter(function(b){return b.id!==fromId;});
       if(!to.length){UI.toast('بانک دیگری نیست','e');return;}
