@@ -980,7 +980,7 @@ var Bank = {
     await Bank.show(fromId);
     }
     /* چک وصول شده */
-    chks.forEach(function(c) {
+    chks.forEach(function(c){
       if (c.status === 'passed' && c.bankAccountId === bankId) {
         var desc = 'وصول چک #' + c.checkNumber + ' — ' + (cm[c.contactId] || '—');
         txs.push({ d: c.passedDate || c.dueDate, desc: desc, db: c.type === 'issued' ? c.amount : 0, cr: c.type === 'received' ? c.amount : 0, s: 2 });
