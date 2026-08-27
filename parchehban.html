@@ -978,7 +978,7 @@ var Bank = {
     UI.close();
     UI.toast('انتقال ثبت شد');
     await Bank.show(fromId);
-    });
+    }
     /* چک وصول شده */
     chks.forEach(function(c) {
       if (c.status === 'passed' && c.bankAccountId === bankId) {
