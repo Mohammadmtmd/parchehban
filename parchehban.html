@@ -11,8 +11,8 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%232563eb' rx='20' width='100' height='100'/><text x='50' y='68' font-size='55' font-weight='bold' fill='white' text-anchor='middle' font-family='sans-serif'>پ</text></svg>">
 <link rel="manifest" href="manifest.json">
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css@1.11.3/font/bootstrap-icons.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{--sbw:260px;--topH:60px;--bg:#f1f5f9;--sf:#fff;--sbg:#0f172a;--sh:#1e293b;--sa:#1d4ed8;--st:#94a3b8;--sta:#f1f5f9;--p:#2563eb;--pl:#dbeafe;--pd:#1e40af;--ok:#16a34a;--okl:#dcfce7;--w:#d97706;--wl:#fef3c7;--d:#dc2626;--dl:#fee2e2;--tx:#0f172a;--txs:#64748b;--txm:#94a3b8;--bd:#e2e8f0;--r:10px;--shd:0 1px 3px rgba(0,0,0,.06);--shdl:0 10px 25px rgba(0,0,0,.08)}
@@ -462,12 +462,17 @@ var Chk={
     UI.close();
     await this.ll();
   },
-  cs:async function(id){
+    cs:async function(id){
     var c=await DB.get('checks',id);if(!c)return;
     var sts=[{v:'pending',l:'در انتظار'},{v:'deposited',l:'واریز'},{v:'passed',l:'وصول'},{v:'returned',l:'برگشتی'}];
     var op='';
     sts.forEach(function(s){op+='<option value="'+s.v+'"'+(c.status===s.v?' selected':'')+'>'+s.l+'</option>';});
-    var banks=await DB.all('banks');var bO='<option value="">— بدون بانک —</option>';banks.forEach(function(b){bO+='<option value="'+b.id+'"'+(c.bankAccountId===b.id?' selected':'')+'>'+b.name+'</option>';});var h='<div class="fg"><label>وضعیت</label><select class="fc" id="nSt">'+op+'</select></div>';h+='<div class="fg"><label>حساب بانکی (برای وصول)</label><select class="fc" id="nBk">'+bO+'</select></div>';UI.open('وضعیت',h,'<button class="btn bp" onclick="Chk.ss('+id+')">ذخیره</button>');<select class="fc" id="nSt">'+op+'</select></div>','<button class="btn bp" onclick="Chk.ss('+id+')">ذخیره</button>');
+    var banks=await DB.all('banks');
+    var bO='<option value="">— بدون بانک —</option>';
+    banks.forEach(function(b){bO+='<option value="'+b.id+'"'+(c.bankAccountId===b.id?' selected':'')+'>'+b.name+'</option>';});
+    var h='<div class="fg"><label>وضعیت</label><select class="fc" id="nSt">'+op+'</select></div>';
+    h+='<div class="fg"><label>حساب بانکی (برای وصول)</label><select class="fc" id="nBk">'+bO+'</select></div>';
+    UI.open('وضعیت',h,'<button class="btn bp" onclick="Chk.ss('+id+')">ذخیره</button>');
   },
   ss:async function(id){
     var c=await DB.get('checks',id);
