@@ -26,11 +26,11 @@ html{font-size:13.5px}body{font-family:'Vazirmatn',sans-serif;background:var(--b
 .sb-logo{width:40px;height:40px;background:linear-gradient(135deg,var(--p),#7c3aed);border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:1.1rem;font-weight:800}
 .sb-brand h1{color:#fff;font-size:1rem;font-weight:700}.sb-brand small{color:var(--st);font-size:.72rem}
 .sb-nav{flex:1;overflow-y:auto;padding:10px}
-.ns{margin-top:14px;margin-bottom:5px;padding:0 12px;font-size:.68rem;font-weight:600;color:rgba(255,255,255,.25);letter-spacing:.5px;display:flex;align-items:center;cursor:pointer;user-select:none;transition:color .15s}.ns:hover{color:rgba(255,255,255,.5)}
+.ns{margin-top:16px;margin-bottom:6px;padding:0 14px;font-size:.82rem;font-weight:700;color:rgba(255,255,255,.35);letter-spacing:.5px;display:flex;align-items:center;cursor:pointer;user-select:none;transition:color .15s}.ns:hover{color:rgba(255,255,255,.5)}
 .ns>i{margin-left:6px;font-size:.7rem;transition:transform .2s}
 .sb-drop.open{color:rgba(255,255,255,.6)}.sb-drop.open>i{transform:rotate(180deg)}
 .sb-sub{max-height:0;overflow:hidden;transition:max-height .35s ease}.sb-drop.open+.sb-sub{max-height:500px}
-.ni{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;color:var(--st);cursor:pointer;font-size:.87rem;font-weight:500;text-decoration:none;margin-bottom:1px;transition:all .15s}.ni:hover{background:var(--sh);color:#cbd5e1}.ni.active{background:var(--sa);color:var(--sta)}.ni i{font-size:1.1rem;width:22px;text-align:center}
+.ni{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:8px;color:var(--st);cursor:pointer;font-size:1rem;font-weight:500;text-decoration:none;margin-bottom:1px;transition:all .15s}.ni:hover{background:var(--sh);color:#cbd5e1}.ni.active{background:var(--sa);color:var(--sta)}.ni i{font-size:1.1rem;width:22px;text-align:center}
 .sb-ft{padding:12px 14px;border-top:1px solid rgba(255,255,255,.06);display:flex;align-items:center;justify-content:space-between;font-size:.72rem;color:var(--st)}
 .dm-btn{background:none;border:none;color:var(--st);cursor:pointer;font-size:1rem;padding:4px 8px;border-radius:6px;transition:all .15s}.dm-btn:hover{color:#fff;background:rgba(255,255,255,.1)}
 .mn{margin-right:var(--sbw);min-height:100vh}
@@ -753,7 +753,8 @@ var Settings={render:async function(){currentPage='settings';UI.nav('settings');
 
 /* ══ DASHBOARD ══ */
 var Dash={period:'month',_wc:null,_cc:null,render:async function(){currentPage='dashboard';UI.nav('dashboard');UI.title('bi-grid-1x2-fill','داشبورد');UI.act('');UI.content('<div class="ld"><div class="spn"></div></div>');await this.load();},setP:async function(p){this.period=p;await this.load();},
-  load:async function(){var contacts=await DB.all('contacts');var allInvs=await FY.byYear('invoices');var cMap={};contacts.forEach(function(c){cMap[c.id]=c.name;});var startNum=getPeriodStart(this.period);var periodInvs=allInvs.filter(function(inv){return inv.type!=='proforma'&&pn(inv.date)>=startNum;});var tPur=0,tSal=0;periodInvs.forEach(function(v){if(v.type==='purchase')tPur+=v.grandTotal||0;else tSal+=v.grandTotal||0;});var avgBuy={};allInvs.forEach(function(inv){if(inv.type!=='purchase')return;(inv.items||[]).forEach(function(it){if(!avgBuy[it.productId])avgBuy[it.productId]={cost:0,qty:0};avgBuy[it.productId].cost+=it.total;avgBuy[it.productId].qty+=it.quantity;});});var profit=0;periodInvs.forEach(function(inv){if(inv.type!=='sale')return;(inv.items||[]).forEach(function(it){var ab=avgBuy[it.productId];var avg=ab&&ab.qty>0?ab.cost/ab.qty:0;profit+=(it.unitPrice-avg)*it.quantity;});});var pl={week:'هفته',month:'ماه',year:'سال'};var me=this,h='';h+='<div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">';['week','month','year'].forEach(function(p){h+='<button class="btn '+(me.period===p?'bp':'bo')+' bs" onclick="Dash.setP(\''+p+'\')">'+pl[p]+'</button>';});h+='</div>';h+='<div class="sg">';h+='<div class="sc" style="cursor:pointer" onclick="ROUTES.reports()"><div class="si '+(profit>=0?'g':'r')+'"><i class="bi bi-graph-up"></i></div><div class="sti"><h3>'+UI.fn(Math.round(profit))+'</h3><p>سود/زیان '+pl[this.period]+'</p></div></div>';h+='<div class="sc" style="cursor:pointer" onclick="ROUTES.purchase()"><div class="si o"><i class="bi bi-cart-fill"></i></div><div class="sti"><h3>'+UI.fn(tPur)+'</h3><p>خرید</p></div></div>';h+='<div class="sc" style="cursor:pointer" onclick="ROUTES.sales()"><div class="si g"><i class="bi bi-receipt-cutoff"></i></div><div class="sti"><h3>'+UI.fn(tSal)+'</h3><p>فروش</p></div></div>';h+='<div class="sc" style="cursor:pointer" onclick="ROUTES.contacts()"><div class="si b"><i class="bi bi-people-fill"></i></div><div class="sti"><h3>'+contacts.length+'</h3><p>اشخاص</p></div></div></div>';h+='<div class="g2"><div class="cd"><div class="cd-h"><i class="bi bi-bar-chart-fill" style="margin-left:8px;color:var(--p)"></i>نمودار</div><div class="cd-b" style="height:260px"><canvas id="dashWC"></canvas></div></div><div class="cd"><div class="cd-h"><i class="bi bi-pie-chart-fill" style="margin-left:8px;color:var(--ok)"></i>فروش مشتریان</div><div class="cd-b" style="height:260px"><canvas id="dashCC"></canvas></div></div></div>';h+='<div class="cd" style="margin-top:20px"><div class="cd-h"><i class="bi bi-shield-lock" style="color:var(--ok);margin-left:8px"></i>بکاپ</div><div class="cd-b" style="display:flex;gap:8px"><button class="btn bg" onclick="Backup.exportAll()"><i class="bi bi-download"></i>ذخیره</button><button class="btn bdn" onclick="Backup.importAll()"><i class="bi bi-upload"></i>بازیابی</button></div></div>';UI.content(h);this.renderCharts(allInvs,cMap);},
+  load:async function(){var contacts=await DB.all('contacts');var allInvs=await FY.byYear('invoices');var cMap={};contacts.forEach(function(c){cMap[c.id]=c.name;});var startNum=getPeriodStart(this.period);var periodInvs=allInvs.filter(function(inv){return inv.type!=='proforma'&&pn(inv.date)>=startNum;});var tPur=0,tSal=0;periodInvs.forEach(function(v){if(v.type==='purchase')tPur+=v.grandTotal||0;else tSal+=v.grandTotal||0;});var avgBuy={};allInvs.forEach(function(inv){if(inv.type!=='purchase')return;(inv.items||[]).forEach(function(it){if(!avgBuy[it.productId])avgBuy[it.productId]={cost:0,qty:0};avgBuy[it.productId].cost+=it.total;avgBuy[it.productId].qty+=it.quantity;});});var profit=0;periodInvs.forEach(function(inv){if(inv.type!=='sale')return;(inv.items||[]).forEach(function(it){var ab=avgBuy[it.productId];var avg=ab&&ab.qty>0?ab.cost/ab.qty:0;profit+=(it.unitPrice-avg)*it.quantity;});});var pl={week:'هفته',month:'ماه',year:'سال'};var me=this,h='';h+='<div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">';['week','month','year'].forEach(function(p){h+='<button class="btn '+(me.period===p?'bp':'bo')+' bs" onclick="Dash.setP(\''+p+'\')">'+pl[p]+'</button>';});h+='</div>';h+='<div class="sg">';h+='<div class="sc" style="cursor:pointer" onclick="ROUTES.reports()"><div class="si '+(profit>=0?'g':'r')+'"><i class="bi bi-graph-up"></i></div><div class="sti"><h3>'+UI.fn(Math.round(profit))+'</h3><p>سود/زیان '+pl[this.period]+'</p></div></div>';h+='<div class="sc" style="cursor:pointer" onclick="ROUTES.purchase()"><div class="si o"><i class="bi bi-cart-fill"></i></div><div class="sti"><h3>'+UI.fn(tPur)+'</h3><p>خرید</p></div></div>';h+='<div class="sc" style="cursor:pointer" onclick="ROUTES.sales()"><div class="si g"><i class="bi bi-receipt-cutoff"></i></div><div class="sti"><h3>'+UI.fn(tSal)+'</h3><p>فروش</p></div></div>';h+='<div class="sc" style="cursor:pointer" onclick="ROUTES.contacts()">var banks=await DB.all('banks');var allPays=await FY.byYear('payments');var allChks=await FY.byYear('checks');var bankTotal=0;banks.forEach(function(b){var bb=b.openingBalance||0;allPays.forEach(function(p){if(p.bankId===b.id){if(p.type==='receipt')bb+=p.amount;else bb-=p.amount;}});allChks.forEach(function(c){if(c.status==='passed'&&c.bankAccountId===b.id){if(c.type==='received')bb+=c.amount;else bb-=c.amount;}});
+      bankTotal+=bb;});if(banks.length) h+='<div class="sc" style="cursor:pointer" onclick="ROUTES.banks()"><div class="si b"><i class="bi bi-bank2"></i></div><div class="sti"><h3>'+UI.fn(bankTotal)+'</h3><p>مانده بانک</p></div></div>';<div class="si b"><i class="bi bi-people-fill"></i></div><div class="sti"><h3>'+contacts.length+'</h3><p>اشخاص</p></div></div></div>';h+='<div class="g2"><div class="cd"><div class="cd-h"><i class="bi bi-bar-chart-fill" style="margin-left:8px;color:var(--p)"></i>نمودار</div><div class="cd-b" style="height:260px"><canvas id="dashWC"></canvas></div></div><div class="cd"><div class="cd-h"><i class="bi bi-pie-chart-fill" style="margin-left:8px;color:var(--ok)"></i>فروش مشتریان</div><div class="cd-b" style="height:260px"><canvas id="dashCC"></canvas></div></div></div>';h+='<div class="cd" style="margin-top:20px"><div class="cd-h"><i class="bi bi-shield-lock" style="color:var(--ok);margin-left:8px"></i>بکاپ</div><div class="cd-b" style="display:flex;gap:8px"><button class="btn bg" onclick="Backup.exportAll()"><i class="bi bi-download"></i>ذخیره</button><button class="btn bdn" onclick="Backup.importAll()"><i class="bi bi-upload"></i>بازیابی</button></div></div>';UI.content(h);this.renderCharts(allInvs,cMap);},
   renderCharts:function(allInvs,cMap){try{if(typeof Chart==='undefined')return;var me=this;if(me._wc)me._wc.destroy();if(me._cc)me._cc.destroy();var byDate={};allInvs.forEach(function(inv){if(inv.type==='proforma')return;var d=inv.date||'—';if(!byDate[d])byDate[d]={pur:0,sal:0};if(inv.type==='purchase')byDate[d].pur+=inv.grandTotal||0;else byDate[d].sal+=inv.grandTotal||0;});var dates=Object.keys(byDate).sort().slice(-7);var wCtx=document.getElementById('dashWC');if(wCtx){me._wc=new Chart(wCtx,{type:'bar',data:{labels:dates.map(function(d){var p=d.split('/');return p[1]+'/'+p[2];}),datasets:[{label:'خرید',data:dates.map(function(d){return byDate[d].pur;}),backgroundColor:'rgba(217,119,6,0.7)',borderRadius:4},{label:'فروش',data:dates.map(function(d){return byDate[d].sal;}),backgroundColor:'rgba(22,163,74,0.7)',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{family:'Vazirmatn'}}}},scales:{y:{ticks:{font:{family:'Vazirmatn'},callback:function(v){return(v/1000000).toFixed(1)+'M';}}},x:{ticks:{font:{family:'Vazirmatn'}}}}}});}var byCust={};allInvs.forEach(function(inv){if(inv.type!=='sale')return;if(!byCust[inv.contactId])byCust[inv.contactId]=0;byCust[inv.contactId]+=inv.grandTotal||0;});var cL=[],cD=[];for(var k in byCust){cL.push(cMap[k]||'—');cD.push(byCust[k]);}var cCtx=document.getElementById('dashCC');if(cCtx&&cL.length){me._cc=new Chart(cCtx,{type:'doughnut',data:{labels:cL,datasets:[{data:cD,backgroundColor:['#2563eb','#16a34a','#d97706','#dc2626','#7c3aed','#0891b2','#be185d','#4f46e5'].slice(0,cL.length),borderWidth:2,borderColor:getComputedStyle(document.body).getPropertyValue('--sf').trim()||'#fff'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{family:'Vazirmatn'}}}}}});}}catch(e){console.log('Chart:',e);}}};
 /* ══ PAGINATION ══ */
 var Pag = {
@@ -979,12 +980,14 @@ var Bank = {
     UI.toast('انتقال ثبت شد');
     await Bank.show(fromId);
   },
-  show:async function(bankId){
+    show:async function(bankId){
     var b=await DB.get('banks',bankId);if(!b)return;
     currentPage='banks';UI.nav('banks');UI.title('bi-bank2',b.name);
     UI.act('<button class="btn bo" onclick="Bank.render()"><i class="bi bi-arrow-right"></i>بازگشت</button> <button class="btn bw" onclick="Bank.transfer('+bankId+')"><i class="bi bi-arrow-left-right"></i>انتقال</button>');
     var bs=await DB.all('banks');
-    var invs=await FY.byYear('invoices'),pays=await FY.byYear('payments'),chks=await FY.byYear('checks');
+    var pays=await FY.byYear('payments');
+    var chks=await FY.byYear('checks');
+    var bts=await DB.all('bankTransfers');
     var ct=await DB.all('contacts'),cm={};
     ct.forEach(function(c){cm[c.id]=c.name;});
     var txs=[];
@@ -997,46 +1000,45 @@ var Bank = {
         txs.push({d:p.date,desc:desc,db:p.type==='payment'?p.amount:0,cr:p.type==='receipt'?p.amount:0,s:1});
       }
     });
-    
-    /* چک وصول شده */
     chks.forEach(function(c){
-      if (c.status === 'passed' && c.bankAccountId === bankId) {
-        var desc = 'وصول چک #' + c.checkNumber + ' — ' + (cm[c.contactId] || '—');
-        txs.push({ d: c.passedDate || c.dueDate, desc: desc, db: c.type === 'issued' ? c.amount : 0, cr: c.type === 'received' ? c.amount : 0, s: 2 });
+      if(c.status==='passed'&&c.bankAccountId===bankId){
+        var desc='وصول چک #'+c.checkNumber+' — '+(cm[c.contactId]||'—');
+        txs.push({d:c.passedDate||c.dueDate,desc:desc,db:c.type==='issued'?c.amount:0,cr:c.type==='received'?c.amount:0,s:2});
       }
     });
-    txs.sort(function(a, b) { if (a.d < b.d) return -1; if (a.d > b.d) return 1; return a.s - b.s; });
-    var rows = [{ d: '—', desc: 'مانده اولیه', db: bal > 0 ? bal : 0, cr: bal < 0 ? -bal : 0, bal: bal }];
-    txs.forEach(function(t) {
-      bal = bal + t.db - t.cr;
-      rows.push({ d: t.d, desc: t.desc, db: t.db, cr: t.cr, bal: bal });
+    bts.forEach(function(bt){
+      if(bt.fromBankId===bankId){var nm=(bs.find(function(x){return x.id===bt.toBankId;})||{}).name||'—';txs.push({d:bt.date,desc:'انتقال به '+nm+(bt.notes?' / '+bt.notes:''),db:0,cr:bt.amount,s:3});}
+      if(bt.toBankId===bankId){var nm2=(bs.find(function(x){return x.id===bt.fromBankId;})||{}).name||'—';txs.push({d:bt.date,desc:'انتقال از '+nm2+(bt.notes?' / '+bt.notes:''),db:bt.amount,cr:0,s:3});}
     });
-    var tD = 0, tC = 0;
-    rows.forEach(function(r) { tD += r.db; tC += r.cr; });
-    var tr = '';
-    rows.forEach(function(r, i) {
-      var bl = r.bal > 0 ? 'بد' : r.bal < 0 ? 'بس' : '';
-      var bc = r.bal > 0 ? 'bp2' : r.bal < 0 ? 'bn' : '';
-      tr += '<tr><td>' + (i + 1) + '</td><td>' + r.d + '</td><td>' + r.desc + '</td>';
-      tr += '<td class="cd">' + (r.db ? UI.fn(r.db) : '—') + '</td>';
-      tr += '<td class="cc">' + (r.cr ? UI.fn(r.cr) : '—') + '</td>';
-      tr += '<td class="' + bc + '">' + UI.fn(Math.abs(r.bal)) + ' ' + bl + '</td></tr>';
+    txs.sort(function(a,b){if(a.d<b.d)return-1;if(a.d>b.d)return 1;return a.s-b.s;});
+    var rows=[{d:'—',desc:'مانده اولیه',db:bal>0?bal:0,cr:bal<0?-bal:0,bal:bal}];
+    txs.forEach(function(t){bal=bal+t.db-t.cr;rows.push({d:t.d,desc:t.desc,db:t.db,cr:t.cr,bal:bal});});
+    var tD=0,tC=0;
+    rows.forEach(function(r){tD+=r.db;tC+=r.cr;});
+    var tr='';
+    rows.forEach(function(r,i){
+      var bl=r.bal>0?'بد':r.bal<0?'بس':'';
+      var bc=r.bal>0?'bp2':r.bal<0?'bn':'';
+      tr+='<tr><td>'+(i+1)+'</td><td>'+r.d+'</td><td>'+r.desc+'</td>';
+      tr+='<td class="cd">'+(r.db?UI.fn(r.db):'—')+'</td>';
+      tr+='<td class="cc">'+(r.cr?UI.fn(r.cr):'—')+'</td>';
+      tr+='<td class="'+bc+'">'+UI.fn(Math.abs(r.bal))+' '+bl+'</td></tr>';
     });
-    var fB = bal;
-    var bL = fB > 0 ? 'بدهکار' : fB < 0 ? 'بستانکار' : 'تسویه';
-    var bC = fB > 0 ? 'rd' : fB < 0 ? 'gn' : 'bl';
-    var h = '<div class="cd mb"><div class="cd-h">' + b.name + ' <span style="font-size:.78rem;color:var(--txs)">' + (b.bankName || '') + '</span></div>';
-    h += '<div class="cd-b"><div class="lg-sm">';
-    h += '<div class="lg-box rd"><h4>' + UI.fn(tD) + '</h4><p>بدهکار</p></div>';
-    h += '<div class="lg-box gn"><h4>' + UI.fn(tC) + '</h4><p>بستانکار</p></div>';
-    h += '<div class="lg-box ' + bC + '"><h4>' + UI.fn(Math.abs(fB)) + '</h4><p>' + bL + '</p></div>';
-    h += '</div></div></div>';
-    h += '<div class="cd"><div class="cd-h">گردش حساب</div>';
-    h += '<div class="tw"><table><thead><tr><th>#</th><th>تاریخ</th><th>شرح</th><th>بدهکار</th><th>بستانکار</th><th>مانده</th></tr></thead>';
-    h += '<tbody>' + (tr || '<tr><td colspan="6" style="text-align:center">گردشی نیست</td></tr>') + '</tbody>';
-    h += '<tfoot><tr style="background:var(--bg);font-weight:700"><td colspan="3">جمع</td>';
-    h += '<td class="cd">' + UI.fn(tD) + '</td><td class="cc">' + UI.fn(tC) + '</td><td></td></tr></tfoot>';
-    h += '</table></div></div>';
+    var fB=bal;
+    var bL=fB>0?'بدهکار':fB<0?'بستانکار':'تسویه';
+    var bC=fB>0?'rd':fB<0?'gn':'bl';
+    var h='<div class="cd mb"><div class="cd-h">'+b.name+' <span style="font-size:.78rem;color:var(--txs)">'+(b.bankName||'')+'</span></div>';
+    h+='<div class="cd-b"><div class="lg-sm">';
+    h+='<div class="lg-box rd"><h4>'+UI.fn(tD)+'</h4><p>بدهکار</p></div>';
+    h+='<div class="lg-box gn"><h4>'+UI.fn(tC)+'</h4><p>بستانکار</p></div>';
+    h+='<div class="lg-box '+bC+'"><h4>'+UI.fn(Math.abs(fB))+'</h4><p>'+bL+'</p></div>';
+    h+='</div></div></div>';
+    h+='<div class="cd"><div class="cd-h">گردش حساب</div>';
+    h+='<div class="tw"><table><thead><tr><th>#</th><th>تاریخ</th><th>شرح</th><th>بدهکار</th><th>بستانکار</th><th>مانده</th></tr></thead>';
+    h+='<tbody>'+(tr||'<tr><td colspan="6" style="text-align:center">گردشی نیست</td></tr>')+'</tbody>';
+    h+='<tfoot><tr style="background:var(--bg);font-weight:700"><td colspan="3">جمع</td>';
+    h+='<td class="cd">'+UI.fn(tD)+'</td><td class="cc">'+UI.fn(tC)+'</td><td></td></tr></tfoot>';
+    h+='</table></div></div>';
     UI.content(h);
   }
 };
