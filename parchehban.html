@@ -978,7 +978,26 @@ var Bank = {
     UI.close();
     UI.toast('انتقال ثبت شد');
     await Bank.show(fromId);
-    }
+  },
+  show:async function(bankId){
+    var b=await DB.get('banks',bankId);if(!b)return;
+    currentPage='banks';UI.nav('banks');UI.title('bi-bank2',b.name);
+    UI.act('<button class="btn bo" onclick="Bank.render()"><i class="bi bi-arrow-right"></i>بازگشت</button> <button class="btn bw" onclick="Bank.transfer('+bankId+')"><i class="bi bi-arrow-left-right"></i>انتقال</button>');
+    var bs=await DB.all('banks');
+    var invs=await FY.byYear('invoices'),pays=await FY.byYear('payments'),chks=await FY.byYear('checks');
+    var ct=await DB.all('contacts'),cm={};
+    ct.forEach(function(c){cm[c.id]=c.name;});
+    var txs=[];
+    var bal=b.openingBalance||0;
+    pays.forEach(function(p){
+      if(p.bankId===bankId){
+        var desc=p.type==='receipt'?'دریافت':'پرداخت';
+        desc+=' — '+(cm[p.contactId]||'—');
+        if(p.description) desc+=' / '+p.description;
+        txs.push({d:p.date,desc:desc,db:p.type==='payment'?p.amount:0,cr:p.type==='receipt'?p.amount:0,s:1});
+      }
+    });
+    
     /* چک وصول شده */
     chks.forEach(function(c){
       if (c.status === 'passed' && c.bankAccountId === bankId) {
