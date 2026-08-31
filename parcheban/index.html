@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>پارچه‌بان</title>
+  <meta name="description" content="سیستم حسابداری و انبارداری پارچه‌بان">
+  <meta name="theme-color" content="#0f172a">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%232563eb' rx='20' width='100' height='100'/><text x='50' y='68' font-size='55' font-weight='bold' fill='white' text-anchor='middle' font-family='sans-serif'>پ</text></svg>">
+  <link rel="manifest" href="manifest.json">
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="css/app.css">
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+
+<body>
+<!-- LOGIN -->
+<div id="loginPage" class="lg-page" style="display:none"><div class="lg-box">
+<div class="lg-logo">پ</div>
+<h2 style="margin-bottom:4px">پارچه‌بان</h2>
+<p style="color:var(--txs);font-size:.85rem;margin-bottom:24px">سیستم مدیریت انبار و فروش</p>
+<div class="fg"><label>نام کاربری</label><input class="fc" id="loginUser" placeholder="نام کاربری"></div>
+<div class="fg"><label>رمز عبور</label><input class="fc" id="loginPass" type="password" placeholder="پیش‌فرض: admin123"></div>
+<button class="btn bp" style="width:100%;padding:12px;font-size:.95rem" id="loginBtn">ورود</button>
+<p id="loginErr" style="color:var(--d);font-size:.82rem;margin-top:12px;display:none"></p>
+<p style="margin-top:10px"><a href="#" onclick="resetPass();return false" style="color:var(--txs);font-size:.78rem;text-decoration:none">رمز را فراموش کردم</a></p>
+</div></div>
+
+<!-- APP -->
+<div id="loadingScreen" style="position:fixed;inset:0;background:#0f172a;display:flex;align-items:center;justify-content:center;z-index:99999"><div style="text-align:center;color:#fff"><div style="width:40px;height:40px;border:3px solid rgba(255,255,255,.2);border-top-color:#2563eb;border-radius:50%;animation:spnA .6s linear infinite;margin:0 auto 14px"></div><p style="font-size:.9rem">پارچه‌بان</p></div></div>
+<div id="appContainer" style="display:none">
+<aside class="sb">
+<div class="sb-brand"><div class="sb-logo">پ</div><div><h1>پارچه‌بان</h1><small>v8</small></div></div>
+<nav class="sb-nav" id="sidebarNav">
+<div class="ns">اصلی</div>
+<a class="ni active" data-page="dashboard" href="#dashboard"><i class="bi bi-grid-1x2-fill"></i>داشبورد</a>
+<div class="ns sb-drop" onclick="this.classList.toggle('open')"><i class="bi bi-chevron-down"></i>تعاریف پایه</div>
+<div class="sb-sub">
+<a class="ni" data-page="categories" href="#categories"><i class="bi bi-bookmark-fill"></i>گروه‌بندی</a>
+<a class="ni" data-page="products" href="#products"><i class="bi bi-box-seam-fill"></i>تعریف کالا</a>
+<a class="ni" data-page="contacts" href="#contacts"><i class="bi bi-people-fill"></i>اشخاص</a>
+</div>
+<div class="ns sb-drop" onclick="this.classList.toggle('open')"><i class="bi bi-chevron-down"></i>انبار و فروش</div>
+<div class="sb-sub">
+<a class="ni" data-page="purchase" href="#purchase"><i class="bi bi-cart-fill"></i>فاکتور خرید</a>
+<a class="ni" data-page="sales" href="#sales"><i class="bi bi-receipt-cutoff"></i>فاکتور فروش</a>
+<a class="ni" data-page="proforma" href="#proforma"><i class="bi bi-file-earmark-text"></i>پیش فاکتور</a>
+<a class="ni" data-page="warehouse" href="#warehouse"><i class="bi bi-archive-fill"></i>انبار</a>
+</div>
+<div class="ns sb-drop" onclick="this.classList.toggle('open')"><i class="bi bi-chevron-down"></i>مالی</div>
+<div class="sb-sub">
+<a class="ni" data-page="payments" href="#payments"><i class="bi bi-wallet2"></i>پرداخت و دریافت</a>
+<a class="ni" data-page="checks" href="#checks"><i class="bi bi-credit-card-2-front-fill"></i>مدیریت چک‌ها</a><a class="ni" data-page="banks" href="#banks"><i class="bi bi-bank2"></i>بانک</a>
+</div>
+<div class="ns sb-drop" onclick="this.classList.toggle('open')"><i class="bi bi-chevron-down"></i>گزارشات</div>
+<div class="sb-sub">
+<a class="ni" data-page="ledger" href="#ledger"><i class="bi bi-journal-text"></i>دفتر معین</a>
+<a class="ni" data-page="productLedger" href="#productLedger"><i class="bi bi-list-check"></i>دفتر کالا</a>
+<a class="ni" data-page="reports" href="#reports"><i class="bi bi-bar-chart-line-fill"></i>گزارشات</a>
+</div>
+<div class="ns sb-drop" onclick="this.classList.toggle('open')"><i class="bi bi-chevron-down"></i>تنظیمات</div>
+<div class="sb-sub">
+<a class="ni" data-page="years" href="#years"><i class="bi bi-calendar3"></i>سال مالی</a>
+<a class="ni" data-page="settings" href="#settings"><i class="bi bi-gear-fill"></i>حساب کاربری</a>
+</div>
+</nav>
+<div class="sb-ft"><button class="dm-btn" id="darkBtn"><i class="bi bi-moon"></i></button><span>v8</span><button class="dm-btn" id="logoutBtn"><i class="bi bi-box-arrow-right"></i></button></div>
+</aside>
+<div class="mn">
+<div class="tp">
+<div class="tp-t" id="pageTitle"><i class="bi bi-grid-1x2-fill"></i><span>داشبورد</span></div>
+<div class="tp-a"><select class="yr-sel" id="yearSel"></select><input type="text" class="srch" id="searchInput" placeholder="جستجو..." oninput="doSearch()"><div id="topActions"></div></div>
+</div>
+<div class="ct" id="mainContent"></div>
+</div>
+</div>
+<div class="mo" id="modalOverlay"><div class="md" id="modalBox"><div class="md-h"><h3 id="modalTitle"></h3><button class="md-x" id="modalCloseBtn"><i class="bi bi-x-lg"></i></button></div><div class="md-b" id="modalBody"></div><div class="md-f" id="modalFoot"></div></div></div>
+<div class="tw2" id="toastWrap"></div>
+<div class="pr-area" id="printArea"></div>
+
+<!-- ماژول‌های برنامه؛ ترتیب بارگذاری مهم است -->
+  <script src="js/01-state.js"></script>
+  <script src="js/02-utils.js"></script>
+  <script src="js/03-db.js"></script>
+  <script src="js/04-auth.js"></script>
+  <script src="js/05-ui.js"></script>
+  <script src="js/06-export.js"></script>
+  <script src="js/07-fiscal-year.js"></script>
+  <script src="js/08-backup.js"></script>
+  <script src="js/09-categories.js"></script>
+  <script src="js/10-products.js"></script>
+  <script src="js/11-contacts.js"></script>
+  <script src="js/12-invoices.js"></script>
+  <script src="js/13-payments.js"></script>
+  <script src="js/14-checks.js"></script>
+  <script src="js/15-ledger.js"></script>
+  <script src="js/16-warehouse.js"></script>
+  <script src="js/17-product-ledger.js"></script>
+  <script src="js/18-reports.js"></script>
+  <script src="js/19-settings.js"></script>
+  <script src="js/20-dashboard.js"></script>
+  <script src="js/21-pagination.js"></script>
+  <script src="js/22-banks.js"></script>
+  <script src="js/23-routes.js"></script>
+  <script src="js/24-boot.js"></script>
+</body>
+
+</html>
