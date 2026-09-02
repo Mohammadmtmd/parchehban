@@ -1,0 +1,3 @@
+{"env":{"browser":true,"es2021":true},"parserOptions":{"ecmaVersion":2021,"sourceType":"script"},
+"globals":{"Chart":"readonly"},
+"rules":{"no-undef":"error","no-dupe-keys":"error","no-redeclare":"error","no-unused-vars":"off","no-eval":"error","no-implicit-globals":"off"}}
