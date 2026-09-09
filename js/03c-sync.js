@@ -582,6 +582,7 @@ var Sync = {
 
   /* راه‌اندازی اولیه ماژول همگام‌سازی و شنوندگان رویدادها */
   init: function() {
+    Sync.checkUrlSetup();
     var cfg = Sync.getConfig();
 
     /* پاک کردن تایمرهای قبلی در صورت راه‌اندازی مجدد */
@@ -670,28 +671,60 @@ var Sync = {
     el.title = 'تمام اطلاعات با سرور ابری Supabase همگام است. آخرین همگام‌سازی: ' + timeTxt;
   },
 
+  /* بررسی لینک راه‌اندازی سریع در آدرس مرورگر (مخصوص اتصال سریع موبایل) */
+  checkUrlSetup: function() {
+    var hash = location.hash || '';
+    if (hash.indexOf('#sync-setup=') === 0) {
+      try {
+        var raw = hash.replace('#sync-setup=', '');
+        var jsonStr = decodeURIComponent(escape(atob(raw)));
+        var data = JSON.parse(jsonStr);
+        if (data && data.u && data.k) {
+          Sync.saveConfig({
+            url: data.u,
+            key: data.k,
+            orgId: data.o || 'shop1',
+            autoSync: true
+          });
+          location.hash = '#dashboard';
+          setTimeout(async function() {
+            UI.toast('تنظیمات اتصال ابری با موفقیت دریافت و فعال شد!', 's');
+            try {
+              UI.toast('در حال دریافت اطلاعات از سرور ابری...', 'i');
+              var count = await Sync.fullDownload();
+              UI.toast('اطلاعات با موفقیت دریافت شد (' + count + ' رکورد)', 's');
+              if (typeof Dash !== 'undefined') Dash.render();
+            } catch (err) {
+              console.warn('Initial download on mobile link:', err);
+            }
+          }, 300);
+        }
+      } catch (e) {
+        console.warn('Invalid sync setup link:', e);
+      }
+    }
+  },
+
   /* مودال وضعیت و دسترسی سریع به همگام‌سازی */
   uiModal: async function() {
     var cfg = Sync.getConfig();
-    var pCount = await Sync.count();
+    var pCount = 0;
+    try { pCount = await Sync.count(); } catch (e) {}
     var lastSync = localStorage.getItem('pb_last_sync');
     var lastSyncFa = lastSync ? new Date(lastSync).toLocaleString('fa-IR') : 'هنوز انجام نشده';
 
-    var h = '<div style="direction:rtl;text-align:right">';
-    h += '<h3 style="margin-bottom:12px;font-weight:800;font-size:1.15rem;display:flex;align-items:center;gap:8px">' +
-         '<i class="bi bi-clouds-fill" style="color:var(--p)"></i> وضعیت همگام‌سازی ابری (Supabase)</h3>';
+    var body = '<div style="direction:rtl;text-align:right">';
+    var foot = '';
 
     if (!cfg.configured) {
-      h += '<div class="hint-box" style="margin-bottom:16px">' +
+      body += '<div class="hint-box" style="margin-bottom:16px">' +
            '<strong>اتصال ابری هنوز فعال نشده است.</strong><br>' +
-           'برای استفاده همزمان از برنامه روی چند دستگاه (رایانه، موبایل) و پشتیبان‌گیری خودکار، اطلاعات اتصال به Supabase را در تنظیمات وارد کنید.' +
+           'برای استفاده همزمان از برنامه روی چند دستگاه (رایانه، موبایل) و همگام‌سازی خودکار، اطلاعات اتصال به Supabase را در تنظیمات وارد کنید.' +
            '</div>';
-      h += '<div style="display:flex;gap:10px;justify-content:flex-end">' +
-           '<button class="btn bo" onclick="UI.close()">بستن</button>' +
-           '<button class="btn bp" onclick="UI.close();Settings.render();"><i class="bi bi-gear"></i> رفتن به تنظیمات اتصال</button>' +
-           '</div>';
+      foot = '<button class="btn bo" onclick="UI.close()">بستن</button>' +
+             '<button class="btn bp" onclick="UI.close();location.hash=\'#settings\'"><i class="bi bi-gear"></i> رفتن به تنظیمات اتصال</button>';
     } else {
-      h += '<div style="background:var(--bg);border:1px solid var(--bd);border-radius:var(--rd);padding:14px;margin-bottom:16px;font-size:.88rem;line-height:1.9">' +
+      body += '<div style="background:var(--bg);border:1px solid var(--bd);border-radius:var(--rd);padding:14px;margin-bottom:16px;font-size:.88rem;line-height:1.9">' +
            '<div><strong>شناسه کسب‌وکار:</strong> <code>' + esc(cfg.orgId) + '</code></div>' +
            '<div><strong>آدرس سرور:</strong> <code style="direction:ltr;display:inline-block">' + esc(cfg.url) + '</code></div>' +
            '<div><strong>تغییرات منتظر ارسال:</strong> ' + (pCount > 0 ? '<span style="color:var(--d);font-weight:700">' + pCount + ' مورد</span>' : '<span style="color:var(--ok)">صف خالی (همه ارسال شده)</span>') + '</div>' +
@@ -699,17 +732,15 @@ var Sync = {
            '<div><strong>همگام‌سازی خودکار:</strong> ' + (cfg.autoSync ? '<span style="color:var(--ok)">فعال</span>' : '<span style="color:var(--txs)">غیرفعال</span>') + '</div>' +
            '</div>';
 
-      h += '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:space-between;align-items:center">' +
-           '<button class="btn bo" onclick="UI.close();Settings.render()"><i class="bi bi-sliders"></i> تنظیمات پیشرفته</button>' +
-           '<div style="display:flex;gap:8px">' +
-           '<button class="btn bo" onclick="UI.close()">بستن</button>' +
-           '<button class="btn bp" id="modalSyncNowBtn" onclick="Sync.handleModalSync()"><i class="bi bi-arrow-repeat"></i> همگام‌سازی فوری</button>' +
-           '</div>' +
-           '</div>';
+      foot = '<button class="btn bo" onclick="UI.close();location.hash=\'#settings\'"><i class="bi bi-sliders"></i> تنظیمات پیشرفته</button>' +
+             '<div style="display:flex;gap:8px">' +
+             '<button class="btn bo" onclick="UI.close()">بستن</button>' +
+             '<button class="btn bp" id="modalSyncNowBtn" onclick="Sync.handleModalSync()"><i class="bi bi-arrow-repeat"></i> همگام‌سازی فوری</button>' +
+             '</div>';
     }
+    body += '</div>';
 
-    h += '</div>';
-    UI.modal(h);
+    UI.open('وضعیت همگام‌سازی ابری (Supabase)', body, foot);
   },
 
   handleModalSync: async function() {
@@ -725,11 +756,12 @@ var Sync = {
       } else if (res && res.pull && res.pull.error) {
         UI.toast('خطا در دریافت: ' + res.pull.error, 'e');
       } else {
-        UI.toast('همگام‌سازی با موفقیت انجام شد');
+        UI.toast('همگام‌سازی با موفقیت انجام شد', 's');
       }
     } catch (e) {
       UI.toast('خطا: ' + (e && e.message ? e.message : 'نامشخص'), 'e');
     }
     UI.close();
+    Sync.updateUI();
   }
 };

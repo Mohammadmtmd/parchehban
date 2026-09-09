@@ -382,23 +382,17 @@ var Auth = {
 
   /* ══ بازیابی امن رمز عبور با کلید اختصاصی ══ */
   showRecoveryModal: async function() {
-    var h = '<div style="direction:rtl;text-align:right">' +
-      '<h3 style="margin-bottom:10px;font-weight:800;font-size:1.15rem;display:flex;align-items:center;gap:8px">' +
-      '<i class="bi bi-shield-lock" style="color:var(--p)"></i> بازیابی امن رمز عبور</h3>' +
-      '<p style="color:var(--txs);font-size:.85rem;margin-bottom:16px;line-height:1.7">' +
+    var body = '<p style="color:var(--txs);font-size:.85rem;margin-bottom:16px;line-height:1.7">' +
       'برای جلوگیری از دسترسی افراد غیرمجاز، تغییر رمز نیازمند «کلید بازیابی اضطراری» (Master Key) سیستم شماست که در بخش تنظیمات در اختیار مدیر سیستم قرار دارد.' +
       '</p>' +
       '<div class="fg"><label class="fl">نام کاربری</label><input type="text" class="fc" id="recUser" value="admin" placeholder="نام کاربری"></div>' +
       '<div class="fg"><label class="fl">کلید بازیابی اضطراری</label><input type="text" class="fc" id="recKey" placeholder="مثال: PB-XXXX-YYYY" style="direction:ltr;font-family:monospace;letter-spacing:1px"></div>' +
       '<div class="fg"><label class="fl">رمز عبور جدید</label><input type="password" class="fc" id="recNewPass" placeholder="حداقل ۶ کاراکتر"></div>' +
       '<div class="fg"><label class="fl">تکرار رمز عبور جدید</label><input type="password" class="fc" id="recConfirmPass" placeholder="تکرار رمز عبور جدید"></div>' +
-      '<div id="recErr" style="color:var(--d);font-size:.85rem;margin-bottom:12px;display:none"></div>' +
-      '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">' +
-      '<button class="btn bo" onclick="UI.close()">انصراف</button>' +
-      '<button class="btn bp" onclick="Auth.processRecovery()"><i class="bi bi-check2-circle"></i> تغییر و ثبت رمز</button>' +
-      '</div>' +
-      '</div>';
-    UI.modal(h);
+      '<div id="recErr" style="color:var(--d);font-size:.85rem;margin-bottom:12px;display:none"></div>';
+    var foot = '<button class="btn bo" onclick="UI.close()">انصراف</button>' +
+      '<button class="btn bp" onclick="Auth.processRecovery()"><i class="bi bi-check2-circle"></i> تغییر و ثبت رمز</button>';
+    UI.open('بازیابی امن رمز عبور', body, foot);
   },
 
   processRecovery: async function() {

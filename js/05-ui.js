@@ -18,14 +18,22 @@ var UI = {
     setHTML('mainContent', h);
   },
   open: function(t, b, f, w) {
-    document.getElementById('modalTitle').textContent = t;
-    setHTML('modalBody', b);
+    var titleEl = document.getElementById('modalTitle');
+    if (titleEl) titleEl.textContent = t || '';
+    setHTML('modalBody', b || '');
     setHTML('modalFoot', f || '');
-    document.getElementById('modalBox').className = w ? 'md w' : 'md';
-    document.getElementById('modalOverlay').classList.add('show');
+    var box = document.getElementById('modalBox');
+    if (box) box.className = w ? 'md w' : 'md';
+    var ov = document.getElementById('modalOverlay');
+    if (ov) ov.classList.add('show');
+  },
+  modal: function(b, t, f, w) {
+    /* پشتیبانی از فراخوانی UI.modal(html) و UI.modal(body, title, foot, wide) */
+    UI.open(t || '', b, f || '', w);
   },
   close: function() {
-    document.getElementById('modalOverlay').classList.remove('show');
+    var ov = document.getElementById('modalOverlay');
+    if (ov) ov.classList.remove('show');
   },
   toast: function(m, tp) {
     tp = tp || 's';

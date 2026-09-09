@@ -61,6 +61,7 @@ var Settings = {
       '<button class="btn bo" onclick="Sync.syncNow()"><i class="bi bi-arrow-repeat"></i> همگام‌سازی فوری</button>' +
       '<button class="btn bo" onclick="Settings.doFullUpload()" title="ارسال تمام اطلاعات سیستم فعلی به Supabase"><i class="bi bi-cloud-arrow-up"></i> بارگذاری کامل روی سرور (سیستم مبدأ)</button>' +
       '<button class="btn bo" onclick="Settings.doFullDownload()" title="دریافت تمام اطلاعات از سرور روی این دستگاه"><i class="bi bi-cloud-arrow-down"></i> دریافت کامل از سرور (گوشی / سیستم جدید)</button>' +
+      '<button class="btn bo" onclick="Settings.copyMobileLink()" title="ایجاد لینک برای اتصال فوق‌سریع گوشی بدون نیاز به تایپ کلید"><i class="bi bi-phone"></i> کپی لینک اتصال به گوشی</button>' +
       '</div>' +
       '</div></div>';
 
@@ -198,22 +199,38 @@ var Settings = {
     UI.toast('کلید جدید ذخیره شد: ' + newKey, 's');
   },
 
+  copyMobileLink: function() {
+    var cfg = Sync.getConfig();
+    if (!cfg.configured) {
+      UI.toast('ابتدا اطلاعات اتصال به Supabase را وارد و ذخیره کنید.', 'e');
+      return;
+    }
+    var payload = btoa(unescape(encodeURIComponent(JSON.stringify({
+      u: cfg.url,
+      k: cfg.key,
+      o: cfg.orgId
+    }))));
+    var origin = location.origin + location.pathname;
+    var link = origin + '#sync-setup=' + payload;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(link).then(function() {
+        UI.toast('لینک اتصال در حافظه کپی شد! آن را به پیام‌رسان گوشی خود بفرستید و باز کنید.', 's');
+      });
+    } else {
+      window.prompt('لینک اتصال را کپی و روی گوشی خود باز کنید:', link);
+    }
+  },
+
   showSqlHelp: function() {
-    var h = '<div style="direction:rtl;text-align:right">' +
-      '<h3 style="margin-bottom:12px;font-weight:800;font-size:1.15rem;display:flex;align-items:center;gap:8px">' +
-      '<i class="bi bi-filetype-sql" style="color:var(--p)"></i> راهنمای راه‌اندازی جدول‌ها در Supabase</h3>' +
-      '<p style="color:var(--txs);font-size:.85rem;line-height:1.8;margin-bottom:14px">' +
+    var body = '<p style="color:var(--txs);font-size:.85rem;line-height:1.8;margin-bottom:14px">' +
       'برای راه‌اندازی پایگاه داده در پروژه رایگان Supabase، کافی است فایل آماده <code>supabase/schema.sql</code> را در پنل Supabase اجرا کنید:<br>' +
       '۱. در پنل <a href="https://supabase.com" target="_blank" style="color:var(--p);text-decoration:underline">Supabase</a> وارد پروژه خود شوید.<br>' +
       '۲. از منوی سمت چپ به بخش <strong>SQL Editor</strong> بروید و روی <strong>New Query</strong> کلیک کنید.<br>' +
       '۳. محتوای فایل <code>supabase/schema.sql</code> را کپی کرده و در کادر قرار داده و دکمه <strong>Run</strong> را بزنید.<br>' +
       '۴. تمام ۱۲ جدول، شاخص‌ها و تریگرها ساخته می‌شوند و آماده همگام‌سازی می‌باشند.' +
-      '</p>' +
-      '<div style="display:flex;justify-content:flex-end;gap:8px">' +
-      '<button class="btn bp" onclick="UI.close()">متوجه شدم</button>' +
-      '</div>' +
-      '</div>';
-    UI.modal(h);
+      '</p>';
+    var foot = '<button class="btn bp" onclick="UI.close()">متوجه شدم</button>';
+    UI.open('راهنمای راه‌اندازی جدول‌ها در Supabase', body, foot);
   },
 
   exportServer: async function() {
