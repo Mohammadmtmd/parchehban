@@ -1,17 +1,40 @@
 /* ══ NAVIGATION ══ */
 var navEl = document.getElementById('sidebarNav');
 if (navEl) navEl.addEventListener('click', function(e) {
+  /* باز و بسته کردن لیست‌های کشویی منو */
+  var drop = e.target.closest('.sb-drop');
+  if (drop) {
+    e.preventDefault();
+    e.stopPropagation();
+    drop.classList.toggle('open');
+    return;
+  }
+
   var item = e.target.closest('.ni');
   if (!item) return;
   e.preventDefault();
   var p = item.dataset.page;
   if (!ROUTES[p]) return;
+
+  /* بستن کشوی منو در موبایل */
+  UI.closeSidebar();
+
   /* اصلاح: قبلاً replaceState استفاده می‌شد، پس هیچ سابقه‌ای در مرورگر
      ثبت نمی‌شد و دکمه «بازگشت» کاربر را از برنامه بیرون می‌برد.
      حالا pushState سابقه می‌سازد (به‌جز وقتی همان صفحه دوباره کلیک شود). */
   var cur = (location.hash || '').replace('#', '').trim();
   if (cur !== p) history.pushState(null, '', '#' + p);
   ROUTES[p]();
+});
+
+/* دسترسی صفحه‌کلید برای آیتم‌های کشویی منو */
+document.querySelectorAll('.sb-drop').forEach(function(d) {
+  d.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      this.classList.toggle('open');
+    }
+  });
 });
 
 /* اصلاح: هیچ شنونده‌ای برای تغییر آدرس وجود نداشت، بنابراین دکمه‌های

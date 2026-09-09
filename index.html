@@ -75,36 +75,41 @@
 <!-- APP -->
 <div id="loadingScreen" style="position:fixed;inset:0;background:#0f172a;display:flex;align-items:center;justify-content:center;z-index:99999"><div style="text-align:center;color:#fff"><div style="width:40px;height:40px;border:3px solid rgba(255,255,255,.2);border-top-color:#2563eb;border-radius:50%;animation:spnA .6s linear infinite;margin:0 auto 14px"></div><p style="font-size:.9rem">پارچه‌بان</p><pre id="bootDiag" dir="rtl" style="display:none;text-align:right;max-width:520px;margin:18px auto 0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.18);border-radius:10px;padding:14px 16px;font-size:.76rem;line-height:1.9;color:#fca5a5;white-space:pre-wrap;font-family:inherit"></pre></div></div>
 <div id="appContainer" style="display:none">
-<aside class="sb">
-<div class="sb-brand"><div class="sb-logo">پ</div><div><h1>پارچه‌بان</h1><small>v9.4</small></div></div>
+<div class="sb-backdrop" id="sbBackdrop" onclick="UI.closeSidebar()"></div>
+<aside class="sb" id="appSidebar">
+<div class="sb-brand">
+  <div class="sb-logo">پ</div>
+  <div style="flex:1"><h1>پارچه‌بان</h1><small>v9.4</small></div>
+  <button class="dm-btn sb-close-btn" id="sbCloseBtn" onclick="UI.closeSidebar()" title="بستن منو"><i class="bi bi-x-lg"></i></button>
+</div>
 <nav class="sb-nav" id="sidebarNav">
 <div class="ns">اصلی</div>
 <a class="ni active" data-page="dashboard" href="#dashboard"><i class="bi bi-grid-1x2-fill"></i>داشبورد</a>
-<div class="ns sb-drop" onclick="this.classList.toggle('open')"><i class="bi bi-chevron-down"></i>تعاریف پایه</div>
+<div class="ns sb-drop" role="button" tabindex="0"><i class="bi bi-chevron-down"></i>تعاریف پایه</div>
 <div class="sb-sub">
 <a class="ni" data-page="categories" href="#categories"><i class="bi bi-bookmark-fill"></i>گروه‌بندی</a>
 <a class="ni" data-page="products" href="#products"><i class="bi bi-box-seam-fill"></i>تعریف کالا</a>
 <a class="ni" data-page="contacts" href="#contacts"><i class="bi bi-people-fill"></i>اشخاص</a>
 </div>
-<div class="ns sb-drop" onclick="this.classList.toggle('open')"><i class="bi bi-chevron-down"></i>انبار و فروش</div>
+<div class="ns sb-drop" role="button" tabindex="0"><i class="bi bi-chevron-down"></i>انبار و فروش</div>
 <div class="sb-sub">
 <a class="ni" data-page="purchase" href="#purchase"><i class="bi bi-cart-fill"></i>فاکتور خرید</a>
 <a class="ni" data-page="sales" href="#sales"><i class="bi bi-receipt-cutoff"></i>فاکتور فروش</a>
 <a class="ni" data-page="proforma" href="#proforma"><i class="bi bi-file-earmark-text"></i>پیش فاکتور</a>
 <a class="ni" data-page="warehouse" href="#warehouse"><i class="bi bi-archive-fill"></i>انبار</a>
 </div>
-<div class="ns sb-drop" onclick="this.classList.toggle('open')"><i class="bi bi-chevron-down"></i>مالی</div>
+<div class="ns sb-drop" role="button" tabindex="0"><i class="bi bi-chevron-down"></i>مالی</div>
 <div class="sb-sub">
 <a class="ni" data-page="payments" href="#payments"><i class="bi bi-wallet2"></i>پرداخت و دریافت</a>
 <a class="ni" data-page="checks" href="#checks"><i class="bi bi-credit-card-2-front-fill"></i>مدیریت چک‌ها</a><a class="ni" data-page="banks" href="#banks"><i class="bi bi-bank2"></i>بانک</a>
 </div>
-<div class="ns sb-drop" onclick="this.classList.toggle('open')"><i class="bi bi-chevron-down"></i>گزارشات</div>
+<div class="ns sb-drop" role="button" tabindex="0"><i class="bi bi-chevron-down"></i>گزارشات</div>
 <div class="sb-sub">
 <a class="ni" data-page="ledger" href="#ledger"><i class="bi bi-journal-text"></i>دفتر معین</a>
 <a class="ni" data-page="productLedger" href="#productLedger"><i class="bi bi-list-check"></i>دفتر کالا</a>
 <a class="ni" data-page="reports" href="#reports"><i class="bi bi-bar-chart-line-fill"></i>گزارشات</a>
 </div>
-<div class="ns sb-drop" onclick="this.classList.toggle('open')"><i class="bi bi-chevron-down"></i>تنظیمات</div>
+<div class="ns sb-drop" role="button" tabindex="0"><i class="bi bi-chevron-down"></i>تنظیمات</div>
 <div class="sb-sub">
 <a class="ni" data-page="years" href="#years"><i class="bi bi-calendar3"></i>سال مالی</a>
 <a class="ni" data-page="settings" href="#settings"><i class="bi bi-gear-fill"></i>حساب کاربری</a>
@@ -115,7 +120,10 @@
 </aside>
 <div class="mn">
 <div class="tp">
-<div class="tp-t" id="pageTitle"><i class="bi bi-grid-1x2-fill"></i><span>داشبورد</span></div>
+<div class="tp-start" style="display:flex;align-items:center;gap:10px">
+  <button class="btn bo bi2 sb-toggle-btn" id="sbToggleBtn" onclick="UI.toggleSidebar()" title="منوی برنامه"><i class="bi bi-list"></i></button>
+  <div class="tp-t" id="pageTitle"><i class="bi bi-grid-1x2-fill"></i><span>داشبورد</span></div>
+</div>
 <div class="tp-a"><button class="btn bo bs sync-status-btn" id="syncStatusBtn" onclick="Sync.uiModal()" title="وضعیت همگام‌سازی ابری"><i class="bi bi-cloud"></i> <span class="sync-lbl">همگام</span></button><select class="yr-sel" id="yearSel"></select><input type="text" class="srch" id="searchInput" placeholder="جست‌وجوی سراسری… (Ctrl+K)" autocomplete="off" oninput="Search.onInput()" onkeydown="Search.onKey(event)"><div id="topActions"></div></div>
 </div>
 <div class="ct" id="mainContent"></div>

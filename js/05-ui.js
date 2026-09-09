@@ -5,7 +5,33 @@ var UI = {
       e.classList.remove('active');
     });
     var el = document.querySelector('[data-page="' + p + '"]');
-    if (el) el.classList.add('active');
+    if (el) {
+      el.classList.add('active');
+      /* باز کردن خودکار گروه کشویی بالاسری این صفحه در منو */
+      var sub = el.closest('.sb-sub');
+      if (sub) {
+        var prev = sub.previousElementSibling;
+        if (prev && prev.classList.contains('sb-drop')) {
+          prev.classList.add('open');
+        }
+      }
+    }
+  },
+  toggleSidebar: function(force) {
+    var sb = document.getElementById('appSidebar') || document.querySelector('.sb');
+    var bd = document.getElementById('sbBackdrop');
+    if (!sb) return;
+    var isOpen = typeof force === 'boolean' ? force : !sb.classList.contains('open');
+    if (isOpen) {
+      sb.classList.add('open');
+      if (bd) bd.classList.add('show');
+    } else {
+      sb.classList.remove('open');
+      if (bd) bd.classList.remove('show');
+    }
+  },
+  closeSidebar: function() {
+    UI.toggleSidebar(false);
   },
   title: function(i, t) {
     document.getElementById('pageTitle').innerHTML =

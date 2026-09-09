@@ -10,7 +10,8 @@ var FY = {
     }
     var h = '';
     ys.forEach(function(y) {
-      h += '<option value="' + y.id + '"' + (y.id === STATE.yearId ? ' selected' : '') + '>' + esc(y.name) + (y.isClosed ? ' (بسته)' : '') + '</option>';
+      var isSel = intOf(y.id) === intOf(STATE.yearId);
+      h += '<option value="' + y.id + '"' + (isSel ? ' selected' : '') + '>' + esc(y.name) + (y.isClosed ? ' (بسته)' : '') + '</option>';
     });
     sel.innerHTML = h;
   },
@@ -28,16 +29,30 @@ var FY = {
         isCurrent: true,
         isClosed: false
       });
-      STATE.yearId = id;
-      localStorage.setItem('pb_year', id);
-    } else if (!STATE.yearId || !ys.find(function(y) {
-        return y.id === STATE.yearId;
-      })) {
-      var cur = ys.find(function(y) {
-        return y.isCurrent && !y.isClosed;
-      }) || ys[ys.length - 1];
-      STATE.yearId = cur.id;
-      localStorage.setItem('pb_year', cur.id);
+      STATE.yearId = intOf(id);
+      localStorage.setItem('pb_year', STATE.yearId);
+    } else {
+      var target = null;
+      if (STATE.yearId != null) {
+        target = ys.find(function(y) {
+          return intOf(y.id) === intOf(STATE.yearId);
+        });
+      }
+      if (!target) {
+        var stored = localStorage.getItem('pb_year');
+        if (stored != null) {
+          target = ys.find(function(y) {
+            return intOf(y.id) === intOf(stored);
+          });
+        }
+      }
+      if (!target) {
+        target = ys.find(function(y) {
+          return y.isCurrent && !y.isClosed;
+        }) || ys[ys.length - 1];
+      }
+      STATE.yearId = intOf(target.id);
+      localStorage.setItem('pb_year', STATE.yearId);
     }
     await this.refreshSel();
   },
@@ -55,8 +70,11 @@ var FY = {
   },
   byYear: async function(store) {
     var all = await DB.all(store);
+    var cur = STATE.yearId != null ? intOf(STATE.yearId) : null;
     return all.filter(function(r) {
-      return r.fiscalYearId === STATE.yearId;
+      if (cur == null) return true;
+      var ry = r.fiscalYearId != null ? intOf(r.fiscalYearId) : null;
+      return ry === cur;
     });
   },
   render: async function() {

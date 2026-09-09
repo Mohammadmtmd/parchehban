@@ -18,6 +18,31 @@ var Dash = {
   load: async function() {
     var contacts = await DB.all('contacts');
     var allInvs = await FY.byYear('invoices');
+
+    /* هوشمندی انتخاب سال مالی: اگر سال مالی فعلی هیچ فاکتوری ندارد ولی در سیستم فاکتور وجود دارد،
+       سال دارای بیشترین فاکتور انتخاب شود تا داشبورد در موبایل و سیستم‌های تازه همگام خالی نماند */
+    if (!allInvs.length) {
+      var totalInvs = await DB.all('invoices');
+      if (totalInvs.length > 0) {
+        var yearCounts = {};
+        totalInvs.forEach(function(inv) {
+          var yk = inv.fiscalYearId != null ? intOf(inv.fiscalYearId) : 0;
+          yearCounts[yk] = (yearCounts[yk] || 0) + 1;
+        });
+        var bestYear = Object.keys(yearCounts).sort(function(a, b) {
+          return yearCounts[b] - yearCounts[a];
+        })[0];
+        if (bestYear && intOf(bestYear) > 0 && intOf(bestYear) !== intOf(STATE.yearId)) {
+          STATE.yearId = intOf(bestYear);
+          localStorage.setItem('pb_year', STATE.yearId);
+          await FY.refreshSel();
+          allInvs = await FY.byYear('invoices');
+        } else if (!allInvs.length) {
+          allInvs = totalInvs;
+        }
+      }
+    }
+
     var cMap = {};
     contacts.forEach(function(c) {
       cMap[c.id] = c.name;
@@ -162,63 +187,67 @@ var Dash = {
       var dates = Object.keys(byDate).sort().slice(-7);
       var wCtx = document.getElementById('dashWC');
       if (wCtx) {
-        me._wc = new Chart(wCtx, {
-          type: 'bar',
-          data: {
-            labels: dates.map(function(d) {
-              var p = d.split('/');
-              return p[1] + '/' + p[2];
-            }),
-            datasets: [{
-              label: 'خرید',
-              data: dates.map(function(d) {
-                return byDate[d].pur;
+        if (!dates.length) {
+          wCtx.parentElement.innerHTML = '<div class="em" style="padding:48px 14px;text-align:center"><i class="bi bi-bar-chart" style="font-size:2.2rem;color:var(--txs);opacity:.45"></i><p style="margin-top:10px;font-size:.84rem;color:var(--txs)">هنوز فاکتور خرید یا فروشی در این دوره ثبت نشده است</p></div>';
+        } else {
+          me._wc = new Chart(wCtx, {
+            type: 'bar',
+            data: {
+              labels: dates.map(function(d) {
+                var p = (d || '').split('/');
+                return p.length >= 3 ? (p[1] + '/' + p[2]) : d;
               }),
-              backgroundColor: 'rgba(217,119,6,0.7)',
-              borderRadius: 4
-            }, {
-              label: 'فروش',
-              data: dates.map(function(d) {
-                return byDate[d].sal;
-              }),
-              backgroundColor: 'rgba(22,163,74,0.7)',
-              borderRadius: 4
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: {
-                position: 'bottom',
-                labels: {
-                  font: {
-                    family: 'Vazirmatn'
-                  }
-                }
-              }
+              datasets: [{
+                label: 'خرید',
+                data: dates.map(function(d) {
+                  return byDate[d].pur;
+                }),
+                backgroundColor: 'rgba(217,119,6,0.7)',
+                borderRadius: 4
+              }, {
+                label: 'فروش',
+                data: dates.map(function(d) {
+                  return byDate[d].sal;
+                }),
+                backgroundColor: 'rgba(22,163,74,0.7)',
+                borderRadius: 4
+              }]
             },
-            scales: {
-              y: {
-                ticks: {
-                  font: {
-                    family: 'Vazirmatn'
-                  },
-                  callback: function(v) {
-                    return (v / 1000000).toFixed(1) + 'M';
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: {
+                  position: 'bottom',
+                  labels: {
+                    font: {
+                      family: 'Vazirmatn'
+                    }
                   }
                 }
               },
-              x: {
-                ticks: {
-                  font: {
-                    family: 'Vazirmatn'
+              scales: {
+                y: {
+                  ticks: {
+                    font: {
+                      family: 'Vazirmatn'
+                    },
+                    callback: function(v) {
+                      return (v / 1000000).toFixed(1) + 'M';
+                    }
+                  }
+                },
+                x: {
+                  ticks: {
+                    font: {
+                      family: 'Vazirmatn'
+                    }
                   }
                 }
               }
             }
-          }
-        });
+          });
+        }
       }
       var byCust = {};
       allInvs.forEach(function(inv) {
@@ -229,37 +258,41 @@ var Dash = {
       var cL = [],
         cD = [];
       for (var k in byCust) {
-        cL.push(cMap[k] || '—');
+        cL.push(cMap[k] || 'بدون نام');
         cD.push(byCust[k]);
       }
       var cCtx = document.getElementById('dashCC');
-      if (cCtx && cL.length) {
-        me._cc = new Chart(cCtx, {
-          type: 'doughnut',
-          data: {
-            labels: cL,
-            datasets: [{
-              data: cD,
-              backgroundColor: ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#be185d', '#4f46e5'].slice(0, cL.length),
-              borderWidth: 2,
-              borderColor: getComputedStyle(document.body).getPropertyValue('--sf').trim() || '#fff'
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: {
-                position: 'bottom',
-                labels: {
-                  font: {
-                    family: 'Vazirmatn'
+      if (cCtx) {
+        if (!cL.length) {
+          cCtx.parentElement.innerHTML = '<div class="em" style="padding:48px 14px;text-align:center"><i class="bi bi-pie-chart" style="font-size:2.2rem;color:var(--txs);opacity:.45"></i><p style="margin-top:10px;font-size:.84rem;color:var(--txs)">هنوز فاکتور فروش مشتریان در این دوره ثبت نشده است</p></div>';
+        } else {
+          me._cc = new Chart(cCtx, {
+            type: 'doughnut',
+            data: {
+              labels: cL,
+              datasets: [{
+                data: cD,
+                backgroundColor: ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#be185d', '#4f46e5'].slice(0, cL.length),
+                borderWidth: 2,
+                borderColor: getComputedStyle(document.body).getPropertyValue('--sf').trim() || '#fff'
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: {
+                  position: 'bottom',
+                  labels: {
+                    font: {
+                      family: 'Vazirmatn'
+                    }
                   }
                 }
               }
             }
-          }
-        });
+          });
+        }
       }
     } catch (e) {
       console.log('Chart:', e);

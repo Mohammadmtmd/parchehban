@@ -460,7 +460,31 @@ var Sync = {
     }
   },
 
-  /* همگام‌سازی دوطرفه فوری: ابتدا ارسال صف، سپس دریافت تغییرات جدید */
+  /* شناسایی و اضافه کردن رکوردهای محلیِ بدون uid به صف همگام‌سازی (مخصوص کامپیوتر مبدأ) */
+  enqueueUntracked: async function() {
+    var cfg = Sync.getConfig();
+    if (!cfg.configured) return 0;
+    var totalEnqueued = 0;
+    for (var s = 0; s < Sync.STORES_ORDER.length; s++) {
+      var storeName = Sync.STORES_ORDER[s];
+      var rows = await DB.all(storeName);
+      for (var i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        if (!row.uid) {
+          row.uid = uuid();
+          row.updatedAt = row.updatedAt || new Date().toISOString();
+          await DB._req(function() {
+            return DB.gs(storeName, 'readwrite').put(row);
+          }, 'assignUid');
+          await Sync.enqueue(storeName, 'create', row.id, row.uid, row);
+          totalEnqueued++;
+        }
+      }
+    }
+    return totalEnqueued;
+  },
+
+  /* همگام‌سازی دوطرفه فوری: ابتدا بررسی رکوردهای قدیمی و ارسال صف، سپس دریافت تغییرات جدید */
   syncNow: async function() {
     var cfg = Sync.getConfig();
     if (!cfg.configured) {
@@ -468,6 +492,14 @@ var Sync = {
       return;
     }
     Sync.updateUI('syncing');
+
+    /* انتقال هر رکورد قدیمی بدون شناسه به صف همگام‌سازی تا هیچ فایلی جا نماند */
+    try {
+      await Sync.enqueueUntracked();
+    } catch (e) {
+      console.warn('enqueueUntracked warning:', e);
+    }
+
     var pushRes = await Sync.flush();
     var pullRes = await Sync.pull();
     Sync.updateUI();
@@ -575,7 +607,19 @@ var Sync = {
     }
 
     localStorage.setItem('pb_last_sync', new Date().toISOString());
+
+    /* تطبیق و به‌روزرسانی سال‌های مالی و انتخاب سال جاری پس از دانلود کامل */
     await FY.ensureDefault();
+    var ys = await DB.all('fiscalYears');
+    if (ys.length > 0) {
+      var curY = ys.find(function(y) { return y.isCurrent && !y.isClosed; }) || ys[ys.length - 1];
+      if (curY) {
+        STATE.yearId = intOf(curY.id);
+        localStorage.setItem('pb_year', STATE.yearId);
+      }
+      await FY.refreshSel();
+    }
+
     Sync.updateUI();
     return totalDownloaded;
   },
@@ -690,14 +734,17 @@ var Sync = {
           setTimeout(async function() {
             UI.toast('تنظیمات اتصال ابری با موفقیت دریافت و فعال شد!', 's');
             try {
-              UI.toast('در حال دریافت اطلاعات از سرور ابری...', 'i');
+              UI.toast('در حال دریافت تمام اطلاعات از سرور ابری...', 'i');
               var count = await Sync.fullDownload();
               UI.toast('اطلاعات با موفقیت دریافت شد (' + count + ' رکورد)', 's');
-              if (typeof Dash !== 'undefined') Dash.render();
+              if (typeof Dash !== 'undefined' && Dash.render) {
+                await Dash.render();
+              }
             } catch (err) {
               console.warn('Initial download on mobile link:', err);
+              UI.toast('خطا در دریافت اولیه: ' + (err.message || ''), 'e');
             }
-          }, 300);
+          }, 350);
         }
       } catch (e) {
         console.warn('Invalid sync setup link:', e);
@@ -724,12 +771,16 @@ var Sync = {
       foot = '<button class="btn bo" onclick="UI.close()">بستن</button>' +
              '<button class="btn bp" onclick="UI.close();location.hash=\'#settings\'"><i class="bi bi-gear"></i> رفتن به تنظیمات اتصال</button>';
     } else {
-      body += '<div style="background:var(--bg);border:1px solid var(--bd);border-radius:var(--rd);padding:14px;margin-bottom:16px;font-size:.88rem;line-height:1.9">' +
+      body += '<div style="background:var(--bg);border:1px solid var(--bd);border-radius:var(--rd);padding:14px;margin-bottom:14px;font-size:.88rem;line-height:1.9">' +
            '<div><strong>شناسه کسب‌وکار:</strong> <code>' + esc(cfg.orgId) + '</code></div>' +
            '<div><strong>آدرس سرور:</strong> <code style="direction:ltr;display:inline-block">' + esc(cfg.url) + '</code></div>' +
            '<div><strong>تغییرات منتظر ارسال:</strong> ' + (pCount > 0 ? '<span style="color:var(--d);font-weight:700">' + pCount + ' مورد</span>' : '<span style="color:var(--ok)">صف خالی (همه ارسال شده)</span>') + '</div>' +
            '<div><strong>آخرین همگام‌سازی:</strong> ' + lastSyncFa + '</div>' +
            '<div><strong>همگام‌سازی خودکار:</strong> ' + (cfg.autoSync ? '<span style="color:var(--ok)">فعال</span>' : '<span style="color:var(--txs)">غیرفعال</span>') + '</div>' +
+           '</div>' +
+           '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">' +
+           '<button class="btn bo" style="justify-content:flex-start;text-align:right" onclick="UI.close();Settings.doFullUpload()" title="ارسال تمام فایل‌های سیستم فعلی به سرور"><i class="bi bi-cloud-arrow-up" style="margin-left:8px;color:var(--p)"></i> بارگذاری کامل تمام فایل‌ها به سرور ابری (مخصوص کامپیوتر مبدأ)</button>' +
+           '<button class="btn bo" style="justify-content:flex-start;text-align:right" onclick="UI.close();Settings.doFullDownload()" title="دریافت تمام فایل‌ها از سرور روی این گوشی"><i class="bi bi-cloud-arrow-down" style="margin-left:8px;color:var(--ok)"></i> دریافت مجدد تمام فایل‌ها از سرور (مخصوص گوشی / سیستم جدید)</button>' +
            '</div>';
 
       foot = '<button class="btn bo" onclick="UI.close();location.hash=\'#settings\'"><i class="bi bi-sliders"></i> تنظیمات پیشرفته</button>' +
