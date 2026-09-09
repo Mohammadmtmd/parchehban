@@ -6,6 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>پارچه‌بان</title>
   <meta name="description" content="سیستم حسابداری و انبارداری پارچه‌بان">
+  <meta property="og:title" content="پارچه‌بان">
+  <meta property="og:description" content="سیستم حسابداری و انبارداری پارچه‌بان">
   <meta name="theme-color" content="#0f172a">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%232563eb' rx='20' width='100' height='100'/><text x='50' y='68' font-size='55' font-weight='bold' fill='white' text-anchor='middle' font-family='sans-serif'>پ</text></svg>">
   <link rel="manifest" href="manifest.json">
@@ -64,10 +66,10 @@
 <h2 style="margin-bottom:4px">پارچه‌بان</h2>
 <p style="color:var(--txs);font-size:.85rem;margin-bottom:24px">سیستم مدیریت انبار و فروش</p>
 <div class="fg"><label>نام کاربری</label><input class="fc" id="loginUser" placeholder="نام کاربری"></div>
-<div class="fg"><label>رمز عبور</label><input class="fc" id="loginPass" type="password" placeholder="پیش‌فرض: admin123"></div>
+<div class="fg"><label>رمز عبور</label><input class="fc" id="loginPass" type="password" placeholder="رمز عبور"></div>
 <button class="btn bp" style="width:100%;padding:12px;font-size:.95rem" id="loginBtn">ورود</button>
 <p id="loginErr" style="color:var(--d);font-size:.82rem;margin-top:12px;display:none"></p>
-<p style="margin-top:10px"><a href="#" onclick="resetPass();return false" style="color:var(--txs);font-size:.78rem;text-decoration:none">رمز را فراموش کردم</a></p>
+<p style="margin-top:10px"><a href="#" onclick="Auth.showRecoveryModal();return false" style="color:var(--txs);font-size:.78rem;text-decoration:none"><i class="bi bi-shield-lock"></i> بازیابی امن رمز عبور</a></p>
 </div></div>
 
 <!-- APP -->
@@ -114,7 +116,7 @@
 <div class="mn">
 <div class="tp">
 <div class="tp-t" id="pageTitle"><i class="bi bi-grid-1x2-fill"></i><span>داشبورد</span></div>
-<div class="tp-a"><select class="yr-sel" id="yearSel"></select><input type="text" class="srch" id="searchInput" placeholder="جست‌وجوی سراسری… (Ctrl+K)" autocomplete="off" oninput="Search.onInput()" onkeydown="Search.onKey(event)"><div id="topActions"></div></div>
+<div class="tp-a"><button class="btn bo bs sync-status-btn" id="syncStatusBtn" onclick="Sync.uiModal()" title="وضعیت همگام‌سازی ابری"><i class="bi bi-cloud"></i> <span class="sync-lbl">همگام</span></button><select class="yr-sel" id="yearSel"></select><input type="text" class="srch" id="searchInput" placeholder="جست‌وجوی سراسری… (Ctrl+K)" autocomplete="off" oninput="Search.onInput()" onkeydown="Search.onKey(event)"><div id="topActions"></div></div>
 </div>
 <div class="ct" id="mainContent"></div>
 </div>

@@ -121,7 +121,7 @@ var DB = {
   /* هنگام نوشتن در جدول syncQueue نباید دوباره صف‌گذاری انجام شود،
      وگرنه بازگشت بی‌پایان می‌شود. */
   _queue: function(store, op, row, id) {
-    if (store === 'syncQueue' || store === 'settings') return;
+    if (store === 'syncQueue') return;
     if (typeof Sync === 'undefined' || !Sync.enqueue) return;
     try {
       Sync.enqueue(store, op, row, id);
@@ -140,6 +140,7 @@ var DB = {
     return DB._req(function() {
       return DB.gs(n, 'readwrite').add(d);
     }, 'add(' + n + ')').then(function(id) {
+      d.id = id;
       DB._queue(n, 'insert', d, id);
       return id;
     });

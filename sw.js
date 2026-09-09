@@ -13,7 +13,7 @@
    توجه: داده‌های حسابداری در IndexedDB است و ربطی به این حافظه نهان
    ندارد؛ پاک شدن cache هیچ سندی را از بین نمی‌برد. */
 
-var VERSION = 'pb-v9.4';
+var VERSION = 'pb-v9.5';
 var SHELL_CACHE = VERSION + '-shell';
 var CDN_CACHE = VERSION + '-cdn';
 
@@ -108,6 +108,11 @@ self.addEventListener('fetch', function(e) {
     return;
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+
+  /* درخواست‌های پایگاه داده ابری (مانند Supabase) نباید در کش سرویس‌ورکر ذخیره شوند */
+  if (url.pathname.indexOf('/rest/v1/') !== -1 || url.hostname.indexOf('supabase.co') !== -1 || (url.search && url.search.indexOf('apikey') !== -1)) {
+    return;
+  }
 
   var sameOrigin = url.origin === self.location.origin;
 

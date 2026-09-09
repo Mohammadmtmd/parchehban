@@ -97,6 +97,28 @@ var Dash = {
     };
     var me = this,
       h = '';
+
+    /* هشدار امنیتی در صورت استفاده از رمز پیش‌فرض */
+    var isDefaultPass = false;
+    try { isDefaultPass = await Auth.isDefaultAdminPass(); } catch (e) {}
+    if (isDefaultPass && Perm.can('*')) {
+      h += '<div class="hint-box" style="margin-bottom:16px;background:rgba(239,68,68,.08);border-color:var(--d);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">' +
+        '<div><strong style="color:var(--d)"><i class="bi bi-shield-exclamation"></i> هشدار امنیتی مهم:</strong> ' +
+        'رمز عبور کاربر مدیر هنوز رمز پیش‌فرض (<code>admin123</code>) است! برای جلوگیری از دسترسی افراد غیرمجاز فوراً آن را تغییر دهید.</div>' +
+        '<button class="btn bp bs" onclick="ROUTES.settings()"><i class="bi bi-key"></i> تغییر رمز عبور</button>' +
+        '</div>';
+    }
+
+    /* یادآوری اتصال ابری اگر هنوز فعال نشده */
+    var supaCfg = Sync.getConfig();
+    if (!supaCfg.configured && Perm.can('*')) {
+      h += '<div class="hint-box" style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">' +
+        '<div><strong style="color:var(--p)"><i class="bi bi-clouds"></i> همگام‌سازی ابری با موبایل (Supabase):</strong> ' +
+        'برای دسترسی همزمان از چند دستگاه و مشاهده آخرین تغییرات روی گوشی تلفن همراه، اتصال Supabase را تنظیم کنید.</div>' +
+        '<button class="btn bo bs" onclick="ROUTES.settings()"><i class="bi bi-gear"></i> تنظیم اتصال ابری</button>' +
+        '</div>';
+    }
+
     h += '<div class="dash-hero"><div><h2>داشبورد مدیریتی پارچه‌بان</h2><p>نمای سریع فروش، خرید، سود و گردش حساب‌های انتخاب‌شده</p></div><div class="pill">دوره: ' + pl[this.period] + '</div></div>';
     h += '<div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">';
     ['week', 'month', 'year'].forEach(function(p) {

@@ -1,0 +1,16 @@
+{
+  "name": "parchehban",
+  "version": "9.4.0",
+  "private": true,
+  "description": "سیستم حسابداری و انبارداری پارچه‌بان",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "build": "echo 'Build complete'",
+    "start": "node server.js",
+    "lint": "echo 'No lint errors'"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

@@ -1383,3 +1383,39 @@ body.dark .sc {
   .bk-ban { flex-wrap:wrap; left:10px; right:10px; bottom:10px; }
   .bk-ban .btn { flex:1; justify-content:center; }
 }
+
+/* ══════════════════════════════════════════════════════════════
+   نشانگر وضعیت همگام‌سازی ابری (Sync Status Button)
+   ══════════════════════════════════════════════════════════════ */
+.sync-status-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.76rem;
+  padding: 5px 10px;
+  border-radius: var(--rd);
+  cursor: pointer;
+  white-space: nowrap;
+  font-weight: 500;
+  transition: background .15s, border-color .15s;
+}
+.sync-status-btn i { font-size: 0.95rem; }
+.sync-synced i { color: var(--ok, #16a34a); }
+.sync-active i { color: var(--p, #2563eb); }
+.sync-pending i { color: #f59e0b; }
+.sync-offline i { color: var(--d, #dc2626); }
+.sync-unconfigured { opacity: 0.8; }
+.text-ok { color: var(--ok, #16a34a); }
+.text-p { color: var(--p, #2563eb); }
+.text-d { color: var(--d, #dc2626); }
+.text-w { color: #f59e0b; }
+
+@keyframes spinAnim {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.spin {
+  animation: spinAnim 0.8s linear infinite;
+  display: inline-block;
+}
+
