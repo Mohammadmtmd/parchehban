@@ -690,7 +690,7 @@ textarea.fc {
   display: none;
   align-items: flex-start;
   justify-content: center;
-  z-index: 200;
+  z-index: 10005;
   padding: 20px;
   overflow-y: auto
 }

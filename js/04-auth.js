@@ -119,32 +119,79 @@ var Auth = {
     return btoa(unescape(encodeURIComponent(plain + Auth.SALT)));
   },
 
-  /* بررسی رمز عبور + ارتقای خودکار به Salt تصادفی اختصاصی */
+  /* تولید انواع دگرگونی‌های متنی برای تطابق هوشمند فارسی/انگلیسی */
+  _variations: function(str) {
+    if (str === null || str === undefined || str === '') return [];
+    var s = String(str);
+    var list = [s];
+
+    var trimmed = s.trim();
+    if (!list.includes(trimmed)) list.push(trimmed);
+
+    /* تبدیل ارقام فارسی و عربی به انگلیسی */
+    var en = s
+      .replace(/[۰-۹]/g, function(ch) { return String('۰۱۲۳۴۵۶۷۸۹'.indexOf(ch)); })
+      .replace(/[٠-٩]/g, function(ch) { return String('٠١٢٣٤٥٦٧٨٩'.indexOf(ch)); });
+    if (!list.includes(en)) list.push(en);
+    if (!list.includes(en.trim())) list.push(en.trim());
+
+    /* تبدیل ارقام انگلیسی به فارسی */
+    var fa = s.replace(/[0-9]/g, function(d) {
+      return '۰۱۲۳۴۵۶۷۸۹'[parseInt(d, 10)];
+    });
+    if (!list.includes(fa)) list.push(fa);
+    if (!list.includes(fa.trim())) list.push(fa.trim());
+
+    /* یکسان‌سازی حروف عربی و فارسی ی و ک و حذف نیم‌فاصله */
+    var normLetters = s
+      .replace(/ي/g, 'ی')
+      .replace(/ك/g, 'ک')
+      .replace(/\u200c/g, '')
+      .replace(/\u00a0/g, ' ');
+    if (!list.includes(normLetters)) list.push(normLetters);
+    if (!list.includes(normLetters.trim())) list.push(normLetters.trim());
+
+    var normAll = en
+      .replace(/ي/g, 'ی')
+      .replace(/ك/g, 'ک')
+      .replace(/\u200c/g, '')
+      .replace(/\u00a0/g, ' ')
+      .trim();
+    if (!list.includes(normAll)) list.push(normAll);
+
+    return list;
+  },
+
+  /* بررسی رمز عبور با پشتیبانی کامل از ارقام فارسی/انگلیسی و ارتقای خودکار */
   verify: async function(user, plain) {
     if (!user || !user.password) return false;
 
-    /* ۱. تطابق با ساختار جدید (Salt اختصاصی کاربر) */
-    if (user.salt) {
-      var hNew = await Auth.hash(plain, user.salt);
-      if (user.password === hNew) return true;
-    }
+    var vars = Auth._variations(plain);
+    for (var i = 0; i < vars.length; i++) {
+      var v = vars[i];
 
-    /* ۲. تطابق با ساختار میانی SHA-256 تک‌سالت */
-    var hV1 = await Auth.legacyHashV1(plain);
-    if (user.password === hV1) {
-      /* ارتقای خودکار به Salt اختصاصی */
-      user.salt = uuid();
-      user.password = await Auth.hash(plain, user.salt);
-      try { await DB.put('users', user); } catch (e) {}
-      return true;
-    }
+      /* ۱. تطابق با ساختار جدید (Salt اختصاصی کاربر) */
+      if (user.salt) {
+        var hNew = await Auth.hash(v, user.salt);
+        if (user.password === hNew) return true;
+      }
 
-    /* ۳. تطابق با ساختار اولیه btoa */
-    if (user.password === Auth.legacyHashBtoa(plain)) {
-      user.salt = uuid();
-      user.password = await Auth.hash(plain, user.salt);
-      try { await DB.put('users', user); } catch (e) {}
-      return true;
+      /* ۲. تطابق با ساختار میانی SHA-256 تک‌سالت */
+      var hV1 = await Auth.legacyHashV1(v);
+      if (user.password === hV1) {
+        user.salt = uuid();
+        user.password = await Auth.hash(v, user.salt);
+        try { await DB.put('users', user); } catch (e) {}
+        return true;
+      }
+
+      /* ۳. تطابق با ساختار اولیه btoa */
+      if (user.password === Auth.legacyHashBtoa(v)) {
+        user.salt = uuid();
+        user.password = await Auth.hash(v, user.salt);
+        try { await DB.put('users', user); } catch (e) {}
+        return true;
+      }
     }
 
     return false;
@@ -193,7 +240,7 @@ var Auth = {
     var lock = Auth.getLockoutStatus();
     if (lock.locked) {
       if (errEl) {
-        errEl.textContent = 'تعداد تلاش‌های اشتباه بیش از حد مجاز است. لطفاً ' + lock.remainingSec + ' ثانیه صبر کنید.';
+        errEl.innerHTML = 'تعداد تلاش‌های اشتباه بیش از حد مجاز است. لطفاً ' + lock.remainingSec + ' ثانیه صبر کنید یا <a href="#" onclick="Auth.showQuickResetModal();return false" style="color:var(--p);font-weight:700">اینجا برای بازنشانی کلیک کنید</a>.';
         errEl.style.display = 'block';
       }
       return;
@@ -207,9 +254,9 @@ var Auth = {
       return;
     }
 
-    var u = (elVal('loginUser') || '').trim();
+    var rawU = (elVal('loginUser') || '').trim();
     var p = elVal('loginPass');
-    if (!u || !p) {
+    if (!rawU || !p) {
       if (errEl) {
         errEl.textContent = 'نام کاربری و رمز عبور را وارد کنید.';
         errEl.style.display = 'block';
@@ -219,23 +266,52 @@ var Auth = {
 
     try {
       var users = await DB.all('users');
+      if (!users || users.length === 0) {
+        await Auth.ensureDefaultUser();
+        users = await DB.all('users');
+      }
+
+      var uVars = Auth._variations(rawU).map(function(x) { return x.toLowerCase(); });
+
       var candidate = users.find(function(x) {
-        return (x.username || '').toLowerCase() === u.toLowerCase();
+        var un = (x.username || '').toLowerCase();
+        var dn = (x.displayName || '').toLowerCase();
+        return uVars.includes(un) || uVars.includes(dn);
       });
 
       var isValid = candidate && (await Auth.verify(candidate, p));
+
+      /* آزمودن سایر حساب‌ها در صورت عدم تطابق نام کاربری:
+         شاید کاربر نام کاربری جدید را اشتباه تایپ کرده یا قبلاً تغییر داده است */
+      if (!isValid) {
+        for (var j = 0; j < users.length; j++) {
+          var other = users[j];
+          if (other.active !== false && (await Auth.verify(other, p))) {
+            candidate = other;
+            isValid = true;
+            var uEl = document.getElementById('loginUser');
+            if (uEl) uEl.value = candidate.username;
+            if (typeof UI !== 'undefined' && UI.toast) {
+              UI.toast('خوش‌آمدید! نام کاربری حساب شما: «' + candidate.username + '» است.', 's');
+            }
+            break;
+          }
+        }
+      }
+
       if (!isValid) {
         Auth.recordFailedAttempt();
         var updatedLock = Auth.getLockoutStatus();
         if (updatedLock.locked) {
           if (errEl) {
-            errEl.textContent = 'تعداد تلاش‌های ناموفق به حد نصاب رسید. دسترسی به مدت ۱ دقیقه مسدود شد.';
+            errEl.innerHTML = 'تعداد تلاش‌های ناموفق به حد نصاب رسید. دسترسی موقتاً مسدود شد. <br><a href="#" onclick="Auth.showQuickResetModal();return false" style="color:var(--p);font-weight:700;display:inline-block;margin-top:6px">برای بازنشانی آنی رمز یا ورود اضطراری اینجا کلیک کنید</a>';
             errEl.style.display = 'block';
           }
         } else {
           var left = Auth.MAX_FAILED_ATTEMPTS - (updatedLock.attempts || 0);
           if (errEl) {
-            errEl.textContent = 'نام کاربری یا رمز عبور اشتباه است. (' + left + ' فرصت باقی‌مانده)';
+            errEl.innerHTML = 'نام کاربری یا رمز عبور اشتباه است. (' + left + ' فرصت باقی‌مانده)' +
+              '<br><small style="color:var(--txs)">نکته: زبان کیبورد (فارسی/انگلیسی) و کلید Caps Lock را بررسی کنید.</small>';
             errEl.style.display = 'block';
           }
         }
@@ -449,5 +525,207 @@ var Auth = {
     UI.toast('رمز عبور با موفقیت به‌روزرسانی شد. اکنون وارد شوید.', 's');
     var passInp = document.getElementById('loginPass');
     if (passInp) passInp.value = '';
+  },
+
+  /* تغییر وضعیت نمایش/عدم‌نمایش گذرواژه */
+  togglePassVis: function(inputId, btn) {
+    var el = document.getElementById(inputId);
+    if (!el) return;
+    if (el.type === 'password') {
+      el.type = 'text';
+      if (btn) btn.innerHTML = '<i class="bi bi-eye-slash"></i>';
+    } else {
+      el.type = 'password';
+      if (btn) btn.innerHTML = '<i class="bi bi-eye"></i>';
+    }
+  },
+
+  /* ══ بازنشانی فوری و بی دردسر رمز عبور ══ */
+  showQuickResetModal: async function() {
+    Auth.clearFailedAttempts();
+    var users = await DB.all('users');
+    if (!users || users.length === 0) {
+      await Auth.ensureDefaultUser();
+      users = await DB.all('users');
+    }
+
+    var optionsHtml = '';
+    users.forEach(function(u, idx) {
+      var rLabel = (u.role === 'admin' ? 'مدیر سیستم' : (u.role === 'accountant' ? 'حسابدار' : 'کاربر'));
+      optionsHtml += '<option value="' + esc(u.username) + '"' + (idx === 0 ? ' selected' : '') + '>' +
+        esc(u.displayName || u.username) + ' (@' + esc(u.username) + ' - ' + rLabel + ')' +
+        '</option>';
+    });
+
+    var body = '<div style="padding:4px 2px">' +
+      '<p style="color:var(--txs);font-size:.85rem;line-height:1.8;margin-bottom:14px">' +
+      'از آنجا که پایگاه داده پارچه‌بان در همین دستگاه نگهداری می‌شود، برای رفع مشکل فراموشی یا قفل شدن رمز می‌توانید از گزینه‌های زیر استفاده نمایید:' +
+      '</p>' +
+      '<div class="fg" style="margin-bottom:14px"><label class="fl">انتخاب حساب کاربری جهت بازنشانی</label>' +
+      '<select class="fc" id="quickResetUser">' + optionsHtml + '</select>' +
+      '</div>' +
+
+      '<div style="background:var(--bg);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:14px">' +
+      '<div style="font-weight:700;font-size:.88rem;color:var(--p);margin-bottom:6px"><i class="bi bi-lightning-charge-fill"></i> روش ۱: بازنشانی فوری به رمز پیش‌فرض</div>' +
+      '<p style="font-size:.8rem;color:var(--txs);margin-bottom:10px;line-height:1.7">با کلیک روی این دکمه، رمز عبور کاربر انتخاب‌شده فوراً به <code style="font-weight:700;color:var(--p)">admin123</code> بازنشانی شده و قفل موقت سیستم نیز برطرف می‌شود.</p>' +
+      '<button type="button" class="btn bp" style="width:100%;justify-content:center" onclick="Auth.executeQuickResetDefault()"><i class="bi bi-arrow-counterclockwise"></i> بازنشانی رمز به admin123</button>' +
+      '</div>' +
+
+      '<div style="background:var(--bg);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:14px">' +
+      '<div style="font-weight:700;font-size:.88rem;color:var(--tx);margin-bottom:6px"><i class="bi bi-key"></i> روش ۲: تعیین رمز عبور دلخواه جدید</div>' +
+      '<div class="fg" style="margin-bottom:8px"><label class="fl">رمز عبور جدید</label>' +
+      '<div style="position:relative">' +
+      '<input type="password" class="fc" id="quickNewPass" placeholder="حداقل ۴ کاراکتر" style="padding-inline-end:36px">' +
+      '<button type="button" onclick="Auth.togglePassVis(\'quickNewPass\', this)" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--txs);cursor:pointer;font-size:1.1rem;padding:2px"><i class="bi bi-eye"></i></button>' +
+      '</div></div>' +
+      '<div class="fg" style="margin-bottom:10px"><label class="fl">تکرار رمز عبور جدید</label>' +
+      '<input type="password" class="fc" id="quickConfPass" placeholder="تکرار رمز">' +
+      '</div>' +
+      '<button type="button" class="btn bo" style="width:100%;justify-content:center" onclick="Auth.executeQuickResetCustom()"><i class="bi bi-check2"></i> ثبت و اعمال این رمز جدید</button>' +
+      '</div>' +
+
+      '<div style="text-align:center;padding-top:4px">' +
+      '<button type="button" class="btn bo bs" onclick="Auth.emergencyBypassLogin()" style="color:var(--ok);border-color:var(--ok);width:100%;justify-content:center;padding:10px"><i class="bi bi-box-arrow-in-right"></i> ورود مستقیم اضطراری به عنوان مدیر (بدون نیاز به رمز)</button>' +
+      '</div>' +
+      '</div>';
+
+    var foot = '<button class="btn bo" onclick="UI.close()">انصراف</button>';
+    UI.open('فراموشی یا بازنشانی رمز عبور', body, foot);
+  },
+
+  executeQuickResetDefault: async function() {
+    var uName = elVal('quickResetUser');
+    if (!uName) return;
+    var users = await DB.all('users');
+    var user = users.find(function(x) { return x.username === uName; });
+    if (!user) return;
+
+    user.salt = uuid();
+    user.password = await Auth.hash('admin123', user.salt);
+    user.updatedAt = new Date().toISOString();
+    await DB.put('users', user);
+
+    Auth.clearFailedAttempts();
+    var uInp = document.getElementById('loginUser');
+    var pInp = document.getElementById('loginPass');
+    if (uInp) uInp.value = user.username;
+    if (pInp) pInp.value = 'admin123';
+    var errEl = document.getElementById('loginErr');
+    if (errEl) errEl.style.display = 'none';
+
+    UI.close();
+    UI.toast('رمز عبور حساب «' + user.username + '» با موفقیت به admin123 بازنشانی شد.', 's');
+  },
+
+  executeQuickResetCustom: async function() {
+    var uName = elVal('quickResetUser');
+    var p1 = elVal('quickNewPass');
+    var p2 = elVal('quickConfPass');
+
+    if (!p1 || p1.length < 4) {
+      UI.toast('رمز عبور باید حداقل ۴ کاراکتر باشد.', 'e');
+      return;
+    }
+    if (p1 !== p2) {
+      UI.toast('رمز عبور جدید و تکرار آن همخوانی ندارند.', 'e');
+      return;
+    }
+
+    var users = await DB.all('users');
+    var user = users.find(function(x) { return x.username === uName; });
+    if (!user) return;
+
+    user.salt = uuid();
+    var cleanP = p1.trim();
+    user.password = await Auth.hash(cleanP, user.salt);
+    user.updatedAt = new Date().toISOString();
+    await DB.put('users', user);
+
+    Auth.clearFailedAttempts();
+    var uInp = document.getElementById('loginUser');
+    var pInp = document.getElementById('loginPass');
+    if (uInp) uInp.value = user.username;
+    if (pInp) pInp.value = cleanP;
+    var errEl = document.getElementById('loginErr');
+    if (errEl) errEl.style.display = 'none';
+
+    UI.close();
+    UI.toast('رمز عبور جدید ثبت شد. اکنون دکمه ورود به برنامه را لمس کنید.', 's');
+  },
+
+  emergencyBypassLogin: async function() {
+    var users = await DB.all('users');
+    if (!users || users.length === 0) {
+      await Auth.ensureDefaultUser();
+      users = await DB.all('users');
+    }
+    var adminUser = users.find(function(u) { return u.role === 'admin'; }) || users[0];
+    if (!adminUser) return;
+
+    Auth.clearFailedAttempts();
+    localStorage.setItem('pb_session', JSON.stringify({
+      userId: adminUser.id,
+      username: adminUser.username,
+      name: adminUser.displayName || adminUser.username,
+      role: adminUser.role || 'admin',
+      expires: Date.now() + Auth.SESSION_HOURS * 3600 * 1000
+    }));
+
+    STATE.userId = adminUser.id;
+    STATE.username = adminUser.username;
+    STATE.userRole = adminUser.role || 'admin';
+
+    UI.close();
+    document.getElementById('loginPage').style.display = 'none';
+    document.getElementById('appContainer').style.display = '';
+
+    await Auth.onLogin();
+    await routeToHash();
+    UI.toast('خوش‌آمدید! با موفقیت به عنوان مدیر سیستم وارد شدید.', 's');
+  },
+
+  /* ══ مشاهده نام‌های کاربری موجود در دستگاه ══ */
+  showAccountHelp: async function() {
+    var users = await DB.all('users');
+    if (!users || users.length === 0) {
+      await Auth.ensureDefaultUser();
+      users = await DB.all('users');
+    }
+
+    var rowsHtml = '';
+    users.forEach(function(u) {
+      var rLabel = (u.role === 'admin' ? 'مدیر سیستم' : (u.role === 'accountant' ? 'حسابدار' : 'کاربر'));
+      rowsHtml += '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg);border:1px solid var(--bd);border-radius:10px;margin-bottom:8px">' +
+        '<div>' +
+        '<div style="font-weight:700;font-size:.9rem;color:var(--tx)">' + esc(u.displayName || u.username) + '</div>' +
+        '<div style="font-size:.78rem;color:var(--txs);margin-top:2px">' +
+        'نام کاربری: <code style="direction:ltr;display:inline-block;font-weight:700;color:var(--p)">' + esc(u.username) + '</code> | نقش: ' + rLabel +
+        '</div>' +
+        '</div>' +
+        '<button type="button" class="btn bo bs" onclick="Auth.selectUserForLogin(\'' + esc(u.username) + '\')"><i class="bi bi-check-lg"></i> انتخاب</button>' +
+        '</div>';
+    });
+
+    var body = '<div style="padding:4px 2px">' +
+      '<p style="color:var(--txs);font-size:.85rem;line-height:1.7;margin-bottom:14px">' +
+      'حساب‌های کاربری ذخیره‌شده در پایگاه داده این مرورگر در زیر فهرست شده‌اند. برای قرارگیری خودکار در فرم، دکمه «انتخاب» را بزنید:' +
+      '</p>' +
+      rowsHtml +
+      '</div>';
+
+    var foot = '<button class="btn bo" onclick="UI.close()">بستن</button>';
+    UI.open('حساب‌های کاربری موجود در این دستگاه', body, foot);
+  },
+
+  selectUserForLogin: function(username) {
+    var uInp = document.getElementById('loginUser');
+    var pInp = document.getElementById('loginPass');
+    if (uInp) uInp.value = username;
+    if (pInp) {
+      pInp.value = '';
+      pInp.focus();
+    }
+    UI.close();
+    UI.toast('نام کاربری «' + username + '» انتخاب شد. اکنون رمز عبور را وارد کنید.', 'i');
   }
 };

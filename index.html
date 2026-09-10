@@ -65,11 +65,19 @@
 <div class="lg-logo">پ</div>
 <h2 style="margin-bottom:4px">پارچه‌بان</h2>
 <p style="color:var(--txs);font-size:.85rem;margin-bottom:24px">سیستم مدیریت انبار و فروش</p>
-<div class="fg"><label>نام کاربری</label><input class="fc" id="loginUser" placeholder="نام کاربری"></div>
-<div class="fg"><label>رمز عبور</label><input class="fc" id="loginPass" type="password" placeholder="رمز عبور"></div>
-<button class="btn bp" style="width:100%;padding:12px;font-size:.95rem" id="loginBtn">ورود</button>
-<p id="loginErr" style="color:var(--d);font-size:.82rem;margin-top:12px;display:none"></p>
-<p style="margin-top:10px"><a href="#" onclick="Auth.showRecoveryModal();return false" style="color:var(--txs);font-size:.78rem;text-decoration:none"><i class="bi bi-shield-lock"></i> بازیابی امن رمز عبور</a></p>
+<div class="fg"><label>نام کاربری</label><input class="fc" id="loginUser" placeholder="نام کاربری" autocomplete="username"></div>
+<div class="fg"><label>رمز عبور</label>
+  <div style="position:relative">
+    <input class="fc" id="loginPass" type="password" placeholder="رمز عبور" autocomplete="current-password" style="padding-inline-end:38px">
+    <button type="button" onclick="Auth.togglePassVis('loginPass', this)" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--txs);cursor:pointer;font-size:1.15rem;padding:4px;display:flex;align-items:center;justify-content:center" title="نمایش یا مخفی‌سازی رمز عبور"><i class="bi bi-eye"></i></button>
+  </div>
+</div>
+<button class="btn bp" style="width:100%;padding:12px;font-size:.95rem" id="loginBtn">ورود به برنامه</button>
+<p id="loginErr" style="color:var(--d);font-size:.82rem;margin-top:12px;display:none;line-height:1.7"></p>
+<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--bd);display:flex;flex-direction:column;gap:8px">
+  <button type="button" class="btn bo bs" onclick="Auth.showQuickResetModal()" style="width:100%;justify-content:center;font-size:.82rem;color:var(--p);padding:8px 10px"><i class="bi bi-shield-lock-fill"></i> فراموشی یا بازنشانی فوری رمز عبور</button>
+  <button type="button" class="btn bo bs" onclick="Auth.showAccountHelp()" style="width:100%;justify-content:center;font-size:.78rem;color:var(--txs);padding:6px 10px"><i class="bi bi-people"></i> مشاهده نام‌های کاربری موجود در این دستگاه</button>
+</div>
 </div></div>
 
 <!-- APP -->
