@@ -13,7 +13,7 @@
    توجه: داده‌های حسابداری در IndexedDB است و ربطی به این حافظه نهان
    ندارد؛ پاک شدن cache هیچ سندی را از بین نمی‌برد. */
 
-var VERSION = 'pb-v9.5';
+var VERSION = 'pb-v10.0';
 var SHELL_CACHE = VERSION + '-shell';
 var CDN_CACHE = VERSION + '-cdn';
 
@@ -62,7 +62,8 @@ var SHELL = [
   './js/22-banks.js',
   './js/22b-search.js',
   './js/23-routes.js',
-  './js/24-boot.js'
+  './js/24-boot.js',
+  './js/25-pwa.js'
 ];
 
 self.addEventListener('install', function(e) {

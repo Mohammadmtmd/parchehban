@@ -175,59 +175,13 @@ window.addEventListener('unhandledrejection', function(e) {
   }
 });
 
-/* ══ نصب برنامه روی دستگاه (PWA) ══
-   برنامه از قبل شرایط نصب را داشت (manifest + Service Worker + آیکون)،
-   ولی هیچ دکمه‌ای برای نصب نبود و کاربر باید از منوی مرورگر پیدایش می‌کرد.
-
-   مرورگر وقتی شرایط نصب فراهم باشد رویداد beforeinstallprompt را می‌فرستد.
-   آن را نگه می‌داریم و دکمه کنار حالت شب را نشان می‌دهیم. نکته: این رویداد
-   فقط روی http**s** یا localhost و فقط وقتی برنامه هنوز نصب نشده می‌آید. */
+/* ══ نصب برنامه روی دستگاه (PWA) ══ */
 (function() {
-  var deferred = null;
-  var btn = function() {
-    return document.getElementById('installBtn');
-  };
-
-  window.addEventListener('beforeinstallprompt', function(e) {
-    e.preventDefault();
-    deferred = e;
-    var b = btn();
-    if (b) b.style.display = '';
-  });
-
-  window.addEventListener('appinstalled', function() {
-    deferred = null;
-    var b = btn();
-    if (b) b.style.display = 'none';
-    if (typeof UI !== 'undefined' && UI.toast) {
-      UI.toast('پارچه‌بان روی دستگاه نصب شد.', 's');
-    }
-  });
-
   document.addEventListener('click', function(e) {
     var b = e.target.closest && e.target.closest('#installBtn');
     if (!b) return;
-    if (!deferred) {
-      if (typeof UI !== 'undefined' && UI.toast) {
-        UI.toast('نصب از منوی خود مرورگر انجام می‌شود (در کروم: منوی سه‌نقطه ← Install).', 'e');
-      }
-      return;
-    }
-    deferred.prompt();
-    deferred.userChoice.then(function() {
-      deferred = null;
-      var x = btn();
-      if (x) x.style.display = 'none';
-    });
-  });
-
-  /* اگر برنامه همین حالا به‌صورت نصب‌شده باز شده، دکمه لازم نیست */
-  window.addEventListener('load', function() {
-    var standalone = window.matchMedia('(display-mode: standalone)').matches ||
-      window.navigator.standalone === true;
-    if (standalone) {
-      var b = btn();
-      if (b) b.style.display = 'none';
+    if (typeof PWA !== 'undefined' && PWA.promptInstall) {
+      PWA.promptInstall();
     }
   });
 })();

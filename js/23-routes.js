@@ -62,6 +62,15 @@ var ROUTES = {
   reports: function() {
     return Rep.render();
   },
+  profit: function() {
+    return Rep.renderProfit();
+  },
+  debtors: function() {
+    return Rep.renderDebtors();
+  },
+  creditors: function() {
+    return Rep.renderCreditors();
+  },
   years: function() {
     return FY.render();
   },
