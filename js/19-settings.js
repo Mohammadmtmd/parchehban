@@ -9,7 +9,22 @@ var Settings = {
     UI.title('bi-gear-fill', 'تنظیمات و اتصال ابری');
     UI.act('');
 
-    var user = await DB.get('users', STATE.userId);
+    var user = null;
+    if (STATE.userId) user = await DB.get('users', STATE.userId);
+    if (!user && STATE.username) {
+      var allU = await DB.all('users');
+      user = allU.find(function(x) {
+        return (x.username || '').toLowerCase() === String(STATE.username).toLowerCase() || String(x.id) === String(STATE.userId);
+      });
+    }
+    if (!user) {
+      var allU = await DB.all('users');
+      user = allU[0];
+      if (user) {
+        STATE.userId = user.id;
+        STATE.username = user.username;
+      }
+    }
     var supaCfg = Sync.getConfig();
     var masterKey = await Auth.getMasterRecoveryKey();
 
@@ -17,17 +32,17 @@ var Settings = {
 
     /* ── کارت ۱: اطلاعات کاربری ── */
     h += '<div class="cd"><div class="cd-h"><i class="bi bi-person-badge"></i> اطلاعات کاربری</div><div class="cd-b">' +
-      '<div class="fg"><label>نام کاربری</label><input class="fc" id="setUser" value="' + esc(user ? user.username : '') + '"></div>' +
-      '<div class="fg"><label>نام نمایشی</label><input class="fc" id="setDisp" value="' + esc(user ? (user.displayName || '') : '') + '"></div>' +
+      '<div class="fg"><label>نام کاربری</label><input class="fc" id="setUser" value="' + esc(user ? user.username : '') + '" placeholder="نام کاربری"></div>' +
+      '<div class="fg"><label>نام نمایشی</label><input class="fc" id="setDisp" value="' + esc(user ? (user.displayName || '') : '') + '" placeholder="مثال: مدیر سیستم یا نام شما"></div>' +
       '<button class="btn bp" onclick="Settings.saveInfo()"><i class="bi bi-check-lg"></i> ذخیره مشخصات</button>' +
       '</div></div>';
 
     /* ── کارت ۲: تغییر رمز عبور ── */
     h += '<div class="cd"><div class="cd-h"><i class="bi bi-key-fill"></i> تغییر رمز عبور</div><div class="cd-b">' +
-      '<div class="fg"><label>رمز فعلی</label><input class="fc" id="setOld" type="password"></div>' +
-      '<div class="fg"><label>رمز جدید</label><input class="fc" id="setNew" type="password" placeholder="حداقل ۶ کاراکتر"></div>' +
-      '<div class="fg"><label>تکرار رمز جدید</label><input class="fc" id="setConf" type="password"></div>' +
-      '<button class="btn bp" onclick="Settings.changePass()"><i class="bi bi-shield-check"></i> تغییر رمز</button>' +
+      '<div class="fg"><label>رمز فعلی</label><div style="position:relative"><input class="fc" id="setOld" type="password" style="padding-inline-end:38px"><button type="button" onclick="Auth.togglePassVis(\'setOld\', this)" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--txs);cursor:pointer;font-size:1.1rem;padding:4px"><i class="bi bi-eye"></i></button></div></div>' +
+      '<div class="fg"><label>رمز جدید</label><div style="position:relative"><input class="fc" id="setNew" type="password" placeholder="حداقل ۵ کاراکتر" style="padding-inline-end:38px"><button type="button" onclick="Auth.togglePassVis(\'setNew\', this)" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--txs);cursor:pointer;font-size:1.1rem;padding:4px"><i class="bi bi-eye"></i></button></div></div>' +
+      '<div class="fg"><label>تکرار رمز جدید</label><div style="position:relative"><input class="fc" id="setConf" type="password" style="padding-inline-end:38px"><button type="button" onclick="Auth.togglePassVis(\'setConf\', this)" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--txs);cursor:pointer;font-size:1.1rem;padding:4px"><i class="bi bi-eye"></i></button></div></div>' +
+      '<button class="btn bp" onclick="Settings.changePass()"><i class="bi bi-shield-check"></i> تغییر و ذخیره رمز جدید</button>' +
       '</div></div>';
 
     h += '</div>';
@@ -68,7 +83,7 @@ var Settings = {
     /* ── کارت ۴: کلید بازیابی اضطراری (امنیت پیشرفته) ── */
     h += '<div class="cd" style="margin-top:14px"><div class="cd-h"><i class="bi bi-shield-lock-fill" style="color:var(--p)"></i> امنیت و کلید بازیابی اضطراری (Master Key)</div><div class="cd-b">' +
       '<p style="color:var(--txs);font-size:.85rem;margin-bottom:12px;line-height:1.8">' +
-      'این کلید برای بازیابی اضطراری رمز عبور مدیر سیستم استفاده می‌شود. برخلاف نسخه‌های پیشین، تغییر رمز دیگر نیاز به حذف پایگاه داده ندارد و فقط با وارد کردن این کلید ممکن است.' +
+      'این کلید اختصاصی برای احراز هویت مالک در <strong>«ابزار عیب‌یابی و بازیابی امن»</strong> در صفحه ورود استفاده می‌شود. در صورتی که رمز عبور خود را فراموش کنید یا سیستم به علت تلاش‌های ناموفق قفل شود، تنها با وارد کردن این کلید (یا ارائه فایل پشتیبان سیستم) قادر به بازنشانی امن رمز خواهید بود. جهت جلوگیری از دسترسی افراد متفرقه، این کلید را محرمانه نگه دارید.' +
       '</p>' +
       '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">' +
       '<div style="background:var(--bg);border:1.5px dashed var(--bd);padding:10px 18px;border-radius:var(--rd);font-family:monospace;font-size:1.1rem;font-weight:700;letter-spacing:1px;direction:ltr" id="masterKeyDisp">' +
@@ -256,24 +271,43 @@ var Settings = {
   },
 
   saveInfo: async function() {
-    var nu = elVal('setUser').trim(),
-      nd = elVal('setDisp').trim();
+    var nu = (elVal('setUser') || '').trim();
+    var nd = (elVal('setDisp') || '').trim();
     if (!nu || nu.length < 3) {
       UI.toast('نام کاربری حداقل ۳ کاراکتر باشد', 'e');
       return;
     }
     var users = await DB.all('users');
-    if (users.find(function(u) {
-        return u.username === nu && u.id !== STATE.userId;
-      })) {
-      UI.toast('این نام کاربری قبلاً استفاده شده', 'e');
+    var user = null;
+    if (STATE.userId) {
+      user = users.find(function(x) { return String(x.id) === String(STATE.userId); });
+    }
+    if (!user && STATE.username) {
+      user = users.find(function(x) { return (x.username || '').toLowerCase() === String(STATE.username).toLowerCase(); });
+    }
+    if (!user) user = users[0];
+
+    if (!user) {
+      UI.toast('حساب کاربری یافت نشد', 'e');
       return;
     }
-    var user = await DB.get('users', STATE.userId);
+
+    if (users.some(function(u) {
+        return (u.username || '').toLowerCase() === nu.toLowerCase() && String(u.id) !== String(user.id);
+      })) {
+      UI.toast('این نام کاربری قبلاً استفاده شده است', 'e');
+      return;
+    }
+
+    var oldUname = user.username;
     user.username = nu;
     user.displayName = nd || nu;
+    user.updatedAt = new Date().toISOString();
     await DB.put('users', user);
+
+    STATE.userId = user.id;
     STATE.username = nu;
+
     var prev = {};
     try {
       prev = JSON.parse(localStorage.getItem('pb_session') || '{}') || {};
@@ -282,40 +316,68 @@ var Settings = {
       userId: user.id,
       username: nu,
       name: user.displayName,
+      role: user.role || 'admin',
       expires: prev.expires || (Date.now() + Auth.SESSION_HOURS * 3600 * 1000)
     }));
-    UI.toast('ذخیره شد');
+
+    /* پاکسازی رکوردهای تکراری قدیمی یا اضافه که ممکن بود ساخته شوند */
+    if (typeof Auth !== 'undefined' && Auth.cleanupGhostAccounts) {
+      await Auth.cleanupGhostAccounts(user.id);
+    }
+
+    UI.toast('مشخصات کاربری با موفقیت به نام «' + nu + '» ذخیره شد.', 's');
   },
 
   changePass: async function() {
-    var o = elVal('setOld'),
-      n = elVal('setNew'),
-      c = elVal('setConf');
+    var o = (elVal('setOld') || '').trim();
+    var n = (elVal('setNew') || '').trim();
+    var c = (elVal('setConf') || '').trim();
     if (!o) {
-      UI.toast('رمز فعلی را وارد کنید', 'e');
+      UI.toast('رمز عبور فعلی را وارد کنید', 'e');
       return;
     }
-    if (!n || n.length < 6) {
-      UI.toast('رمز جدید حداقل ۶ کاراکتر باشد', 'e');
+    if (!n || n.length < 5) {
+      UI.toast('رمز جدید حداقل ۵ کاراکتر باشد', 'e');
       return;
     }
     if (n !== c) {
-      UI.toast('تکرار رمز مطابقت ندارد', 'e');
+      UI.toast('تکرار رمز با رمز جدید مطابقت ندارد', 'e');
       return;
     }
     if (n === o) {
-      UI.toast('رمز جدید با رمز فعلی یکی است', 'e');
+      UI.toast('رمز جدید با رمز فعلی یکسان است', 'e');
       return;
     }
-    var user = await DB.get('users', STATE.userId);
-    if (!user || !await Auth.verify(user, o)) {
-      UI.toast('رمز فعلی اشتباه است', 'e');
+    var users = await DB.all('users');
+    var user = null;
+    if (STATE.userId) {
+      user = users.find(function(x) { return String(x.id) === String(STATE.userId); });
+    }
+    if (!user && STATE.username) {
+      user = users.find(function(x) { return (x.username || '').toLowerCase() === String(STATE.username).toLowerCase(); });
+    }
+    if (!user) user = users[0];
+
+    if (!user) {
+      UI.toast('حساب کاربری یافت نشد', 'e');
       return;
     }
+    if (!await Auth.verify(user, o)) {
+      UI.toast('رمز عبور فعلی اشتباه است', 'e');
+      return;
+    }
+
     user.salt = uuid();
     user.password = await Auth.hash(n, user.salt);
+    user.updatedAt = new Date().toISOString();
     await DB.put('users', user);
-    UI.toast('رمز با موفقیت تغییر کرد', 's');
+
+    /* پاکسازی رکوردهای تکراری یا روح پیش‌فرض */
+    if (typeof Auth !== 'undefined' && Auth.cleanupGhostAccounts) {
+      await Auth.cleanupGhostAccounts(user.id);
+    }
+
+    UI.toast('رمز عبور کاربر «' + user.username + '» با موفقیت تغییر کرد و ذخیره شد.', 's');
     document.getElementById('setOld').value = '';
     document.getElementById('setNew').value = '';
     document.getElementById('setConf').value = '';

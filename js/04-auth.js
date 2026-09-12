@@ -240,7 +240,7 @@ var Auth = {
     var lock = Auth.getLockoutStatus();
     if (lock.locked) {
       if (errEl) {
-        errEl.innerHTML = 'تعداد تلاش‌های اشتباه بیش از حد مجاز است. لطفاً ' + lock.remainingSec + ' ثانیه صبر کنید یا <a href="#" onclick="Auth.showQuickResetModal();return false" style="color:var(--p);font-weight:700">اینجا برای بازنشانی کلیک کنید</a>.';
+        errEl.innerHTML = 'تعداد تلاش‌های اشتباه بیش از حد مجاز است. لطفاً ' + lock.remainingSec + ' ثانیه صبر کنید یا از <a href="#" onclick="Auth.showTroubleshootModal();return false" style="color:var(--p);font-weight:700">ابزار عیب‌یابی و بازیابی امن</a> استفاده کنید.';
         errEl.style.display = 'block';
       }
       return;
@@ -281,37 +281,19 @@ var Auth = {
 
       var isValid = candidate && (await Auth.verify(candidate, p));
 
-      /* آزمودن سایر حساب‌ها در صورت عدم تطابق نام کاربری:
-         شاید کاربر نام کاربری جدید را اشتباه تایپ کرده یا قبلاً تغییر داده است */
-      if (!isValid) {
-        for (var j = 0; j < users.length; j++) {
-          var other = users[j];
-          if (other.active !== false && (await Auth.verify(other, p))) {
-            candidate = other;
-            isValid = true;
-            var uEl = document.getElementById('loginUser');
-            if (uEl) uEl.value = candidate.username;
-            if (typeof UI !== 'undefined' && UI.toast) {
-              UI.toast('خوش‌آمدید! نام کاربری حساب شما: «' + candidate.username + '» است.', 's');
-            }
-            break;
-          }
-        }
-      }
-
       if (!isValid) {
         Auth.recordFailedAttempt();
         var updatedLock = Auth.getLockoutStatus();
         if (updatedLock.locked) {
           if (errEl) {
-            errEl.innerHTML = 'تعداد تلاش‌های ناموفق به حد نصاب رسید. دسترسی موقتاً مسدود شد. <br><a href="#" onclick="Auth.showQuickResetModal();return false" style="color:var(--p);font-weight:700;display:inline-block;margin-top:6px">برای بازنشانی آنی رمز یا ورود اضطراری اینجا کلیک کنید</a>';
+            errEl.innerHTML = 'تعداد تلاش‌های ناموفق به حد نصاب رسید. دسترسی موقتاً قفل شد. <br><a href="#" onclick="Auth.showTroubleshootModal();return false" style="color:var(--p);font-weight:700;display:inline-block;margin-top:6px">برای بررسی وضعیت دیتابیس یا بازیابی امن با کلید اضطراری کلیک کنید</a>';
             errEl.style.display = 'block';
           }
         } else {
           var left = Auth.MAX_FAILED_ATTEMPTS - (updatedLock.attempts || 0);
           if (errEl) {
             errEl.innerHTML = 'نام کاربری یا رمز عبور اشتباه است. (' + left + ' فرصت باقی‌مانده)' +
-              '<br><small style="color:var(--txs)">نکته: زبان کیبورد (فارسی/انگلیسی) و کلید Caps Lock را بررسی کنید.</small>';
+              '<br><small style="color:var(--txs)">نکته: زبان کیبورد (فارسی/انگلیسی) و دکمه چشم را بررسی کنید، یا از <a href="#" onclick="Auth.showTroubleshootModal();return false" style="color:var(--p)">ابزار عیب‌یابی</a> استفاده کنید.</small>';
             errEl.style.display = 'block';
           }
         }
@@ -389,10 +371,7 @@ var Auth = {
   /* تضمین وجود کاربر مدیر در سیستم */
   ensureDefaultUser: async function() {
     var users = await DB.all('users');
-    var exists = users.some(function(u) {
-      return String(u.username || '').toLowerCase() === 'admin';
-    });
-    if (!exists) {
+    if (!users || users.length === 0) {
       var adminSalt = uuid();
       await DB.add('users', {
         username: 'admin',
@@ -402,10 +381,42 @@ var Auth = {
         role: 'admin',
         active: true
       });
+    } else {
+      /* اگر کاربر مدیر نام کاربری خود را عوض کرده باشد، حساب‌های روح/پیش‌فرض پاکسازی می‌شوند */
+      var customAdmin = users.find(function(u) {
+        return (u.role === 'admin' || !u.role) && (u.username || '').toLowerCase() !== 'admin';
+      });
+      if (customAdmin) {
+        await Auth.cleanupGhostAccounts(customAdmin.id);
+      }
     }
 
     /* تضمین وجود کلید بازیابی اضطراری برای صاحب سیستم */
     await Auth.getMasterRecoveryKey();
+  },
+
+  /* پاکسازی حساب‌های اضافه یا شبح پیش‌فرض پس از تغییر نام مدیر */
+  cleanupGhostAccounts: async function(primaryId) {
+    try {
+      var users = await DB.all('users');
+      if (!users || users.length <= 1) return;
+      var primary = users.find(function(u) { return String(u.id) === String(primaryId); });
+      if (!primary) return;
+
+      for (var i = 0; i < users.length; i++) {
+        var other = users[i];
+        if (String(other.id) === String(primary.id)) continue;
+        if ((other.username || '').toLowerCase() === 'admin') {
+          var isDefault = await Auth.verify(other, 'admin123');
+          if (isDefault) {
+            await DB.gs('users', 'readwrite').delete(other.id);
+            console.info('حساب کاربری پیش‌فرض روح پاکسازی شد.');
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('cleanupGhostAccounts:', e);
+    }
   },
 
   /* تولید یا خواندن کلید بازیابی اضطراری */
@@ -456,77 +467,6 @@ var Auth = {
     }
   },
 
-  /* ══ بازیابی امن رمز عبور با کلید اختصاصی ══ */
-  showRecoveryModal: async function() {
-    var body = '<p style="color:var(--txs);font-size:.85rem;margin-bottom:16px;line-height:1.7">' +
-      'برای جلوگیری از دسترسی افراد غیرمجاز، تغییر رمز نیازمند «کلید بازیابی اضطراری» (Master Key) سیستم شماست که در بخش تنظیمات در اختیار مدیر سیستم قرار دارد.' +
-      '</p>' +
-      '<div class="fg"><label class="fl">نام کاربری</label><input type="text" class="fc" id="recUser" value="admin" placeholder="نام کاربری"></div>' +
-      '<div class="fg"><label class="fl">کلید بازیابی اضطراری</label><input type="text" class="fc" id="recKey" placeholder="مثال: PB-XXXX-YYYY" style="direction:ltr;font-family:monospace;letter-spacing:1px"></div>' +
-      '<div class="fg"><label class="fl">رمز عبور جدید</label><input type="password" class="fc" id="recNewPass" placeholder="حداقل ۶ کاراکتر"></div>' +
-      '<div class="fg"><label class="fl">تکرار رمز عبور جدید</label><input type="password" class="fc" id="recConfirmPass" placeholder="تکرار رمز عبور جدید"></div>' +
-      '<div id="recErr" style="color:var(--d);font-size:.85rem;margin-bottom:12px;display:none"></div>';
-    var foot = '<button class="btn bo" onclick="UI.close()">انصراف</button>' +
-      '<button class="btn bp" onclick="Auth.processRecovery()"><i class="bi bi-check2-circle"></i> تغییر و ثبت رمز</button>';
-    UI.open('بازیابی امن رمز عبور', body, foot);
-  },
-
-  processRecovery: async function() {
-    var errEl = document.getElementById('recErr');
-    if (errEl) errEl.style.display = 'none';
-
-    var u = (elVal('recUser') || '').trim();
-    var inputKey = (elVal('recKey') || '').trim().toUpperCase();
-    var p1 = elVal('recNewPass');
-    var p2 = elVal('recConfirmPass');
-
-    function showErr(msg) {
-      if (errEl) {
-        errEl.textContent = msg;
-        errEl.style.display = 'block';
-      }
-    }
-
-    if (!u || !inputKey || !p1) {
-      showErr('لطفاً تمامی فیلدها را پر کنید.');
-      return;
-    }
-    if (p1.length < 5) {
-      showErr('رمز عبور باید حداقل ۵ کاراکتر باشد.');
-      return;
-    }
-    if (p1 !== p2) {
-      showErr('رمز عبور جدید با تکرار آن همخوانی ندارد.');
-      return;
-    }
-
-    var masterKey = await Auth.getMasterRecoveryKey();
-    if (inputKey !== (masterKey || '').toUpperCase()) {
-      showErr('کلید بازیابی اضطراری وارد شده نادرست است.');
-      return;
-    }
-
-    var users = await DB.all('users');
-    var user = users.find(function(x) {
-      return (x.username || '').toLowerCase() === u.toLowerCase();
-    });
-
-    if (!user) {
-      showErr('کاربری با این نام کاربری یافت نشد.');
-      return;
-    }
-
-    user.salt = uuid();
-    user.password = await Auth.hash(p1, user.salt);
-    user.updatedAt = new Date().toISOString();
-    await DB.put('users', user);
-
-    UI.close();
-    UI.toast('رمز عبور با موفقیت به‌روزرسانی شد. اکنون وارد شوید.', 's');
-    var passInp = document.getElementById('loginPass');
-    if (passInp) passInp.value = '';
-  },
-
   /* تغییر وضعیت نمایش/عدم‌نمایش گذرواژه */
   togglePassVis: function(inputId, btn) {
     var el = document.getElementById(inputId);
@@ -540,192 +480,349 @@ var Auth = {
     }
   },
 
-  /* ══ بازنشانی فوری و بی دردسر رمز عبور ══ */
-  showQuickResetModal: async function() {
-    Auth.clearFailedAttempts();
-    var users = await DB.all('users');
-    if (!users || users.length === 0) {
-      await Auth.ensureDefaultUser();
-      users = await DB.all('users');
+  /* ══════════════════════════════════════════════════════════════
+     ابزار عیب‌یابی جامع و بازیابی امن رمز عبور (Troubleshoot & Recovery)
+     ══════════════════════════════════════════════════════════════ */
+  showTroubleshootModal: async function() {
+    var t0 = performance.now();
+    var dbOk = false;
+    var dbLatency = 0;
+    var counts = {};
+    var users = [];
+    var lockStatus = Auth.getLockoutStatus();
+
+    try {
+      var allU = await DB.all('users');
+      users = allU || [];
+      var pCount = (await DB.all('products')).length;
+      var iCount = (await DB.all('invoices')).length;
+      var cCount = (await DB.all('contacts')).length;
+      dbLatency = Math.round(performance.now() - t0);
+      dbOk = true;
+      counts = { users: users.length, products: pCount, invoices: iCount, contacts: cCount };
+    } catch (e) {
+      dbOk = false;
     }
 
-    var optionsHtml = '';
-    users.forEach(function(u, idx) {
-      var rLabel = (u.role === 'admin' ? 'مدیر سیستم' : (u.role === 'accountant' ? 'حسابدار' : 'کاربر'));
-      optionsHtml += '<option value="' + esc(u.username) + '"' + (idx === 0 ? ' selected' : '') + '>' +
-        esc(u.displayName || u.username) + ' (@' + esc(u.username) + ' - ' + rLabel + ')' +
-        '</option>';
-    });
+    /* تحلیل هش و کاربران */
+    var hashAnalysis = [];
+    var hasGhost = false;
+    var customAdmin = null;
 
-    var body = '<div style="padding:4px 2px">' +
-      '<p style="color:var(--txs);font-size:.85rem;line-height:1.8;margin-bottom:14px">' +
-      'از آنجا که پایگاه داده پارچه‌بان در همین دستگاه نگهداری می‌شود، برای رفع مشکل فراموشی یا قفل شدن رمز می‌توانید از گزینه‌های زیر استفاده نمایید:' +
-      '</p>' +
-      '<div class="fg" style="margin-bottom:14px"><label class="fl">انتخاب حساب کاربری جهت بازنشانی</label>' +
-      '<select class="fc" id="quickResetUser">' + optionsHtml + '</select>' +
-      '</div>' +
-
-      '<div style="background:var(--bg);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:14px">' +
-      '<div style="font-weight:700;font-size:.88rem;color:var(--p);margin-bottom:6px"><i class="bi bi-lightning-charge-fill"></i> روش ۱: بازنشانی فوری به رمز پیش‌فرض</div>' +
-      '<p style="font-size:.8rem;color:var(--txs);margin-bottom:10px;line-height:1.7">با کلیک روی این دکمه، رمز عبور کاربر انتخاب‌شده فوراً به <code style="font-weight:700;color:var(--p)">admin123</code> بازنشانی شده و قفل موقت سیستم نیز برطرف می‌شود.</p>' +
-      '<button type="button" class="btn bp" style="width:100%;justify-content:center" onclick="Auth.executeQuickResetDefault()"><i class="bi bi-arrow-counterclockwise"></i> بازنشانی رمز به admin123</button>' +
-      '</div>' +
-
-      '<div style="background:var(--bg);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:14px">' +
-      '<div style="font-weight:700;font-size:.88rem;color:var(--tx);margin-bottom:6px"><i class="bi bi-key"></i> روش ۲: تعیین رمز عبور دلخواه جدید</div>' +
-      '<div class="fg" style="margin-bottom:8px"><label class="fl">رمز عبور جدید</label>' +
-      '<div style="position:relative">' +
-      '<input type="password" class="fc" id="quickNewPass" placeholder="حداقل ۴ کاراکتر" style="padding-inline-end:36px">' +
-      '<button type="button" onclick="Auth.togglePassVis(\'quickNewPass\', this)" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--txs);cursor:pointer;font-size:1.1rem;padding:2px"><i class="bi bi-eye"></i></button>' +
-      '</div></div>' +
-      '<div class="fg" style="margin-bottom:10px"><label class="fl">تکرار رمز عبور جدید</label>' +
-      '<input type="password" class="fc" id="quickConfPass" placeholder="تکرار رمز">' +
-      '</div>' +
-      '<button type="button" class="btn bo" style="width:100%;justify-content:center" onclick="Auth.executeQuickResetCustom()"><i class="bi bi-check2"></i> ثبت و اعمال این رمز جدید</button>' +
-      '</div>' +
-
-      '<div style="text-align:center;padding-top:4px">' +
-      '<button type="button" class="btn bo bs" onclick="Auth.emergencyBypassLogin()" style="color:var(--ok);border-color:var(--ok);width:100%;justify-content:center;padding:10px"><i class="bi bi-box-arrow-in-right"></i> ورود مستقیم اضطراری به عنوان مدیر (بدون نیاز به رمز)</button>' +
-      '</div>' +
-      '</div>';
-
-    var foot = '<button class="btn bo" onclick="UI.close()">انصراف</button>';
-    UI.open('فراموشی یا بازنشانی رمز عبور', body, foot);
-  },
-
-  executeQuickResetDefault: async function() {
-    var uName = elVal('quickResetUser');
-    if (!uName) return;
-    var users = await DB.all('users');
-    var user = users.find(function(x) { return x.username === uName; });
-    if (!user) return;
-
-    user.salt = uuid();
-    user.password = await Auth.hash('admin123', user.salt);
-    user.updatedAt = new Date().toISOString();
-    await DB.put('users', user);
-
-    Auth.clearFailedAttempts();
-    var uInp = document.getElementById('loginUser');
-    var pInp = document.getElementById('loginPass');
-    if (uInp) uInp.value = user.username;
-    if (pInp) pInp.value = 'admin123';
-    var errEl = document.getElementById('loginErr');
-    if (errEl) errEl.style.display = 'none';
-
-    UI.close();
-    UI.toast('رمز عبور حساب «' + user.username + '» با موفقیت به admin123 بازنشانی شد.', 's');
-  },
-
-  executeQuickResetCustom: async function() {
-    var uName = elVal('quickResetUser');
-    var p1 = elVal('quickNewPass');
-    var p2 = elVal('quickConfPass');
-
-    if (!p1 || p1.length < 4) {
-      UI.toast('رمز عبور باید حداقل ۴ کاراکتر باشد.', 'e');
-      return;
-    }
-    if (p1 !== p2) {
-      UI.toast('رمز عبور جدید و تکرار آن همخوانی ندارند.', 'e');
-      return;
-    }
-
-    var users = await DB.all('users');
-    var user = users.find(function(x) { return x.username === uName; });
-    if (!user) return;
-
-    user.salt = uuid();
-    var cleanP = p1.trim();
-    user.password = await Auth.hash(cleanP, user.salt);
-    user.updatedAt = new Date().toISOString();
-    await DB.put('users', user);
-
-    Auth.clearFailedAttempts();
-    var uInp = document.getElementById('loginUser');
-    var pInp = document.getElementById('loginPass');
-    if (uInp) uInp.value = user.username;
-    if (pInp) pInp.value = cleanP;
-    var errEl = document.getElementById('loginErr');
-    if (errEl) errEl.style.display = 'none';
-
-    UI.close();
-    UI.toast('رمز عبور جدید ثبت شد. اکنون دکمه ورود به برنامه را لمس کنید.', 's');
-  },
-
-  emergencyBypassLogin: async function() {
-    var users = await DB.all('users');
-    if (!users || users.length === 0) {
-      await Auth.ensureDefaultUser();
-      users = await DB.all('users');
-    }
-    var adminUser = users.find(function(u) { return u.role === 'admin'; }) || users[0];
-    if (!adminUser) return;
-
-    Auth.clearFailedAttempts();
-    localStorage.setItem('pb_session', JSON.stringify({
-      userId: adminUser.id,
-      username: adminUser.username,
-      name: adminUser.displayName || adminUser.username,
-      role: adminUser.role || 'admin',
-      expires: Date.now() + Auth.SESSION_HOURS * 3600 * 1000
-    }));
-
-    STATE.userId = adminUser.id;
-    STATE.username = adminUser.username;
-    STATE.userRole = adminUser.role || 'admin';
-
-    UI.close();
-    document.getElementById('loginPage').style.display = 'none';
-    document.getElementById('appContainer').style.display = '';
-
-    await Auth.onLogin();
-    await routeToHash();
-    UI.toast('خوش‌آمدید! با موفقیت به عنوان مدیر سیستم وارد شدید.', 's');
-  },
-
-  /* ══ مشاهده نام‌های کاربری موجود در دستگاه ══ */
-  showAccountHelp: async function() {
-    var users = await DB.all('users');
-    if (!users || users.length === 0) {
-      await Auth.ensureDefaultUser();
-      users = await DB.all('users');
-    }
-
-    var rowsHtml = '';
     users.forEach(function(u) {
-      var rLabel = (u.role === 'admin' ? 'مدیر سیستم' : (u.role === 'accountant' ? 'حسابدار' : 'کاربر'));
-      rowsHtml += '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg);border:1px solid var(--bd);border-radius:10px;margin-bottom:8px">' +
-        '<div>' +
-        '<div style="font-weight:700;font-size:.9rem;color:var(--tx)">' + esc(u.displayName || u.username) + '</div>' +
-        '<div style="font-size:.78rem;color:var(--txs);margin-top:2px">' +
-        'نام کاربری: <code style="direction:ltr;display:inline-block;font-weight:700;color:var(--p)">' + esc(u.username) + '</code> | نقش: ' + rLabel +
-        '</div>' +
-        '</div>' +
-        '<button type="button" class="btn bo bs" onclick="Auth.selectUserForLogin(\'' + esc(u.username) + '\')"><i class="bi bi-check-lg"></i> انتخاب</button>' +
-        '</div>';
+      var hType = 'سالت‌دار SHA-256 (ایمن)';
+      if (!u.password) hType = 'نامعتبر یا خالی';
+      else if (!u.salt) hType = 'هش قدیمی بدون سالت';
+      hashAnalysis.push({
+        id: u.id,
+        role: u.role || 'کاربر',
+        hashType: hType,
+        active: u.active !== false
+      });
+      if ((u.role === 'admin' || !u.role) && (u.username || '').toLowerCase() !== 'admin') {
+        customAdmin = u;
+      }
     });
 
-    var body = '<div style="padding:4px 2px">' +
-      '<p style="color:var(--txs);font-size:.85rem;line-height:1.7;margin-bottom:14px">' +
-      'حساب‌های کاربری ذخیره‌شده در پایگاه داده این مرورگر در زیر فهرست شده‌اند. برای قرارگیری خودکار در فرم، دکمه «انتخاب» را بزنید:' +
+    if (customAdmin && users.some(function(x) { return (x.username || '').toLowerCase() === 'admin'; })) {
+      hasGhost = true;
+    }
+
+    var body = '<div style="font-size:.85rem;line-height:1.7">' +
+      /* ── کارت ۱: وضعیت اتصال به پایگاه داده محلی ── */
+      '<div style="background:var(--bg);border:1px solid var(--bd);border-radius:12px;padding:12px 14px;margin-bottom:12px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">' +
+      '<strong style="color:var(--tx)"><i class="bi bi-database-check" style="color:' + (dbOk ? 'var(--ok)' : 'var(--d)') + '"></i> وضعیت پایگاه داده محلی (IndexedDB)</strong>' +
+      '<span class="tg ' + (dbOk ? 'ts' : 'td') + '">' + (dbOk ? 'متصل و سالم' : 'خطا در اتصال') + '</span>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px;font-size:.78rem;color:var(--txs)">' +
+      '<div>نسخه پایگاه داده: <strong>parchehban_v8</strong></div>' +
+      '<div>پاسخ‌دهی: <strong>' + dbLatency + ' ms</strong></div>' +
+      '<div>تعداد کاربران: <strong>' + (counts.users || 0) + '</strong></div>' +
+      '<div>تعداد کالاها: <strong>' + (counts.products || 0) + '</strong></div>' +
+      '<div>تعداد فاکتورها: <strong>' + (counts.invoices || 0) + '</strong></div>' +
+      '<div>تعداد اشخاص: <strong>' + (counts.contacts || 0) + '</strong></div>' +
+      '</div>' +
+      '</div>' +
+
+      /* ── کارت ۲: سلامت هَش رمز عبور و بررسی تضاد ── */
+      '<div style="background:var(--bg);border:1px solid var(--bd);border-radius:12px;padding:12px 14px;margin-bottom:12px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
+      '<strong style="color:var(--tx)"><i class="bi bi-shield-check" style="color:var(--p)"></i> سلامت هَش رمز و سیستم امنیتی</strong>' +
+      '<span class="tg ' + (lockStatus.locked ? 'td' : (hasGhost ? 'tw' : 'ts')) + '">' +
+      (lockStatus.locked ? 'قفل موقت فعال (' + lockStatus.remainingSec + ' ثانیه)' : (hasGhost ? 'تضاد حساب شناسایی شد' : 'بدون تضاد')) +
+      '</span>' +
+      '</div>' +
+      '<p style="color:var(--txs);font-size:.78rem;margin:0 0 8px 0">' +
+      (hasGhost ?
+        '⚠️ یک حساب روح پیش‌فرض در کنار حساب اختصاصی شما در پایگاه داده شناسایی شد که با بازنشانی امن یا تغییر مشخصات، خودکار پاکسازی می‌شود.' :
+        'الگوریتم رمزنگاری فعال: <strong>SHA-256 سالت‌دار</strong> با پشتیبانی از ارقام فارسی و انگلیسی.') +
       '</p>' +
-      rowsHtml +
+      (lockStatus.locked ?
+        '<p style="color:var(--d);font-size:.78rem;margin:0">به دلیل ورودهای ناموفق قبلی، فرم ورود موقتاً مسدود است. پس از اعتبارسنجی زیر، قفل بلافاصله برطرف می‌شود.</p>' :
+        '') +
+      '</div>' +
+
+      /* ── کارت ۳: آزمایش زنده اعتبار‌سنجی (بدون قفل شدن حساب) ── */
+      '<details style="background:var(--bg);border:1px solid var(--bd);border-radius:12px;padding:10px 14px;margin-bottom:12px">' +
+      '<summary style="cursor:pointer;font-weight:700;color:var(--tx);font-size:.82rem"><i class="bi bi-clipboard-pulse"></i> آزمایش تطابق رمز عبور (آزمون بدون قفل شدن)</summary>' +
+      '<div style="padding-top:10px">' +
+      '<p style="font-size:.78rem;color:var(--txs);margin-bottom:8px">می‌توانید نام کاربری و رمز خود را در اینجا امتحان کنید تا ببینید آیا با دیتابیس همخوانی دارد یا خیر (این آزمون حساب شما را قفل نمی‌کند):</p>' +
+      '<div class="g2" style="margin-bottom:8px">' +
+      '<input class="fc" id="diagTestUser" placeholder="نام کاربری مورد نظر" style="font-size:.82rem">' +
+      '<div style="position:relative">' +
+      '<input class="fc" id="diagTestPass" type="password" placeholder="رمز عبور" style="font-size:.82rem;padding-inline-end:34px">' +
+      '<button type="button" onclick="Auth.togglePassVis(\'diagTestPass\', this)" style="position:absolute;left:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--txs);cursor:pointer;font-size:1rem;padding:2px"><i class="bi bi-eye"></i></button>' +
+      '</div>' +
+      '</div>' +
+      '<button type="button" class="btn bo bs" onclick="Auth.runDiagTest()" style="font-size:.8rem"><i class="bi bi-play-circle"></i> بررسی اعتبار</button>' +
+      '<div id="diagTestResult" style="margin-top:8px;font-size:.8rem;display:none"></div>' +
+      '</div>' +
+      '</details>' +
+
+      /* ── کارت ۴: بازنشانی ایمن و رفع تضاد (Secure Recovery) ── */
+      '<div style="background:rgba(37,99,235,.04);border:1.5px solid var(--p);border-radius:12px;padding:14px">' +
+      '<div style="font-weight:700;font-size:.88rem;color:var(--p);margin-bottom:6px"><i class="bi bi-shield-lock-fill"></i> بازنشانی ایمن رمز عبور و رفع تضاد سیستم</div>' +
+      '<p style="color:var(--txs);font-size:.8rem;line-height:1.7;margin-bottom:12px">' +
+      'جهت حفظ امنیت و جلوگیری از سوءاستفاده افراد غیرمجاز، تغییر یا بازنشانی رمز تنها در صورت ارائه <strong>«کلید بازیابی اضطراری (Master Key)»</strong> یا <strong>«فایل پشتیبان معتبر سیستم»</strong> ممکن است.' +
+      '</p>' +
+
+      '<div style="display:flex;gap:12px;margin-bottom:12px">' +
+      '<label style="display:flex;align-items:center;gap:6px;font-size:.82rem;cursor:pointer;font-weight:600">' +
+      '<input type="radio" name="recMethod" value="key" checked onchange="Auth.toggleRecMethod(\'key\')"> روش ۱: وارد کردن کلید بازیابی اضطراری' +
+      '</label>' +
+      '<label style="display:flex;align-items:center;gap:6px;font-size:.82rem;cursor:pointer;font-weight:600">' +
+      '<input type="radio" name="recMethod" value="file" onchange="Auth.toggleRecMethod(\'file\')"> روش ۲: انتخاب فایل پشتیبان سیستم' +
+      '</label>' +
+      '</div>' +
+
+      /* بخش کلید */
+      '<div id="recSecKey" class="fg" style="margin-bottom:10px">' +
+      '<label class="fl">کلید بازیابی اضطراری (Master Key)</label>' +
+      '<input type="text" class="fc" id="diagMasterKey" placeholder="مثال: PB-XXXX-YYYY" style="direction:ltr;font-family:monospace;letter-spacing:1px;font-weight:700">' +
+      '<small style="color:var(--txs);font-size:.74rem">این کلید هنگام راه‌اندازی در بخش تنظیمات در اختیار مدیر قرار گرفته است.</small>' +
+      '</div>' +
+
+      /* بخش فایل پشتیبان */
+      '<div id="recSecFile" class="fg" style="margin-bottom:10px;display:none">' +
+      '<label class="fl">انتخاب فایل پشتیبان پارچه‌بان (.json)</label>' +
+      '<input type="file" class="fc" id="diagBackupFile" accept=".json">' +
+      '<small style="color:var(--txs);font-size:.74rem">با ارائه فایل پشتیبان قبلی، مالکیت شما بر داده‌ها تأیید می‌شود.</small>' +
+      '</div>' +
+
+      /* مشخصات جدید */
+      '<div class="g2" style="margin-bottom:8px">' +
+      '<div class="fg" style="margin-bottom:0">' +
+      '<label class="fl">نام کاربری جدید</label>' +
+      '<input type="text" class="fc" id="diagNewUser" value="' + esc(customAdmin ? customAdmin.username : (users[0] ? users[0].username : 'admin')) + '" placeholder="نام کاربری">' +
+      '</div>' +
+      '<div class="fg" style="margin-bottom:0">' +
+      '<label class="fl">نام نمایشی (اختیاری)</label>' +
+      '<input type="text" class="fc" id="diagNewDisp" value="' + esc(customAdmin ? (customAdmin.displayName || '') : '') + '" placeholder="مدیر سیستم">' +
+      '</div>' +
+      '</div>' +
+
+      '<div class="g2" style="margin-bottom:12px">' +
+      '<div class="fg" style="margin-bottom:0">' +
+      '<label class="fl">رمز عبور جدید</label>' +
+      '<div style="position:relative">' +
+      '<input type="password" class="fc" id="diagNewPass" placeholder="حداقل ۵ کاراکتر" style="padding-inline-end:34px">' +
+      '<button type="button" onclick="Auth.togglePassVis(\'diagNewPass\', this)" style="position:absolute;left:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--txs);cursor:pointer;font-size:1rem;padding:2px"><i class="bi bi-eye"></i></button>' +
+      '</div>' +
+      '</div>' +
+      '<div class="fg" style="margin-bottom:0">' +
+      '<label class="fl">تکرار رمز عبور جدید</label>' +
+      '<div style="position:relative">' +
+      '<input type="password" class="fc" id="diagConfPass" placeholder="تکرار رمز جدید" style="padding-inline-end:34px">' +
+      '<button type="button" onclick="Auth.togglePassVis(\'diagConfPass\', this)" style="position:absolute;left:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--txs);cursor:pointer;font-size:1rem;padding:2px"><i class="bi bi-eye"></i></button>' +
+      '</div>' +
+      '</div>' +
+      '</div>' +
+
+      '<div id="diagActionErr" style="color:var(--d);font-size:.82rem;margin-bottom:10px;display:none"></div>' +
+      '<button type="button" class="btn bp" style="width:100%;justify-content:center;padding:10px" onclick="Auth.executeSecureRecovery()"><i class="bi bi-shield-check"></i> تأیید هویت و اعمال بازنشانی ایمن</button>' +
+      '</div>' +
       '</div>';
 
     var foot = '<button class="btn bo" onclick="UI.close()">بستن</button>';
-    UI.open('حساب‌های کاربری موجود در این دستگاه', body, foot);
+    UI.open('ابزار عیب‌یابی دیتابیس و بازیابی امن رمز عبور', body, foot);
   },
 
-  selectUserForLogin: function(username) {
+  toggleRecMethod: function(method) {
+    var sKey = document.getElementById('recSecKey');
+    var sFile = document.getElementById('recSecFile');
+    if (method === 'file') {
+      if (sKey) sKey.style.display = 'none';
+      if (sFile) sFile.style.display = 'block';
+    } else {
+      if (sKey) sKey.style.display = 'block';
+      if (sFile) sFile.style.display = 'none';
+    }
+  },
+
+  /* اجرای آزمون اعتبار تطابق بدون قفل کردن حساب */
+  runDiagTest: async function() {
+    var resEl = document.getElementById('diagTestResult');
+    if (!resEl) return;
+    var u = (elVal('diagTestUser') || '').trim();
+    var p = elVal('diagTestPass');
+
+    if (!u || !p) {
+      resEl.innerHTML = '<span style="color:var(--d)">لطفاً نام کاربری و رمز عبور را وارد کنید.</span>';
+      resEl.style.display = 'block';
+      return;
+    }
+
+    try {
+      var users = await DB.all('users');
+      var uVars = Auth._variations(u).map(function(x) { return x.toLowerCase(); });
+      var target = users.find(function(x) {
+        return uVars.includes((x.username || '').toLowerCase()) || uVars.includes((x.displayName || '').toLowerCase());
+      });
+
+      if (!target) {
+        resEl.innerHTML = '<span style="color:var(--d)">❌ کاربری با نام «' + esc(u) + '» در سیستم یافت نشد.</span>';
+        resEl.style.display = 'block';
+        return;
+      }
+
+      var ok = await Auth.verify(target, p);
+      if (ok) {
+        resEl.innerHTML = '<span style="color:var(--ok);font-weight:700">✓ تطابق کامل: هَش رمز عبور وارد شده با حساب «' + esc(target.username) + '» کاملاً منطبق است. می‌توانید با این مشخصات وارد شوید.</span>';
+      } else {
+        resEl.innerHTML = '<span style="color:var(--d)">❌ هَش رمز عبور مطابقت ندارد. دلیل: رمز تایپ‌شده با رمز ذخیره شده یکسان نیست (زبان کیبورد و دکمه چشم را بررسی کنید).</span>';
+      }
+      resEl.style.display = 'block';
+    } catch (e) {
+      resEl.innerHTML = '<span style="color:var(--d)">خطا در بررسی: ' + esc(e.message) + '</span>';
+      resEl.style.display = 'block';
+    }
+  },
+
+  /* اجرای بازنشانی ایمن پس از احراز هویت با کلید یا فایل پشتیبان */
+  executeSecureRecovery: async function() {
+    var errEl = document.getElementById('diagActionErr');
+    if (errEl) errEl.style.display = 'none';
+
+    function setErr(msg) {
+      if (errEl) {
+        errEl.textContent = msg;
+        errEl.style.display = 'block';
+      }
+    }
+
+    var method = 'key';
+    var rMethod = document.querySelector('input[name="recMethod"]:checked');
+    if (rMethod) method = rMethod.value;
+
+    var newU = (elVal('diagNewUser') || '').trim();
+    var newDisp = (elVal('diagNewDisp') || '').trim();
+    var newP = elVal('diagNewPass');
+    var confP = elVal('diagConfPass');
+
+    if (!newU || newU.length < 3) {
+      setErr('نام کاربری باید حداقل ۳ کاراکتر باشد.');
+      return;
+    }
+    if (!newP || newP.length < 5) {
+      setErr('رمز عبور باید حداقل ۵ کاراکتر باشد.');
+      return;
+    }
+    if (newP !== confP) {
+      setErr('رمز عبور جدید و تکرار آن یکسان نیستند.');
+      return;
+    }
+
+    var isOwnerVerified = false;
+
+    if (method === 'key') {
+      var inputKey = (elVal('diagMasterKey') || '').trim().toUpperCase();
+      if (!inputKey) {
+        setErr('لطفاً کلید بازیابی اضطراری را وارد نمایید.');
+        return;
+      }
+      var realMaster = await Auth.getMasterRecoveryKey();
+      if (inputKey === (realMaster || '').toUpperCase()) {
+        isOwnerVerified = true;
+      } else {
+        setErr('کلید بازیابی اضطراری وارد شده نامعتبر است.');
+        return;
+      }
+    } else {
+      /* اعتبارسنجی با فایل پشتیبان */
+      var fileInp = document.getElementById('diagBackupFile');
+      if (!fileInp || !fileInp.files || !fileInp.files[0]) {
+        setErr('لطفاً یک فایل پشتیبان معتبر انتخاب فرمایید.');
+        return;
+      }
+      var file = fileInp.files[0];
+      try {
+        var text = await file.text();
+        var json = JSON.parse(text);
+        if (json && (json.data || json.version || json.app === 'parchehban' || json.products || json.invoices)) {
+          isOwnerVerified = true;
+        } else {
+          setErr('فایل انتخاب‌شده، فایل پشتیبان معتبر پارچه‌بان نیست.');
+          return;
+        }
+      } catch (e) {
+        setErr('خطا در خواندن فایل پشتیبان: ' + e.message);
+        return;
+      }
+    }
+
+    if (!isOwnerVerified) {
+      setErr('احراز هویت انجام نشد.');
+      return;
+    }
+
+    /* به‌روزرسانی یا ایجاد کاربر مدیر با مشخصات جدید */
+    var users = await DB.all('users');
+    var targetUser = users.find(function(u) {
+      return (u.role === 'admin' || !u.role);
+    }) || users[0];
+
+    var cleanPass = newP.trim();
+    var newSalt = uuid();
+    var newHash = await Auth.hash(cleanPass, newSalt);
+
+    if (targetUser) {
+      targetUser.username = newU;
+      targetUser.displayName = newDisp || newU;
+      targetUser.salt = newSalt;
+      targetUser.password = newHash;
+      targetUser.role = 'admin';
+      targetUser.active = true;
+      targetUser.updatedAt = new Date().toISOString();
+      await DB.put('users', targetUser);
+    } else {
+      targetUser = {
+        username: newU,
+        displayName: newDisp || newU,
+        salt: newSalt,
+        password: newHash,
+        role: 'admin',
+        active: true
+      };
+      var newId = await DB.add('users', targetUser);
+      targetUser.id = newId;
+    }
+
+    /* پاکسازی هرگونه حساب روح یا تکراری قدیمی */
+    await Auth.cleanupGhostAccounts(targetUser.id);
+
+    /* رفع قفل سیستم و بستن پنجره */
+    Auth.clearFailedAttempts();
+
     var uInp = document.getElementById('loginUser');
     var pInp = document.getElementById('loginPass');
-    if (uInp) uInp.value = username;
-    if (pInp) {
-      pInp.value = '';
-      pInp.focus();
-    }
+    if (uInp) uInp.value = newU;
+    if (pInp) pInp.value = cleanPass;
+
+    var errElLogin = document.getElementById('loginErr');
+    if (errElLogin) errElLogin.style.display = 'none';
+
     UI.close();
-    UI.toast('نام کاربری «' + username + '» انتخاب شد. اکنون رمز عبور را وارد کنید.', 'i');
+    UI.toast('هویت شما تأیید شد و رمز عبور حساب «' + newU + '» با موفقیت ثبت گردید. اکنون وارد شوید.', 's');
   }
 };

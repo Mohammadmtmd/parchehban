@@ -108,15 +108,16 @@ var DB = {
     }, 'all(' + n + ')');
   },
   get: function(n, id) {
-    /* اگر شناسه خالی/نامعتبر باشد به‌جای پرتاب DataError مقدار null
-       برگردان — مثلاً وقتی نشست خراب است و STATE.userId تعریف نشده،
-       صفحه تنظیمات قبلاً کامل از کار می‌افتاد. */
     if (id === null || id === undefined || id === '') return Promise.resolve(null);
-    var key = typeof id === 'number' ? id : intOf(id);
-    if (!isFinite(key) || key === 0) return Promise.resolve(null);
+    var key = id;
+    if (typeof id === 'string' && /^\d+$/.test(id.trim())) {
+      key = parseInt(id.trim(), 10);
+    }
     return DB._req(function() {
       return DB.gs(n).get(key);
-    }, 'get(' + n + ')');
+    }, 'get(' + n + ')').catch(function() {
+      return null;
+    });
   },
   /* هنگام نوشتن در جدول syncQueue نباید دوباره صف‌گذاری انجام شود،
      وگرنه بازگشت بی‌پایان می‌شود. */
