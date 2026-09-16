@@ -171,6 +171,27 @@ var Dash = {
     var pl = { week: 'هفته جاری', month: 'ماه جاری', year: 'سال مالی جاری', all: 'تمام دوران' };
     var me = this, h = '';
 
+    /* بنر بازیابی سریع در صورت خالی بودن دیتابیس */
+    var prodCount = 0;
+    try { prodCount = (await DB.all('products')).length; } catch (e) {}
+    if (contacts.length === 0 && allInvs.length === 0 && prodCount === 0) {
+      var supaReady = typeof Sync !== 'undefined' && Sync.getConfig().configured;
+      h += '<div class="hint-box" style="margin-bottom:18px;background:rgba(37,99,235,.07);border:1.5px solid var(--p);border-radius:12px;padding:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px">' +
+        '<div>' +
+        '<div style="font-weight:700;font-size:.95rem;color:var(--p);margin-bottom:4px"><i class="bi bi-cloud-arrow-down-fill"></i> پایگاه داده در این آدرس خالی است!</div>' +
+        '<div style="font-size:.84rem;color:var(--txs);line-height:1.7">' +
+        (supaReady ?
+          'اتصال به پایگاه داده ابری Supabase برقرار است. می‌توانید با یک کلیک اطلاعات خود را از سرور بازیابی کنید، یا در صورت تمایل فایل پشتیبان آفلاین (JSON) را بارگذاری نمایید.' :
+          'اگر قبلاً فایل پشتیبان (بکاپ) از برنامه گرفته‌اید، می‌توانید فوراً با بارگذاری آن تمام کالاها، اشخاص، فاکتورها، حساب‌ها و تنظیمات خود را بازیابی نمایید.') +
+        '</div>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+        (supaReady ? '<button class="btn bs" style="background:var(--ok);color:#fff" onclick="Auth.quickCloudRestore()"><i class="bi bi-cloud-arrow-down-fill"></i> بازیابی فوری از سرور ابری (Supabase)</button>' : '') +
+        '<button class="btn bp" onclick="Backup.importAll()"><i class="bi bi-file-earmark-arrow-up"></i> بارگذاری فایل پشتیبان (JSON)</button>' +
+        '</div>' +
+        '</div>';
+    }
+
     /* بنر هشدار امنیت در صورت رمز پیش‌فرض */
     var isDefaultPass = false;
     try { isDefaultPass = await Auth.isDefaultAdminPass(); } catch (e) {}

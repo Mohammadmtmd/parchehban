@@ -114,6 +114,36 @@ if (yearSel) yearSel.addEventListener('change', function() {
     /* مهاجرت‌های داده — یک بار و فقط یک بار اجرا می‌شوند */
     step = 'مهاجرت داده';
     await withTimeout(Migrate.run(), 60000, step);
+
+    /* دریافت تنظیمات ابری پایدار و بررسی خودکار بازیابی اطلاعات */
+    step = 'بررسی اتصال ابری Supabase';
+    try {
+      if (typeof Sync !== 'undefined') {
+        if (Sync.fetchServerConfig) await Sync.fetchServerConfig();
+        if (Sync.init) Sync.init();
+
+        var supaCfg = Sync.getConfig();
+        if (supaCfg.configured) {
+          var pAll = await DB.all('products');
+          var iAll = await DB.all('invoices');
+          var cAll = await DB.all('contacts');
+
+          /* اگر دیتابیس محلی خالی است، استعلام و بازیابی خودکار از Supabase */
+          if (pAll.length === 0 && iAll.length === 0 && cAll.length === 0) {
+            var rem = await Sync.checkRemoteCounts();
+            if (rem && rem.ok && rem.total > 0) {
+              step = 'بازیابی خودکار از سرور ابری';
+              console.info('دیتابیس در این دستگاه خالی است اما ' + rem.total + ' رکورد روی Supabase وجود دارد. در حال بازیابی...');
+              await Sync.fullDownload();
+              console.info('بازیابی خودکار با موفقیت پایان یافت.');
+            }
+          }
+        }
+      }
+    } catch (syncErr) {
+      console.warn('Sync auto-restore check during boot:', syncErr);
+    }
+
     APP_READY = true;
     hideLoading();
     if (Auth.checkSession()) {
@@ -125,8 +155,24 @@ if (yearSel) yearSel.addEventListener('change', function() {
       await routeToHash();
     } else {
       document.getElementById('loginPage').style.display = '';
+
+      /* اگر اتصال ابری موجود است، بنر بازیابی سریع در صفحه لاگین فعال شود */
+      try {
+        var supa = typeof Sync !== 'undefined' ? Sync.getConfig() : { configured: false };
+        var cNotice = document.getElementById('loginCloudNotice');
+        if (cNotice) {
+          cNotice.style.display = supa.configured ? 'block' : 'none';
+        }
+        var allU = await DB.all('users');
+        var mainAdmin = allU.find(function(x) { return x.role === 'admin' || !x.role; });
+        if (mainAdmin && mainAdmin.username && mainAdmin.username !== 'admin') {
+          var _fUser = el('loginUser');
+          if (_fUser && !_fUser.value) _fUser.value = mainAdmin.username;
+        }
+      } catch (e) {}
+
       var _f = el('loginUser');
-    if (_f) _f.focus();
+      if (_f) _f.focus();
     }
   } catch (err) {
     console.error('Boot:', err);

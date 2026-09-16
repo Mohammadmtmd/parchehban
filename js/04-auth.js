@@ -292,7 +292,15 @@ var Auth = {
         } else {
           var left = Auth.MAX_FAILED_ATTEMPTS - (updatedLock.attempts || 0);
           if (errEl) {
+            var cloudHint = '';
+            var supaCfg = typeof Sync !== 'undefined' ? Sync.getConfig() : null;
+            if (supaCfg && supaCfg.configured) {
+              cloudHint = '<div style="margin-top:8px;padding:8px 10px;background:rgba(16,185,129,.1);border:1px solid var(--ok);border-radius:8px;font-size:.78rem;color:var(--ok);line-height:1.6">' +
+                '💡 <strong>حساب در این مرورگر یافت نشد:</strong> اگر اطلاعات شما روی سرور ابری است، روی <a href="#" onclick="Auth.quickCloudRestore();return false" style="color:var(--ok);font-weight:700;text-decoration:underline">بازیابی اطلاعات و حساب کاربری از سرور ابری</a> کلیک کنید.' +
+                '</div>';
+            }
             errEl.innerHTML = 'نام کاربری یا رمز عبور اشتباه است. (' + left + ' فرصت باقی‌مانده)' +
+              cloudHint +
               '<br><small style="color:var(--txs)">نکته: زبان کیبورد (فارسی/انگلیسی) و دکمه چشم را بررسی کنید، یا از <a href="#" onclick="Auth.showTroubleshootModal();return false" style="color:var(--p)">ابزار عیب‌یابی</a> استفاده کنید.</small>';
             errEl.style.display = 'block';
           }
@@ -452,9 +460,32 @@ var Auth = {
     await Perm.load();
     if (document.body.classList.contains('dark')) setHTML('darkBtn', '<i class="bi bi-sun"></i>');
 
-    /* شروع همگام‌سازی خودکار در صورت تنظیم بودن */
-    if (typeof Sync !== 'undefined' && Sync.init) {
-      Sync.init();
+    /* شروع همگام‌سازی و بررسی بازیابی ابری در صورت تنظیم بودن */
+    if (typeof Sync !== 'undefined') {
+      try {
+        if (Sync.fetchServerConfig) await Sync.fetchServerConfig();
+        if (Sync.init) Sync.init();
+
+        var supaCfg = Sync.getConfig();
+        if (supaCfg.configured) {
+          var pCount = (await DB.all('products')).length;
+          var iCount = (await DB.all('invoices')).length;
+          if (pCount === 0 && iCount === 0) {
+            var rem = await Sync.checkRemoteCounts();
+            if (rem && rem.ok && rem.total > 0) {
+              if (typeof UI !== 'undefined' && UI.toast) {
+                UI.toast('در حال بازیابی خودکار اطلاعات از سرور ابری Supabase...', 'i');
+              }
+              await Sync.fullDownload();
+              if (typeof UI !== 'undefined' && UI.toast) {
+                UI.toast('اطلاعات با موفقیت از سرور ابری بازیابی شد.', 's');
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('onLogin sync check warning:', e);
+      }
     }
 
     /* یادآور پشتیبان‌گیری */
@@ -477,6 +508,13 @@ var Auth = {
     } else {
       el.type = 'password';
       if (btn) btn.innerHTML = '<i class="bi bi-eye"></i>';
+    }
+  },
+
+  /* بازیابی مستقیم از پایگاه داده ابری Supabase */
+  quickCloudRestore: async function() {
+    if (typeof Sync !== 'undefined' && Sync.quickCloudRestore) {
+      await Sync.quickCloudRestore();
     }
   },
 
@@ -504,6 +542,13 @@ var Auth = {
       dbOk = false;
     }
 
+    var isPersisted = false;
+    try {
+      if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.persisted) {
+        isPersisted = await navigator.storage.persisted();
+      }
+    } catch (e) {}
+
     /* تحلیل هش و کاربران */
     var hashAnalysis = [];
     var hasGhost = false;
@@ -528,6 +573,26 @@ var Auth = {
       hasGhost = true;
     }
 
+    /* تحلیل وضعیت سرور ابری Supabase */
+    var supaCfg = typeof Sync !== 'undefined' ? Sync.getConfig() : { configured: false };
+    var supaCounts = null;
+    var supaStatusTxt = 'تنظیم نشده';
+    var supaOk = false;
+    if (supaCfg.configured) {
+      try {
+        var cRes = await Sync.checkRemoteCounts();
+        if (cRes && cRes.ok) {
+          supaOk = true;
+          supaCounts = cRes.counts;
+          supaStatusTxt = 'متصل و آنلاین (' + cRes.total + ' رکورد)';
+        } else {
+          supaStatusTxt = 'خطا در ارتباط (' + ((cRes && cRes.error) || 'نامشخص') + ')';
+        }
+      } catch (e) {
+        supaStatusTxt = 'عدم ارتباط با سرور';
+      }
+    }
+
     var body = '<div style="font-size:.85rem;line-height:1.7">' +
       /* ── کارت ۱: وضعیت اتصال به پایگاه داده محلی ── */
       '<div style="background:var(--bg);border:1px solid var(--bd);border-radius:12px;padding:12px 14px;margin-bottom:12px">' +
@@ -535,14 +600,48 @@ var Auth = {
       '<strong style="color:var(--tx)"><i class="bi bi-database-check" style="color:' + (dbOk ? 'var(--ok)' : 'var(--d)') + '"></i> وضعیت پایگاه داده محلی (IndexedDB)</strong>' +
       '<span class="tg ' + (dbOk ? 'ts' : 'td') + '">' + (dbOk ? 'متصل و سالم' : 'خطا در اتصال') + '</span>' +
       '</div>' +
-      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px;font-size:.78rem;color:var(--txs)">' +
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px;font-size:.78rem;color:var(--txs)">' +
       '<div>نسخه پایگاه داده: <strong>parchehban_v8</strong></div>' +
       '<div>پاسخ‌دهی: <strong>' + dbLatency + ' ms</strong></div>' +
+      '<div>ماندگاری حافظه: <strong style="color:' + (isPersisted ? 'var(--ok)' : 'var(--p)') + '">' + (isPersisted ? 'دائمی (محافظت‌شده)' : 'استاندارد مرورگر') + '</strong></div>' +
+      '<div>آدرس دامنه: <strong style="direction:ltr;display:inline-block">' + esc(location.hostname || 'localhost') + '</strong></div>' +
       '<div>تعداد کاربران: <strong>' + (counts.users || 0) + '</strong></div>' +
       '<div>تعداد کالاها: <strong>' + (counts.products || 0) + '</strong></div>' +
       '<div>تعداد فاکتورها: <strong>' + (counts.invoices || 0) + '</strong></div>' +
       '<div>تعداد اشخاص: <strong>' + (counts.contacts || 0) + '</strong></div>' +
       '</div>' +
+      (counts.products === 0 && counts.invoices === 0 && counts.contacts === 0 ?
+        '<div style="margin-top:8px;padding:6px 10px;background:rgba(239,68,68,.08);border-radius:8px;font-size:.76rem;color:var(--d);line-height:1.6">' +
+        '⚠️ دفاتر در این آدرس مرورگر خالی است. اگر قبلاً اطلاعاتی ثبت کرده‌اید، احتمالاً آدرس یا لینک بازشده با آدرس قبلی متفاوت است، یا مرورگر در حالت ناشناس است. می‌توانید از بخش «سرور ابری» یا «فایل پشتیبان» در زیر، اطلاعات خود را بازیابی نمایید.' +
+        '</div>' : '') +
+      '</div>' +
+
+      /* ── کارت ۲: وضعیت اتصال و بازیابی از سرور ابری Supabase ── */
+      '<div style="background:var(--bg);border:1px solid var(--bd);border-radius:12px;padding:12px 14px;margin-bottom:12px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">' +
+      '<strong style="color:var(--tx)"><i class="bi bi-clouds-fill" style="color:var(--p)"></i> اتصال و بازیابی از پایگاه داده ابری (Supabase)</strong>' +
+      '<span class="tg ' + (supaOk ? 'ts' : (supaCfg.configured ? 'tw' : 'ti')) + '">' + supaStatusTxt + '</span>' +
+      '</div>' +
+      (supaCfg.configured ?
+        '<div style="font-size:.78rem;color:var(--txs);line-height:1.8;margin-bottom:10px">' +
+        '<div>آدرس سرور ابری: <strong style="direction:ltr;display:inline-block">' + esc(supaCfg.url) + '</strong></div>' +
+        '<div>شناسه سازمان: <strong>' + esc(supaCfg.orgId) + '</strong></div>' +
+        (supaCounts ?
+          '<div style="margin-top:6px;display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px;background:rgba(16,185,129,.06);padding:8px 10px;border-radius:8px">' +
+          '<div>کالاها در سرور: <strong>' + (supaCounts.products || 0) + '</strong></div>' +
+          '<div>فاکتورها در سرور: <strong>' + (supaCounts.invoices || 0) + '</strong></div>' +
+          '<div>کاربران در سرور: <strong>' + (supaCounts.app_users || 0) + '</strong></div>' +
+          '<div>اشخاص در سرور: <strong>' + (supaCounts.contacts || 0) + '</strong></div>' +
+          '</div>' : '') +
+        '</div>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+        '<button type="button" class="btn bs" style="background:var(--ok);color:#fff;font-size:.82rem" onclick="UI.close();Auth.quickCloudRestore()"><i class="bi bi-cloud-arrow-down-fill"></i> بازیابی فوری حساب‌ها و داده‌ها از سرور ابری</button>' +
+        '<button type="button" class="btn bo bs" style="font-size:.82rem" onclick="Sync.quickCloudRestore()"><i class="bi bi-pencil-square"></i> ویرایش آدرس/کلید</button>' +
+        '</div>' :
+        '<p style="font-size:.78rem;color:var(--txs);margin:0 0 10px 0;line-height:1.7">' +
+        'پایگاه داده ابری Supabase هنوز متصل نشده است. اگر پروژه Supabase دارید، با وارد کردن آدرس و کلید آن می‌توانید اطلاعات و حساب کاربری خود را بلافاصله بازیابی کنید.' +
+        '</p>' +
+        '<button type="button" class="btn bp bs" style="font-size:.82rem" onclick="Sync.quickCloudRestore()"><i class="bi bi-plug-fill"></i> تنظیم آدرس Supabase و بازیابی داده‌ها</button>') +
       '</div>' +
 
       /* ── کارت ۲: سلامت هَش رمز عبور و بررسی تضاد ── */

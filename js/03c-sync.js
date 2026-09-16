@@ -55,9 +55,9 @@ var Sync = {
 
   /* دریافت تنظیمات اتصال به Supabase */
   getConfig: function() {
-    var url = (localStorage.getItem('pb_supabase_url') || '').trim().replace(/\/+$/, '');
-    var key = (localStorage.getItem('pb_supabase_key') || '').trim();
-    var orgId = (localStorage.getItem('pb_supabase_org_id') || 'shop1').trim();
+    var url = (localStorage.getItem('pb_supabase_url') || (Sync._serverCfg && Sync._serverCfg.url) || '').trim().replace(/\/+$/, '');
+    var key = (localStorage.getItem('pb_supabase_key') || (Sync._serverCfg && Sync._serverCfg.key) || '').trim();
+    var orgId = (localStorage.getItem('pb_supabase_org_id') || (Sync._serverCfg && Sync._serverCfg.orgId) || 'shop1').trim();
     var autoSync = localStorage.getItem('pb_auto_sync') !== 'false';
     return {
       url: url,
@@ -68,12 +68,53 @@ var Sync = {
     };
   },
 
+  /* بارگیری تنظیمات پایدار از سرور (برای اتصال یکپارچه در تمام دستگاه‌ها و آدرس‌ها) */
+  fetchServerConfig: async function() {
+    try {
+      var res = await fetch('/api/sync-config');
+      if (res.ok) {
+        var data = await res.json();
+        if (data && data.configured) {
+          Sync._serverCfg = data;
+          if (!localStorage.getItem('pb_supabase_url') && data.url) {
+            localStorage.setItem('pb_supabase_url', data.url);
+          }
+          if (!localStorage.getItem('pb_supabase_key') && data.key) {
+            localStorage.setItem('pb_supabase_key', data.key);
+          }
+          if (!localStorage.getItem('pb_supabase_org_id') && data.orgId) {
+            localStorage.setItem('pb_supabase_org_id', data.orgId);
+          }
+          return data;
+        }
+      }
+    } catch (e) {
+      console.warn('fetchServerConfig warning:', e);
+    }
+    return null;
+  },
+
   /* ذخیره تنظیمات اتصال */
   saveConfig: function(cfg) {
     if (cfg.url !== undefined) localStorage.setItem('pb_supabase_url', (cfg.url || '').trim().replace(/\/+$/, ''));
     if (cfg.key !== undefined) localStorage.setItem('pb_supabase_key', (cfg.key || '').trim());
     if (cfg.orgId !== undefined) localStorage.setItem('pb_supabase_org_id', (cfg.orgId || 'shop1').trim());
     if (cfg.autoSync !== undefined) localStorage.setItem('pb_auto_sync', cfg.autoSync ? 'true' : 'false');
+    
+    /* ارسال به سرور جهت حفظ دائم برای هر آدرس یا دستگاه دیگر */
+    try {
+      fetch('/api/sync-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: cfg.url,
+          key: cfg.key,
+          orgId: cfg.orgId,
+          autoSync: cfg.autoSync
+        })
+      }).catch(function(e) { console.warn('ذخیره تنظیمات در سرور:', e); });
+    } catch (e) {}
+
     Sync.init();
     Sync.updateUI();
   },
@@ -100,6 +141,47 @@ var Sync = {
       return { ok: false, message: 'خطا از سمت سرور (' + res.status + '): ' + (text || res.statusText) };
     } catch (e) {
       return { ok: false, message: 'عدم دسترسی به سرور: ' + (e && e.message ? e.message : 'خطای شبکه') };
+    }
+  },
+
+  /* بررسی زنده وضعیت و تعداد رکوردهای موجود در جدول‌های Supabase */
+  checkRemoteCounts: async function() {
+    var cfg = Sync.getConfig();
+    if (!cfg.configured) return { ok: false, error: 'تنظیمات Supabase وارد نشده است.' };
+    try {
+      var tables = ['fiscal_years', 'categories', 'products', 'contacts', 'invoices', 'app_users'];
+      var counts = {};
+      var total = 0;
+      for (var i = 0; i < tables.length; i++) {
+        var tbl = tables[i];
+        var url = cfg.url + '/rest/v1/' + tbl + '?select=id&org_id=eq.' + encodeURIComponent(cfg.orgId) + '&is_deleted=eq.false';
+        var res = await fetch(url + '&limit=1', {
+          method: 'GET',
+          headers: {
+            'apikey': cfg.key,
+            'Authorization': 'Bearer ' + cfg.key,
+            'Prefer': 'count=exact'
+          }
+        });
+        if (!res.ok) {
+          var errTxt = await res.text();
+          return { ok: false, error: 'جدول ' + tbl + ' در Supabase یافت نشد یا دسترسی ندارد. لطفاً فایل schema.sql را در SQL Editor اجرا کنید. (' + (errTxt || res.statusText) + ')' };
+        }
+        var cr = res.headers.get('content-range');
+        var c = 0;
+        if (cr && cr.indexOf('/') !== -1) {
+          var part = cr.split('/')[1];
+          c = parseInt(part, 10) || 0;
+        } else {
+          var j = await res.json();
+          c = Array.isArray(j) ? j.length : 0;
+        }
+        counts[tbl] = c;
+        total += c;
+      }
+      return { ok: true, counts: counts, total: total };
+    } catch (e) {
+      return { ok: false, error: e && e.message ? e.message : 'خطای ارتباط با سرور' };
     }
   },
 
@@ -476,7 +558,7 @@ var Sync = {
           await DB._req(function() {
             return DB.gs(storeName, 'readwrite').put(row);
           }, 'assignUid');
-          await Sync.enqueue(storeName, 'create', row.id, row.uid, row);
+          await Sync.enqueue(storeName, 'create', row, row.id);
           totalEnqueued++;
         }
       }
@@ -565,7 +647,7 @@ var Sync = {
     return totalRecords;
   },
 
-  /* دریافت کل اطلاعات از Supabase به دستگاه محلی (مخصوص راه‌اندازی دستگاه دوم مانند موبایل) */
+  /* دریافت کل اطلاعات از Supabase به دستگاه محلی (مخصوص راه‌اندازی دستگاه دوم مانند موبایل یا بازیابی اضطراری) */
   fullDownload: async function(onProgress) {
     var cfg = Sync.getConfig();
     if (!cfg.configured) throw new Error('تنظیمات Supabase وارد نشده است.');
@@ -592,11 +674,20 @@ var Sync = {
 
       var remoteRows = await res.json();
       if (Array.isArray(remoteRows)) {
+        var localAll = [];
+        try { localAll = await DB.all(storeName); } catch (e) {}
+
         for (var i = 0; i < remoteRows.length; i++) {
           var rem = remoteRows[i];
           var data = rem.data || {};
           data.uid = rem.id;
           data.updatedAt = rem.updated_at || data.updatedAt || new Date().toISOString();
+
+          // اگر در جدول محلی با همین uid رکوردی هست، id محلی حفظ شود
+          var existingByUid = localAll.find(function(x) { return x.uid === rem.id; });
+          if (existingByUid) {
+            data.id = existingByUid.id;
+          }
 
           await DB._req(function() {
             return DB.gs(storeName, 'readwrite').put(data);
@@ -608,20 +699,122 @@ var Sync = {
 
     localStorage.setItem('pb_last_sync', new Date().toISOString());
 
-    /* تطبیق و به‌روزرسانی سال‌های مالی و انتخاب سال جاری پس از دانلود کامل */
-    await FY.ensureDefault();
-    var ys = await DB.all('fiscalYears');
-    if (ys.length > 0) {
-      var curY = ys.find(function(y) { return y.isCurrent && !y.isClosed; }) || ys[ys.length - 1];
-      if (curY) {
-        STATE.yearId = intOf(curY.id);
-        localStorage.setItem('pb_year', STATE.yearId);
+    /* پاکسازی صف ارسال تا داده‌های دریافتی مجدداً ارسال نشوند */
+    try { await DB.clear('syncQueue'); } catch (e) {}
+
+    /* بررسی و پاکسازی حساب روح مدیر پیش‌فرض در صورت دانلود مدیر واقعی */
+    try {
+      var allUsers = await DB.all('users');
+      var customAdmin = allUsers.find(function(u) {
+        return (u.role === 'admin' || !u.role) && (u.username || '').toLowerCase() !== 'admin';
+      });
+      if (customAdmin && typeof Auth !== 'undefined' && Auth.cleanupGhostAccounts) {
+        await Auth.cleanupGhostAccounts(customAdmin.id);
       }
-      await FY.refreshSel();
+    } catch (e) {
+      console.warn('cleanup ghost user after download warning:', e);
+    }
+
+    /* تطبیق و به‌روزرسانی سال‌های مالی و انتخاب سال جاری پس از دانلود کامل */
+    try {
+      await FY.ensureDefault();
+      var ys = await DB.all('fiscalYears');
+      if (ys.length > 0) {
+        var curY = ys.find(function(y) { return y.isCurrent && !y.isClosed; }) || ys[ys.length - 1];
+        if (curY) {
+          STATE.yearId = intOf(curY.id);
+          localStorage.setItem('pb_year', STATE.yearId);
+        }
+        await FY.refreshSel();
+      }
+    } catch (e) {
+      console.warn('FY refresh after download warning:', e);
     }
 
     Sync.updateUI();
     return totalDownloaded;
+  },
+
+  /* بازیابی سریع و یک‌کلیکه از پایگاه داده ابری Supabase */
+  quickCloudRestore: async function() {
+    await Sync.fetchServerConfig();
+    var cfg = Sync.getConfig();
+
+    if (!cfg.configured) {
+      var body = '<div style="direction:rtl;text-align:right">' +
+        '<div style="background:rgba(37,99,235,.07);border:1px solid var(--p);border-radius:10px;padding:12px;margin-bottom:14px;font-size:.84rem;line-height:1.7">' +
+        '<i class="bi bi-info-circle-fill" style="color:var(--p)"></i> ' +
+        'جهت بازیابی داده‌ها و حساب کاربری از پایگاه داده ابری، آدرس و کلید Supabase خود را وارد کنید:' +
+        '</div>' +
+        '<div class="fg"><label class="fl">آدرس پروژه Supabase (Project URL)</label><input class="fc" id="quickSupaUrl" placeholder="https://xxxxxxxx.supabase.co" style="direction:ltr;font-family:monospace"></div>' +
+        '<div class="fg"><label class="fl">شناسه سازمان (Org ID)</label><input class="fc" id="quickSupaOrg" value="shop1" style="direction:ltr;font-family:monospace"></div>' +
+        '<div class="fg"><label class="fl">کلید دسترسی عمومی (Anon Public Key)</label><input class="fc" id="quickSupaKey" type="password" placeholder="eyJhbGciOi..." style="direction:ltr;font-family:monospace"></div>' +
+        '</div>';
+      var foot = '<button class="btn bo" onclick="UI.close()">انصراف</button>' +
+        '<button class="btn bp" onclick="Sync.doQuickCloudSetup()"><i class="bi bi-cloud-arrow-down-fill"></i> ذخیره و شروع بازیابی</button>';
+      UI.open('تنظیم اتصال ابری و بازیابی داده‌ها', body, foot);
+      return;
+    }
+
+    if (typeof UI !== 'undefined' && UI.toast) {
+      UI.toast('در حال بررسی و بازیابی از سرور ابری Supabase...', 'i');
+    }
+
+    try {
+      var count = await Sync.fullDownload(function(store, msg) {
+        if (typeof UI !== 'undefined' && UI.toast) UI.toast('در حال دریافت ' + store + '...', 'i');
+      });
+
+      if (count > 0) {
+        if (typeof UI !== 'undefined' && UI.toast) {
+          UI.toast('با موفقیت ' + count + ' رکورد از سرور ابری دریافت شد.', 's');
+        }
+
+        /* اگر در صفحه لاگین است، نام کاربری مدیر را در کادر قرار بده */
+        var allUsers = await DB.all('users');
+        var adminUser = allUsers.find(function(u) { return u.role === 'admin' || !u.role; });
+        if (adminUser) {
+          var lu = document.getElementById('loginUser');
+          if (lu) lu.value = adminUser.username || '';
+          var lp = document.getElementById('loginPass');
+          if (lp) {
+            lp.value = '';
+            lp.focus();
+          }
+        }
+        var cNotice = document.getElementById('loginCloudNotice');
+        if (cNotice) cNotice.style.display = 'none';
+        var lErr = document.getElementById('loginErr');
+        if (lErr) lErr.style.display = 'none';
+
+        /* اگر کاربر وارد شده، صفحه رفرش شود */
+        if (STATE.userId && typeof routeToHash !== 'undefined') {
+          await routeToHash();
+        }
+      } else {
+        if (typeof UI !== 'undefined' && UI.toast) {
+          UI.toast('ارتباط با سرور برقرار شد، اما هیچ رکوردی در جدول‌های Supabase یافت نشد.', 'w');
+        }
+      }
+    } catch (err) {
+      console.error('Quick cloud restore failed:', err);
+      if (typeof UI !== 'undefined' && UI.toast) {
+        UI.toast('خطا در بازیابی از Supabase: ' + (err && err.message ? err.message : 'نامشخص'), 'e');
+      }
+    }
+  },
+
+  doQuickCloudSetup: async function() {
+    var url = (elVal('quickSupaUrl') || '').trim();
+    var key = (elVal('quickSupaKey') || '').trim();
+    var org = (elVal('quickSupaOrg') || 'shop1').trim();
+    if (!url || !key) {
+      UI.toast('آدرس و کلید دسترسی الزامی است.', 'e');
+      return;
+    }
+    Sync.saveConfig({ url: url, key: key, orgId: org, autoSync: true });
+    UI.close();
+    await Sync.quickCloudRestore();
   },
 
   /* راه‌اندازی اولیه ماژول همگام‌سازی و شنوندگان رویدادها */

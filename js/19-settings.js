@@ -121,7 +121,7 @@ var Settings = {
     UI.content(h);
   },
 
-  saveSupabaseConfig: function() {
+  saveSupabaseConfig: async function() {
     var url = elVal('setSupaUrl');
     var key = elVal('setSupaKey');
     var org = elVal('setSupaOrg');
@@ -135,6 +135,20 @@ var Settings = {
       autoSync: auto
     });
     UI.toast('تنظیمات Supabase با موفقیت ذخیره شد.', 's');
+
+    /* بررسی وضعیت دیتابیس محلی؛ اگر خالی است و سرور داده دارد، پیشنهاد دانلود فوری بده */
+    try {
+      var pAll = await DB.all('products');
+      var iAll = await DB.all('invoices');
+      if (pAll.length === 0 && iAll.length === 0) {
+        var rem = await Sync.checkRemoteCounts();
+        if (rem && rem.ok && rem.total > 0) {
+          if (window.confirm('روی سرور ابری Supabase تعداد ' + rem.total + ' رکورد اطلاعاتی وجود دارد اما این دستگاه خالی است.\n\nآیا مایلید اطلاعات از سرور ابری بلافاصله دریافت و بازیابی شوند؟')) {
+            await Settings.doFullDownload();
+          }
+        }
+      }
+    } catch (e) {}
   },
 
   testSupabase: async function() {
@@ -147,7 +161,12 @@ var Settings = {
     UI.toast('در حال آزمایش اتصال به Supabase...', 'i');
     var res = await Sync.testConnection(url, key);
     if (res.ok) {
-      UI.toast(res.message, 's');
+      var rem = await Sync.checkRemoteCounts();
+      if (rem && rem.ok) {
+        UI.toast('اتصال برقرار شد! (تعداد کل رکوردهای موجود در جداول سرور: ' + rem.total + ' رکورد)', 's');
+      } else {
+        UI.toast(res.message, 's');
+      }
     } else {
       UI.toast(res.message, 'e');
     }

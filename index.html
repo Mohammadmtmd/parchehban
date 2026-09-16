@@ -74,6 +74,11 @@
 </div>
 <button class="btn bp" style="width:100%;padding:12px;font-size:.95rem" id="loginBtn">ورود به برنامه</button>
 <p id="loginErr" style="color:var(--d);font-size:.82rem;margin-top:12px;display:none;line-height:1.7"></p>
+<div id="loginCloudNotice" style="display:none;margin-top:12px;padding:10px 12px;background:rgba(16,185,129,.09);border:1.5px solid var(--ok);border-radius:10px;text-align:right">
+  <div style="color:var(--ok);font-weight:700;font-size:.84rem;margin-bottom:4px"><i class="bi bi-cloud-check-fill"></i> پایگاه داده ابری Supabase متصل است</div>
+  <p style="font-size:.78rem;color:var(--txs);margin:0 0 8px 0;line-height:1.6">اگر حساب یا فاکتورهای شما قبلاً در سرور ذخیره شده است، می‌توانید با یک کلیک آن‌ها را روی این سیستم دریافت کنید:</p>
+  <button type="button" class="btn bs" onclick="Auth.quickCloudRestore()" style="background:var(--ok);color:#fff;width:100%;justify-content:center;padding:8px;border-radius:8px;font-size:.82rem"><i class="bi bi-cloud-arrow-down-fill"></i> بازیابی حساب و اطلاعات از سرور ابری</button>
+</div>
 <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--bd);display:flex;flex-direction:column;gap:8px">
   <button type="button" class="btn bo bs" onclick="Auth.showTroubleshootModal()" style="width:100%;justify-content:center;font-size:.82rem;color:var(--p);padding:9px 12px;border-radius:10px"><i class="bi bi-tools"></i> ابزار عیب‌یابی دیتابیس و بازیابی امن رمز عبور</button>
 </div>

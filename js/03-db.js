@@ -67,6 +67,8 @@ var DB = {
           DB.db.close();
           DB.db = null;
         };
+        /* درخواست مصونیت از پاکسازی خودکار دیتابیس توسط مرورگر */
+        DB.requestPersistence();
         done(ok);
       };
       r.onerror = function(e) {
@@ -74,6 +76,23 @@ var DB = {
         done(no, (e.target && e.target.error) || new Error('خطای بازکردن پایگاه داده'));
       };
     });
+  },
+
+  /* درخواست ذخیره‌سازی دائمی از مرورگر جهت جلوگیری از پاکسازی خودکار حافظه (Storage Eviction) */
+  requestPersistence: async function() {
+    if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.persist) {
+      try {
+        var isPersisted = await navigator.storage.persisted();
+        if (!isPersisted) {
+          isPersisted = await navigator.storage.persist();
+        }
+        return isPersisted;
+      } catch (e) {
+        console.warn('درخواست ماندگاری حافظه مرورگر:', e);
+        return false;
+      }
+    }
+    return false;
   },
   gs: function(n, m) {
     return this.db.transaction(n, m || 'readonly').objectStore(n);
