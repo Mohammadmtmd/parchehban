@@ -1,8 +1,49 @@
 /* ══ CHECKS ══ */
 var Chk = {
   _fl: 'all',
+  _q: '',
+  _sort: 'asc',
   _selected: {},
   _currentVoucher: null,
+  nextDocNumber: async function() {
+    var all = await DB.all('checks');
+    var max = 1000;
+    all.forEach(function(c) {
+      var n = intOf(c.docNumber);
+      if (n > max) max = n;
+    });
+    return String(max + 1).padStart(4, '0');
+  },
+  ensureDocNumbers: async function() {
+    var all = await DB.all('checks');
+    var sorted = all.slice().sort(function(a, b) {
+      return (a.id || 0) - (b.id || 0);
+    });
+    var current = 1000;
+    sorted.forEach(function(c) {
+      var n = intOf(c.docNumber);
+      if (n > current) current = n;
+    });
+    var changed = false;
+    for (var i = 0; i < sorted.length; i++) {
+      var c = sorted[i];
+      if (!c.docNumber) {
+        current++;
+        c.docNumber = String(current).padStart(4, '0');
+        await DB.put('checks', c);
+        changed = true;
+      }
+    }
+    return changed;
+  },
+  onSearch: function(val) {
+    this._q = val;
+    this.ll();
+  },
+  onSortChange: function(val) {
+    this._sort = val;
+    this.ll();
+  },
   sl: function(s) {
     return {
       pending: 'در انتظار',
@@ -188,6 +229,8 @@ var Chk = {
   ll: async function(fl) {
     if (fl) this._fl = fl;
     else fl = this._fl;
+
+    await this.ensureDocNumbers();
     var all = await FY.byYear('checks');
     var ct = await DB.all('contacts'),
       cm = {};
@@ -198,9 +241,55 @@ var Chk = {
     var me = this;
     var analysis = me.getDueAnalysis(all);
 
-    var ls = all.sort(function(a, b) {
-      return (b.id || 0) - (a.id || 0);
+    /* نقشه‌برداری ردیف ثابت و پایدار بر اساس تقدم ثبت تاریخی چک‌ها:
+       چک اول ردیف ۱، چک دوم ردیف ۲، ... و آخرین چک ثبت‌شده همیشه آخرین عدد ردیف را می‌گیرد.
+       با ثبت چک جدید، ردیف چک‌های قدیمی هرگز تغییر نمی‌کند و ۱ اضافه نمی‌شود! */
+    var rowMap = {};
+    var chron = all.slice().sort(function(a, b) {
+      var na = intOf(a.docNumber) || a.id || 0;
+      var nb = intOf(b.docNumber) || b.id || 0;
+      if (na !== nb) return na - nb;
+      return (a.id || 0) - (b.id || 0);
     });
+    chron.forEach(function(c, idx) {
+      rowMap[c.id] = idx + 1;
+    });
+
+    var sortMode = this._sort || 'asc';
+    var ls = all.slice();
+
+    if (sortMode === 'asc') {
+      ls.sort(function(a, b) {
+        var na = intOf(a.docNumber) || a.id || 0;
+        var nb = intOf(b.docNumber) || b.id || 0;
+        if (na !== nb) return na - nb;
+        return (a.id || 0) - (b.id || 0);
+      });
+    } else if (sortMode === 'desc') {
+      ls.sort(function(a, b) {
+        var na = intOf(a.docNumber) || a.id || 0;
+        var nb = intOf(b.docNumber) || b.id || 0;
+        if (na !== nb) return nb - na;
+        return (b.id || 0) - (a.id || 0);
+      });
+    } else if (sortMode === 'dueAsc') {
+      ls.sort(function(a, b) {
+        var da = me.calcDiffDays(a.dueDate);
+        var db = me.calcDiffDays(b.dueDate);
+        return (da == null ? 9999 : da) - (db == null ? 9999 : db);
+      });
+    } else if (sortMode === 'dueDesc') {
+      ls.sort(function(a, b) {
+        var da = me.calcDiffDays(a.dueDate);
+        var db = me.calcDiffDays(b.dueDate);
+        return (db == null ? -9999 : db) - (da == null ? -9999 : da);
+      });
+    } else if (sortMode === 'amtDesc') {
+      ls.sort(function(a, b) {
+        return (b.amount || 0) - (a.amount || 0);
+      });
+    }
+
     if (fl === 'received') ls = ls.filter(function(c) {
       return c.type === 'received';
     });
@@ -214,20 +303,42 @@ var Chk = {
       if (c.status === 'passed' || c.status === 'returned') return false;
       var d = me.calcDiffDays(c.dueDate);
       return d !== null && d >= 0 && d <= 7;
-    }).sort(function(a, b) {
-      var da = me.calcDiffDays(a.dueDate) || 999;
-      var db = me.calcDiffDays(b.dueDate) || 999;
-      return da - db;
     });
     if (fl === 'overdue') ls = ls.filter(function(c) {
       if (c.status === 'passed' || c.status === 'returned') return false;
       var d = me.calcDiffDays(c.dueDate);
       return d !== null && d < 0;
-    }).sort(function(a, b) {
-      var da = me.calcDiffDays(a.dueDate) || 0;
-      var db = me.calcDiffDays(b.dueDate) || 0;
-      return da - db;
     });
+
+    /* جستجو بر اساس شماره سند ۴ رقمی، شماره چک، صیاد، حساب، طرف حساب، بانک و مبلغ */
+    if (me._q && me._q.trim()) {
+      var q = toEnDigits(me._q).trim().toLowerCase();
+      ls = ls.filter(function(c) {
+        var doc = toEnDigits(String(c.docNumber || '')).toLowerCase();
+        var chkNo = toEnDigits(String(c.checkNumber || '')).toLowerCase();
+        var accNo = toEnDigits(String(c.accountNumber || '')).toLowerCase();
+        var sayad = toEnDigits(String(c.sayadId || '')).toLowerCase();
+        var person = (cm[c.contactId] || '').toLowerCase();
+        var trPerson = (cm[c.transferToId] || '').toLowerCase();
+        var bnk = (c.bank || '').toLowerCase();
+        var br = (c.branch || '').toLowerCase();
+        var amt = String(c.amount || '');
+        var nts = (c.notes || '').toLowerCase();
+        var due = toEnDigits(String(c.dueDate || '')).toLowerCase();
+
+        return doc.indexOf(q) > -1 ||
+          chkNo.indexOf(q) > -1 ||
+          accNo.indexOf(q) > -1 ||
+          sayad.indexOf(q) > -1 ||
+          person.indexOf(q) > -1 ||
+          trPerson.indexOf(q) > -1 ||
+          bnk.indexOf(q) > -1 ||
+          br.indexOf(q) > -1 ||
+          amt.indexOf(q) > -1 ||
+          nts.indexOf(q) > -1 ||
+          due.indexOf(q) > -1;
+      });
+    }
 
     var pk = 'chk_' + fl;
     Pag.register(pk, function() {
@@ -255,7 +366,8 @@ var Chk = {
 
       r += '<tr' + (isChecked ? ' style="background:rgba(37,99,235,.07)"' : '') + '>' +
         '<td class="chk-sel-cell"><input type="checkbox" class="chk-row-cb" value="' + c.id + '" ' + (isChecked ? 'checked' : '') + ' onchange="Chk.onSel(' + c.id + ',this.checked)"></td>' +
-        '<td>' + (((pg.page - 1) * pg.per) + i + 1) + '</td>' +
+        '<td style="text-align:center;font-weight:700;color:var(--txs)">' + UI.fn(rowMap[c.id] || (((pg.page - 1) * pg.per) + i + 1)) + '</td>' +
+        '<td style="text-align:center"><span class="tg tg-b" style="font-family:monospace;font-size:.85rem;font-weight:800;letter-spacing:0.5px;padding:3px 8px">' + esc(c.docNumber || '—') + '</span></td>' +
         '<td><span class="tg ' + tt + '">' + tl + '</span></td>' +
         '<td><strong>' + esc(c.checkNumber) + '</strong>' + (c.accountNumber ? '<br><small style="color:var(--txs);direction:ltr;display:inline-block">حساب: ' + esc(c.accountNumber) + '</small>' : '') + '</td>' +
         '<td>' + bnkTxt + '</td>' +
@@ -276,14 +388,16 @@ var Chk = {
         '<button class="bi2 d" onclick="Chk.rm(' + c.id + ')" title="حذف"><i class="bi bi-trash3"></i></button></td></tr>';
     }
     var ft = '<tfoot><tr style="background:var(--bg);font-weight:700">' +
-      '<td colspan="5">جمع ' + UI.fn(ls.length) + ' چک</td><td>' + UI.fn(tAmt) +
+      '<td colspan="6">جمع ' + UI.fn(ls.length) + ' چک' + (me._q ? ' (فیلتر شده)' : '') + '</td><td>' + UI.fn(tAmt) +
       '</td><td colspan="4"></td></tr></tfoot>';
     var tb = ls.length ?
       '<div class="tw"><table><thead><tr>' +
       '<th class="chk-sel-cell"><input type="checkbox" id="chkSelAll" onchange="Chk.toggleAll(this.checked)" title="انتخاب همه چک‌های این صفحه"></th>' +
-      '<th>#</th><th>نوع</th><th>شماره چک</th><th>بانک و شعبه</th><th>مبلغ</th><th>طرف حساب</th><th>سررسید</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>' +
+      '<th style="width:48px;text-align:center">ردیف</th>' +
+      '<th style="width:90px;text-align:center">شماره سند</th>' +
+      '<th>نوع</th><th>شماره چک</th><th>بانک و شعبه</th><th>مبلغ (ریال)</th><th>طرف حساب</th><th>سررسید</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>' +
       r + '</tbody>' + ft + '</table></div>' + Pag.html(pk) :
-      '<div class="em"><p>چکی با این شرط یافت نشد</p></div>';
+      '<div class="em"><p>' + (me._q ? 'چکی با عبارت «' + esc(me._q) + '» یافت نشد' : 'چکی با این شرط یافت نشد') + '</p></div>';
 
     /* کارت هشدار سررسید در بالای صفحه چک‌ها */
     var reminderBanner = '';
@@ -315,7 +429,26 @@ var Chk = {
       '<button class="tab-btn' + (fl === 'overdue' ? ' active' : '') + '" onclick="Chk.ll(\'overdue\')" style="color:' + (analysis.overdue.length ? 'var(--d)' : '') + '"><i class="bi bi-exclamation-triangle"></i> سررسید گذشته (' + analysis.overdue.length + ')</button>' +
       '</div>';
 
-    UI.content(reminderBanner + tabBar + '<div class="cd">' + tb + '</div>');
+    /* نوار ابزار جستجو و مرتب‌سازی */
+    var toolBar = '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;background:var(--sf);padding:10px 14px;border-radius:10px;border:1px solid var(--bd)">' +
+      '<div style="display:flex;align-items:center;gap:8px;flex:1;min-width:240px;max-width:440px">' +
+      '<div style="position:relative;width:100%">' +
+      '<input id="chkSearchInput" class="fc" placeholder="جستجو (شماره سند ۴ رقمی، چک، طرف حساب، بانک...)" value="' + esc(me._q || '') + '" oninput="Chk.onSearch(this.value)" style="padding-inline-start:34px;font-size:.84rem">' +
+      '<i class="bi bi-search" style="position:absolute;top:50%;transform:translateY(-50%);right:10px;color:var(--txs);pointer-events:none"></i>' +
+      (me._q ? '<button type="button" onclick="Chk.onSearch(\'\')" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--txs);cursor:pointer" title="پاک کردن جستجو"><i class="bi bi-x-circle-fill"></i></button>' : '') +
+      '</div></div>' +
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+      '<label style="font-size:.82rem;color:var(--txs);white-space:nowrap"><i class="bi bi-sort-down" style="margin-inline-end:4px"></i>مرتب‌سازی:</label>' +
+      '<select class="fc" style="width:auto;font-size:.82rem;padding:5px 10px" onchange="Chk.onSortChange(this.value)">' +
+      '<option value="asc"' + (sortMode === 'asc' ? ' selected' : '') + '>شماره سند / ثبت (صعودی - قدیمی به جدید)</option>' +
+      '<option value="desc"' + (sortMode === 'desc' ? ' selected' : '') + '>شماره سند / ثبت (نزولی - جدیدترین ابتدا)</option>' +
+      '<option value="dueAsc"' + (sortMode === 'dueAsc' ? ' selected' : '') + '>سررسید (نزدیک‌ترین)</option>' +
+      '<option value="dueDesc"' + (sortMode === 'dueDesc' ? ' selected' : '') + '>سررسید (دورترین)</option>' +
+      '<option value="amtDesc"' + (sortMode === 'amtDesc' ? ' selected' : '') + '>بیشترین مبلغ</option>' +
+      '</select>' +
+      '</div></div>';
+
+    UI.content(reminderBanner + tabBar + toolBar + '<div class="cd">' + tb + '</div>');
     me.syncSelectAllHeader();
     me.updateBatchBar();
   },
@@ -328,6 +461,7 @@ var Chk = {
     });
     var banks = await DB.all('banks');
     var isR = type === 'received';
+    var nextDoc = await this.nextDocNumber();
 
     /* بازنویسی با ابزار مشترک فرم (js/05b-form.js).
        دو مشکل جدی فرم قبلی رفع شد:
@@ -339,29 +473,41 @@ var Chk = {
     var people = rl.map(function(cc) { return { v: cc.id, t: cc.name }; });
     var accs = banks.map(function(b) { return { v: b.id, t: b.name }; });
 
-    var h = F.section('مشخصات برگه چک', 'bi-card-text') +
+    var h = F.section('مشخصات برگه و سند چک', 'bi-card-text') +
       F.row(
+        F.text({
+          id: 'kDocNo', label: 'شماره سند چک', req: true, dir: 'ltr',
+          value: c ? (c.docNumber || nextDoc) : nextDoc, ph: '1001',
+          hint: 'شماره سند ۴ رقمی حسابداری جهت پیگیری و جست‌وجو'
+        }),
         F.text({
           id: 'kNm', label: 'شماره چک', req: true, dir: 'ltr',
           value: c ? c.checkNumber : '', ph: '۱۲۳۴۵۶',
           hint: 'شماره درج‌شده روی برگه'
-        }),
-        F.text({
-          id: 'kBk', label: 'بانک صادرکننده', value: c ? (c.bank || '') : '',
-          ph: 'مثلاً: ملت',
-          hint: 'بانکی که چک از آن کشیده شده'
         })
       ) +
       F.row(
         F.text({
+          id: 'kBk', label: 'بانک صادرکننده', value: c ? (c.bank || '') : '',
+          ph: 'مثلاً: ملت',
+          hint: 'بانکی که چک از آن کشیده شده'
+        }),
+        F.text({
           id: 'kBr', label: 'شعبه بانک', value: c ? (c.branch || '') : '',
           ph: 'مثلاً: بازار / کد ۱۲۳',
           hint: 'شعبه درج‌شده روی برگه چک'
-        }),
+        })
+      ) +
+      F.row(
         F.text({
           id: 'kAcc', label: 'شماره حساب', dir: 'ltr', value: c ? (c.accountNumber || '') : '',
           ph: 'مثلاً: ۰۲۱... یا شناسه صیاد',
           hint: 'شماره حساب درج‌شده روی برگه چک'
+        }),
+        F.text({
+          id: 'kSayad', label: 'شناسه صیادی (۱۶ رقمی)', dir: 'ltr',
+          value: c ? (c.sayadId || '') : '', ph: 'شناسه صیاد',
+          hint: 'جهت پیگیری و استعلام وضعیت صیادی'
         })
       ) +
       F.row(
@@ -373,13 +519,6 @@ var Chk = {
           value: c ? (c.issuerName || '') : '',
           ph: isR ? 'نامی که روی چک آمده' : 'نام گیرنده',
           hint: isR ? 'اگر چک از شخص دیگری پشت‌نویسی شده، نام صاحب اصلی' : ''
-        })
-      ) +
-      F.row(
-        F.text({
-          id: 'kSayad', label: 'شناسه صیادی (۱۶ رقمی)', dir: 'ltr',
-          value: c ? (c.sayadId || '') : '', ph: 'شناسه صیاد',
-          hint: 'جهت پیگیری و استعلام وضعیت صیادی'
         })
       ) +
 
@@ -414,7 +553,7 @@ var Chk = {
       });
 
     UI.open(
-      c ? 'ویرایش چک ' + esc(c.checkNumber) : (isR ? 'ثبت چک دریافتی' : 'ثبت چک پرداختی'),
+      c ? 'ویرایش چک ' + esc(c.checkNumber) + (c.docNumber ? ' (سند ' + esc(c.docNumber) + ')' : '') : (isR ? 'ثبت چک دریافتی' : 'ثبت چک پرداختی'),
       h,
       '<button class="btn bp" onclick="Chk.save(\'' + type + '\',' + (id || 'null') + ')">' +
         '<i class="bi bi-check-lg"></i> ' + (c ? 'ذخیره تغییرات' : 'ثبت چک') + '</button>' +
@@ -428,8 +567,18 @@ var Chk = {
     /* سطح دسترسی و سال مالی بسته */
     if (!Perm.require('edit', 'ثبت یا ویرایش سند')) return;
     if (!await FY.assertOpen()) return;
+
+    var docNo = elVal('kDocNo').trim();
+    if (!docNo) {
+      docNo = await this.nextDocNumber();
+    } else {
+      var nVal = intOf(docNo);
+      if (nVal > 0) docNo = String(nVal).padStart(4, '0');
+    }
+
     var d = {
       type: type,
+      docNumber: docNo,
       fiscalYearId: STATE.yearId,
       checkNumber: elVal('kNm').trim(),
       bank: elVal('kBk').trim(),
@@ -728,6 +877,7 @@ var Chk = {
     var rows = '';
     for (var i = 0; i < checks.length; i++) {
       var c = checks[i];
+      var docNum = c.docNumber || '—';
       var chkNum = c.checkNumber || '—';
       var accNum = c.accountNumber || c.sayadId || '—';
       var due = c.dueDate || '—';
@@ -737,6 +887,7 @@ var Chk = {
 
       rows += '<tr style="text-align:center">' +
         '<td style="border:1px solid #374151;padding:5px;font-weight:700">' + UI.fn(i + 1) + '</td>' +
+        '<td style="border:1px solid #374151;padding:5px;font-family:monospace;font-weight:800;letter-spacing:0.5px">' + esc(docNum) + '</td>' +
         '<td style="border:1px solid #374151;padding:5px;font-weight:800;letter-spacing:0.5px">' + esc(chkNum) + '</td>' +
         '<td style="border:1px solid #374151;padding:5px;direction:ltr;text-align:center">' + esc(accNum) + '</td>' +
         '<td style="border:1px solid #374151;padding:5px;font-weight:600">' + esc(due) + '</td>' +
@@ -755,7 +906,7 @@ var Chk = {
       rasDaysText = UI.fn(Math.abs(ras.avgDays)) + ' روز قبل از تاریخ پرداخت';
     }
 
-    var voucherNo = 'CHK-TR-' + (toEnDigits(payDate).replace(/\//g, '').slice(2)) + '-' + String(checks[0] ? (checks[0].id || 1) : 1).padStart(3, '0');
+    var voucherNo = (checks.length === 1 && checks[0].docNumber) ? ('سند ' + checks[0].docNumber) : ('CHK-TR-' + (toEnDigits(payDate).replace(/\//g, '').slice(2)) + '-' + String(checks[0] ? (checks[0].id || 1) : 1).padStart(3, '0'));
 
     var h = '<div class="chk-voucher-box" style="direction:rtl;font-family:Vazirmatn,system-ui,sans-serif;padding:' + pd + ';background:#fff;color:#111;min-height:' + (a5 ? '185mm' : '260mm') + ';position:relative;box-sizing:border-box">';
 
@@ -782,11 +933,12 @@ var Chk = {
         '</div>';
     }
 
-    /* ۳. جدول مشخصات چک‌های انتخابی: ردیف، شماره چک، شماره حساب، تاریخ چک، بانک، شعبه، مبلغ */
+    /* ۳. جدول مشخصات چک‌های انتخابی: ردیف، شماره سند، شماره چک، شماره حساب، تاریخ چک، بانک، شعبه، مبلغ */
     h += '<table class="chk-voucher-table" style="margin-bottom:14px;font-size:' + tdFs + '">' +
       '<thead>' +
       '<tr>' +
       '<th style="width:34px;font-size:' + thFs + '">ردیف</th>' +
+      '<th style="width:65px;font-size:' + thFs + '">شماره سند</th>' +
       '<th style="font-size:' + thFs + '">شماره چک</th>' +
       '<th style="font-size:' + thFs + '">شماره حساب</th>' +
       '<th style="font-size:' + thFs + '">تاریخ چک</th>' +
@@ -799,7 +951,7 @@ var Chk = {
       '<tfoot>' +
       /* جمع کل مبالغ به عدد و به حروف */
       '<tr style="background:#f3f4f6;font-weight:700">' +
-      '<td colspan="6" style="border:1px solid #374151;padding:6px 10px;text-align:right;font-size:' + fs + '">' +
+      '<td colspan="7" style="border:1px solid #374151;padding:6px 10px;text-align:right;font-size:' + fs + '">' +
       '<strong>جمع مبلغ چک‌ها (' + UI.fn(checks.length) + ' فقره):</strong> ' +
       '<span style="font-weight:normal;color:#4b5563;margin-inline-start:6px">(' + esc(num2fa(totalAmt)) + ')</span>' +
       '</td>' +
@@ -807,7 +959,7 @@ var Chk = {
       '</tr>' +
       /* راس تاریخ چک‌ها نسبت به تاریخ پرداخت و صدور */
       '<tr style="background:#fff;font-weight:700">' +
-      '<td colspan="7" style="border:1px solid #374151;padding:8px 10px;text-align:right;font-size:' + fs + ';line-height:1.8">' +
+      '<td colspan="8" style="border:1px solid #374151;padding:8px 10px;text-align:right;font-size:' + fs + ';line-height:1.8">' +
       '📅 <strong>راس تاریخ چک‌ها نسبت به تاریخ صدور و پرداخت:</strong> ' +
       '<span style="display:inline-block;padding:2px 10px;margin:0 4px;background:#f3f4f6;border:1px solid #9ca3af;border-radius:4px;font-weight:900;color:#000">' + esc(ras.rasDate) + '</span> ' +
       '<span style="color:#4b5563;font-weight:normal">(' + rasDaysText + ')</span>' +

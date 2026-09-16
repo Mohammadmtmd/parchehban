@@ -324,6 +324,7 @@ var Sync = {
       payload.bank_name = row.bankName || '';
       payload.bank_account_id = row.bankAccountId || null;
       payload.status = row.status || 'pending';
+      payload.doc_number = row.docNumber || '';
     } else if (store === 'bankTransfers') {
       payload.fiscal_year_id = row.fiscalYearUid || (row.fiscalYearId ? String(row.fiscalYearId) : null);
       payload.from_bank_id = row.fromBankUid || (row.fromBankId ? String(row.fromBankId) : null);

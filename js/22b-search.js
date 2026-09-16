@@ -176,14 +176,20 @@ var Search = {
         title: 'چک‌ها',
         icon: 'bi-credit-card-2-front-fill',
         rows: checks.filter(function(ck) {
-          return Search.hit(ck.checkNumber || '', q) ||
+          return Search.hit(ck.docNumber || '', q) ||
+            Search.hit(ck.checkNumber || '', q) ||
             Search.hit(cm[ck.contactId] || '', q) ||
+            Search.hit(ck.bank || '', q) ||
             Search.hit(ck.bankName || '', q) ||
+            Search.hit(ck.branch || '', q) ||
+            Search.hit(ck.accountNumber || '', q) ||
+            Search.hit(ck.sayadId || '', q) ||
             Search.hit(ck.dueDate || '', q) ||
             Search.hit(String(ck.amount || ''), q);
         }).map(function(ck) {
+          var docLabel = ck.docNumber ? 'سند ' + ck.docNumber + ' | ' : '';
           return {
-            main: 'چک ' + (ck.checkNumber || '—') + ' — ' + UI.fn(ck.amount),
+            main: docLabel + 'چک ' + (ck.checkNumber || '—') + ' — ' + UI.fn(ck.amount),
             sub: (ck.type === 'received' ? 'دریافتی' : 'پرداختی') +
               ' — سررسید ' + (ck.dueDate || '—') + ' — ' + (cm[ck.contactId] || 'بی‌نام'),
             go: "Search.goto('#checks')"

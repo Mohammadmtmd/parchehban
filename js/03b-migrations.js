@@ -5,7 +5,7 @@
 var Migrate = {
 
   /* آخرین شماره مهاجرت موجود در این نسخه از برنامه */
-  LATEST: 3,
+  LATEST: 4,
 
   run: async function() {
     var cur = intOf(await DB.getSetting('schemaVersion', 0));
@@ -122,5 +122,25 @@ var Migrate = {
       if (dirty) await DB.put('users', u);
     }
     return us.length + ' کاربر نقش «مدیر» گرفتند';
+  },
+
+  /* ── مهاجرت ۴ ──────────────────────────────────────────────────
+     تخصیص شماره سند ۴ رقمی به تمام چک‌های ثبت‌شده قبلی طبق ترتیب ثبت
+     (مثلاً ۱۰۰۱، ۱۰۰۲، ...) به عنوان شماره سند دائم حسابداری. */
+  v4: async function() {
+    var checks = await DB.all('checks');
+    var sorted = checks.slice().sort(function(a, b) {
+      return (a.id || 0) - (b.id || 0);
+    });
+    var changed = 0;
+    for (var i = 0; i < sorted.length; i++) {
+      var c = sorted[i];
+      if (!c.docNumber) {
+        c.docNumber = String(1001 + i).padStart(4, '0');
+        await DB.put('checks', c);
+        changed++;
+      }
+    }
+    return changed + ' چک شماره سند ۴ رقمی دریافت کردند';
   }
 };
