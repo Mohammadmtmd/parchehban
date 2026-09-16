@@ -782,8 +782,6 @@ var Sync = {
             lp.focus();
           }
         }
-        var cNotice = document.getElementById('loginCloudNotice');
-        if (cNotice) cNotice.style.display = 'none';
         var lErr = document.getElementById('loginErr');
         if (lErr) lErr.style.display = 'none';
 

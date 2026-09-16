@@ -156,13 +156,7 @@ if (yearSel) yearSel.addEventListener('change', function() {
     } else {
       document.getElementById('loginPage').style.display = '';
 
-      /* اگر اتصال ابری موجود است، بنر بازیابی سریع در صفحه لاگین فعال شود */
       try {
-        var supa = typeof Sync !== 'undefined' ? Sync.getConfig() : { configured: false };
-        var cNotice = document.getElementById('loginCloudNotice');
-        if (cNotice) {
-          cNotice.style.display = supa.configured ? 'block' : 'none';
-        }
         var allU = await DB.all('users');
         var mainAdmin = allU.find(function(x) { return x.role === 'admin' || !x.role; });
         if (mainAdmin && mainAdmin.username && mainAdmin.username !== 'admin') {

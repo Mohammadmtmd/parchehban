@@ -292,16 +292,8 @@ var Auth = {
         } else {
           var left = Auth.MAX_FAILED_ATTEMPTS - (updatedLock.attempts || 0);
           if (errEl) {
-            var cloudHint = '';
-            var supaCfg = typeof Sync !== 'undefined' ? Sync.getConfig() : null;
-            if (supaCfg && supaCfg.configured) {
-              cloudHint = '<div style="margin-top:8px;padding:8px 10px;background:rgba(16,185,129,.1);border:1px solid var(--ok);border-radius:8px;font-size:.78rem;color:var(--ok);line-height:1.6">' +
-                '💡 <strong>حساب در این مرورگر یافت نشد:</strong> اگر اطلاعات شما روی سرور ابری است، روی <a href="#" onclick="Auth.quickCloudRestore();return false" style="color:var(--ok);font-weight:700;text-decoration:underline">بازیابی اطلاعات و حساب کاربری از سرور ابری</a> کلیک کنید.' +
-                '</div>';
-            }
             errEl.innerHTML = 'نام کاربری یا رمز عبور اشتباه است. (' + left + ' فرصت باقی‌مانده)' +
-              cloudHint +
-              '<br><small style="color:var(--txs)">نکته: زبان کیبورد (فارسی/انگلیسی) و دکمه چشم را بررسی کنید، یا از <a href="#" onclick="Auth.showTroubleshootModal();return false" style="color:var(--p)">ابزار عیب‌یابی</a> استفاده کنید.</small>';
+              '<br><small style="color:var(--txs)">نکته: زبان کیبورد (فارسی/انگلیسی) و دکمه نمایش رمز (چشم) را بررسی کنید.</small>';
             errEl.style.display = 'block';
           }
         }

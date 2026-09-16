@@ -75,12 +75,24 @@ var Settings = {
       '<button class="btn bo" onclick="Settings.testSupabase()"><i class="bi bi-plug"></i> آزمایش اتصال</button>' +
       '<button class="btn bo" onclick="Sync.syncNow()"><i class="bi bi-arrow-repeat"></i> همگام‌سازی فوری</button>' +
       '<button class="btn bo" onclick="Settings.doFullUpload()" title="ارسال تمام اطلاعات سیستم فعلی به Supabase"><i class="bi bi-cloud-arrow-up"></i> بارگذاری کامل روی سرور (سیستم مبدأ)</button>' +
-      '<button class="btn bo" onclick="Settings.doFullDownload()" title="دریافت تمام اطلاعات از سرور روی این دستگاه"><i class="bi bi-cloud-arrow-down"></i> دریافت کامل از سرور (گوشی / سیستم جدید)</button>' +
+      '<button class="btn bo" style="color:var(--ok);border-color:var(--ok);font-weight:600" onclick="Settings.doFullDownload()" title="دریافت و بازیابی تمام اطلاعات از سرور روی این دستگاه"><i class="bi bi-cloud-arrow-down-fill"></i> بازیابی حساب و اطلاعات از سرور ابری</button>' +
       '<button class="btn bo" onclick="Settings.copyMobileLink()" title="ایجاد لینک برای اتصال فوق‌سریع گوشی بدون نیاز به تایپ کلید"><i class="bi bi-phone"></i> کپی لینک اتصال به گوشی</button>' +
       '</div>' +
       '</div></div>';
 
-    /* ── کارت ۴: کلید بازیابی اضطراری (امنیت پیشرفته) ── */
+    /* ── کارت ۴: پشتیبان‌گیری و بازیابی داده‌ها ── */
+    h += '<div class="cd" style="margin-top:14px"><div class="cd-h"><i class="bi bi-database-check" style="color:var(--p)"></i> پشتیبان‌گیری و بازیابی اطلاعات</div><div class="cd-b">' +
+      '<p style="color:var(--txs);font-size:.85rem;margin-bottom:14px;line-height:1.8">' +
+      'جهت اطمینان از عدم از دست رفتن اطلاعات، می‌توانید در هر زمان فایل پشتیبان آفلاین از داده‌های خود تهیه کرده یا اطلاعات را از فایل پشتیبان و سرور ابری بازیابی نمایید.' +
+      '</p>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
+      '<button class="btn bo bs" onclick="Backup.exportAll()"><i class="bi bi-download"></i> دانلود فایل پشتیبان (JSON)</button>' +
+      '<button class="btn bo bs" onclick="Backup.importAll()"><i class="bi bi-upload"></i> بازیابی از فایل پشتیبان (JSON)</button>' +
+      '<button class="btn bo bs" style="color:var(--ok);border-color:var(--ok)" onclick="Settings.doFullDownload()"><i class="bi bi-cloud-arrow-down-fill"></i> بازیابی مستقیم از سرور ابری (Supabase)</button>' +
+      '</div>' +
+      '</div></div>';
+
+    /* ── کارت ۵: کلید بازیابی اضطراری (امنیت پیشرفته) ── */
     h += '<div class="cd" style="margin-top:14px"><div class="cd-h"><i class="bi bi-shield-lock-fill" style="color:var(--p)"></i> امنیت و کلید بازیابی اضطراری (Master Key)</div><div class="cd-b">' +
       '<p style="color:var(--txs);font-size:.85rem;margin-bottom:12px;line-height:1.8">' +
       'این کلید اختصاصی برای احراز هویت مالک در <strong>«ابزار عیب‌یابی و بازیابی امن»</strong> در صفحه ورود استفاده می‌شود. در صورتی که رمز عبور خود را فراموش کنید یا سیستم به علت تلاش‌های ناموفق قفل شود، تنها با وارد کردن این کلید (یا ارائه فایل پشتیبان سیستم) قادر به بازنشانی امن رمز خواهید بود. جهت جلوگیری از دسترسی افراد متفرقه، این کلید را محرمانه نگه دارید.' +
