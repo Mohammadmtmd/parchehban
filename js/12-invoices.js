@@ -168,6 +168,16 @@ var Inv = {
     });
     this._type = type;
     this.items = inv ? JSON.parse(JSON.stringify(inv.items || [])) : [];
+    if (!this.items.length) {
+      this.items.push({
+        productId: '',
+        catalog: '',
+        shade: '',
+        quantity: 1,
+        unitPrice: 0,
+        total: 0
+      });
+    }
     var iN = inv ? inv.invoiceNumber : await this.nn(type),
       td = todayJ();
     var ft = inv ? (isP ? 'ویرایش پیش فاکتور' : 'ویرایش فاکتور') : (isP ? 'پیش فاکتور جدید' : 'فاکتور جدید');
@@ -271,8 +281,8 @@ var Inv = {
       h += '<td><input id="cat' + i + '" type="text" value="' + esc(it.catalog || '') + '" oninput="Inv.oc(' + i + ',\'cat\',this.value)" style="text-align:center;font-size:.8rem"></td>';
       h += '<td><input id="sh' + i + '" type="text" value="' + esc(it.shade || '') + '" oninput="Inv.oc(' + i + ',\'sh\',this.value)" style="text-align:center;font-size:.8rem"></td>';
       h += '<td><input type="number" id="q' + i + '" value="' + (it.quantity || '') + '" oninput="Inv.oc(' + i + ',\'q\',this.value)" style="text-align:center"></td>';
-      if (isSale) h += '<td><input type="number" value="' + (it.buyPrice || '') + '" oninput="Inv.oc(' + i + ',\'bp\',this.value)" style="text-align:center"></td>';
-      h += '<td><input type="number" value="' + (it.unitPrice || '') + '" oninput="Inv.oc(' + i + ',\'u\',this.value)" style="text-align:center"></td>';
+      if (isSale) h += '<td><input type="number" id="bp' + i + '" value="' + (it.buyPrice || '') + '" oninput="Inv.oc(' + i + ',\'bp\',this.value)" style="text-align:center"></td>';
+      h += '<td><input type="number" id="u' + i + '" value="' + (it.unitPrice || '') + '" oninput="Inv.oc(' + i + ',\'u\',this.value)" style="text-align:center"></td>';
       h += '<td class="it-total" id="t' + i + '">' + UI.fn(it.total) + '</td>';
       h += '<td style="text-align:center"><button class="bi2 d" onclick="Inv.ri2(' + i + ')" style="width:28px;height:28px"><i class="bi bi-x" style="font-size:.8rem"></i></button></td></tr>';
     }

@@ -1434,39 +1434,48 @@ body.dark .sc {
 /* ══════════════════════════════════════════════════════════════
    انتخاب کالا با جست‌وجوی تایپی (js/12b-prodpick.js)
    ══════════════════════════════════════════════════════════════ */
-.pp { position:relative; }
+.pp { position:relative; width:100%; display:flex; align-items:center; }
 .pp-in {
   width:100%; box-sizing:border-box;
   border:1px solid var(--bd); border-radius:6px;
-  padding:6px 8px; font-family:inherit; font-size:.82rem;
+  padding:6px 26px 6px 8px; font-family:inherit; font-size:.82rem;
   background:var(--sf); color:var(--tx);
+  cursor:text;
 }
 .pp-in:focus {
   outline:none; border-color:var(--p);
-  box-shadow:0 0 0 3px rgba(37,99,235,.12);
+  box-shadow:0 0 0 3px rgba(37,99,235,.15);
 }
+.pp-arrow {
+  position:absolute; left:8px; pointer-events:none;
+  font-size:.72rem; color:var(--txs); transition:transform .2s;
+  display:flex; align-items:center; justify-content:center;
+}
+.pp.pp-open .pp-arrow { transform:rotate(180deg); color:var(--p); }
+
 /* متنی تایپ شده ولی کالایی انتخاب نشده */
 .pp-in.pp-bad { border-color:var(--w); background:rgba(217,119,6,.06); }
 
-/* position:fixed تا کارت overflow:hidden و اسکرول پنجره آن را نبُرد */
+/* z-index باید بالاتر از پنجره مودال (10005) باشد تا فهرست روی فاکتور نمایش یابد */
 .pp-list {
-  display:none; position:fixed; z-index:1200;
-  max-height:230px; overflow-y:auto;
-  background:var(--sf); border:1px solid var(--bd);
-  border-radius:8px; box-shadow:var(--shdl);
+  display:none; position:fixed; z-index:20000;
+  max-height:260px; overflow-y:auto;
+  background:var(--sf); border:1.5px solid var(--p);
+  border-radius:8px; box-shadow:0 12px 35px rgba(0,0,0,.28);
 }
 .pp-list.show { display:block; }
 
 .pp-it {
   display:flex; align-items:center; justify-content:space-between; gap:10px;
-  padding:7px 10px; cursor:pointer; font-size:.8rem;
+  padding:8px 12px; cursor:pointer; font-size:.82rem;
   border-bottom:1px solid var(--bd);
+  transition:background .15s;
 }
 .pp-it:last-child { border-bottom:none; }
-.pp-it:hover, .pp-it.on { background:var(--pl); }
-.pp-nm { color:var(--tx); font-weight:500; }
-.pp-st { font-size:.72rem; white-space:nowrap; flex-shrink:0; }
-.pp-none { padding:10px; font-size:.78rem; color:var(--txs); text-align:center; }
+.pp-it:hover, .pp-it.on { background:rgba(37,99,235,.12); color:var(--p); }
+.pp-nm { color:var(--tx); font-weight:600; }
+.pp-st { font-size:.74rem; white-space:nowrap; flex-shrink:0; }
+.pp-none { padding:14px; font-size:.82rem; color:var(--txs); text-align:center; line-height:1.7; }
 
 /* ══════════════════════════════════════════════════════════════
    نوار یادآور پشتیبان‌گیری (js/08-backup.js)
