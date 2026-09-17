@@ -183,51 +183,7 @@ var Backup = {
     if (!await UI.confirm('تمام اطلاعات فعلی حذف و جایگزین شود؟ این عمل بازگشت‌پذیر نیست.')) return;
 
     try {
-      /* ۱) پاک کردن همه جدول‌ها */
-      for (var s = 0; s < Backup.STORES.length; s++) {
-        await DB.clear(Backup.STORES[s]);
-      }
-
-      /* ۲) نوشتن مجدد با حفظ شناسه اصلی — هیچ نگاشت مجددی لازم نیست */
-      var counts = {};
-      for (var t = 0; t < Backup.STORES.length; t++) {
-        var store = Backup.STORES[t];
-        var arr = Array.isArray(src[store]) ? src[store] : [];
-        var rows = arr.filter(function(row) {
-          return row && typeof row === 'object' && row.id !== undefined && row.id !== null;
-        });
-        if (rows.length !== arr.length) {
-          console.warn('برخی رکوردهای ' + store + ' بدون شناسه بودند و رد شدند.');
-        }
-        await DB.bulkPut(store, rows);
-        counts[store] = rows.length;
-      }
-
-      /* ۳) اطمینان از وجود سال مالی جاری */
-      var fy = await DB.all('fiscalYears');
-      var cur = fy.find(function(y) {
-        return y.isCurrent;
-      }) || fy[0];
-      if (!cur) {
-        var py = parseInt(Jalali.today().split('/')[0], 10);
-        var nid = await DB.add('fiscalYears', {
-          name: String(py),
-          startDate: py + '/01/01',
-          endDate: py + '/12/' + Jalali.monthDays(py, 12),
-          isCurrent: true,
-          isClosed: false
-        });
-        STATE.yearId = nid;
-      } else {
-        STATE.yearId = cur.id;
-      }
-      localStorage.setItem('pb_year', STATE.yearId);
-      await FY.ensureDefault();
-      await FY.migrate();
-
-      /* ۴) اطمینان از وجود کاربر */
-      await Auth.ensureDefaultUser();
-
+      var counts = await Backup.restoreData(src);
       UI.close();
       UI.toast('بازیابی انجام شد (' + UI.fn(counts.invoices || 0) + ' فاکتور، ' +
         UI.fn(counts.contacts || 0) + ' شخص)');
@@ -236,5 +192,59 @@ var Backup = {
       console.error(e);
       UI.toast('خطا در بازیابی: ' + (e.message || ''), 'e');
     }
+  },
+
+  /* متد مستقل برای بازنویسی و تزریق تمیز داده‌های بکاپ در دیتابیس */
+  restoreData: async function(src) {
+    if (!src || typeof src !== 'object') {
+      throw new Error('ساختار فایل پشتیبان نامعتبر است');
+    }
+
+    /* ۱) پاک کردن همه جدول‌ها */
+    for (var s = 0; s < Backup.STORES.length; s++) {
+      await DB.clear(Backup.STORES[s]);
+    }
+
+    /* ۲) نوشتن مجدد با حفظ شناسه اصلی */
+    var counts = {};
+    for (var t = 0; t < Backup.STORES.length; t++) {
+      var store = Backup.STORES[t];
+      var arr = Array.isArray(src[store]) ? src[store] : [];
+      var rows = arr.filter(function(row) {
+        return row && typeof row === 'object' && row.id !== undefined && row.id !== null;
+      });
+      if (rows.length !== arr.length) {
+        console.warn('برخی رکوردهای ' + store + ' بدون شناسه بودند و رد شدند.');
+      }
+      await DB.bulkPut(store, rows);
+      counts[store] = rows.length;
+    }
+
+    /* ۳) اطمینان از وجود سال مالی جاری */
+    var fy = await DB.all('fiscalYears');
+    var cur = fy.find(function(y) {
+      return y.isCurrent;
+    }) || fy[0];
+    if (!cur) {
+      var py = parseInt(Jalali.today().split('/')[0], 10);
+      var nid = await DB.add('fiscalYears', {
+        name: String(py),
+        startDate: py + '/01/01',
+        endDate: py + '/12/' + Jalali.monthDays(py, 12),
+        isCurrent: true,
+        isClosed: false
+      });
+      STATE.yearId = nid;
+    } else {
+      STATE.yearId = cur.id;
+    }
+    localStorage.setItem('pb_year', STATE.yearId);
+    await FY.ensureDefault();
+    await FY.migrate();
+
+    /* ۴) اطمینان از وجود کاربر */
+    await Auth.ensureDefaultUser();
+
+    return counts;
   }
 };

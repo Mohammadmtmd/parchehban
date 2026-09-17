@@ -170,6 +170,12 @@ var Auth = {
     for (var i = 0; i < vars.length; i++) {
       var v = vars[i];
 
+      /* اگر کاربر مدیر سیستم پیش‌فرض است و هنوز رمز اولیه دارد، هر دو حالت admin و admin123 پذیرفته شود */
+      if ((user.username || '').toLowerCase() === 'admin') {
+        var isDef = await Auth.isDefaultAdminPass();
+        if (isDef && (v === 'admin' || v === 'admin123')) return true;
+      }
+
       /* ۱. تطابق با ساختار جدید (Salt اختصاصی کاربر) */
       if (user.salt) {
         var hNew = await Auth.hash(v, user.salt);
@@ -510,6 +516,36 @@ var Auth = {
     }
   },
 
+  /* بازیابی مستقیم فایل پشتیبان (بکاپ) از صفحه ورود، بدون نیاز به داشتن دسترسی قبلی */
+  restoreBackupDirectly: async function(file) {
+    if (!file) return;
+    try {
+      var text = await file.text();
+      var raw = JSON.parse(text);
+      var src = raw.data || raw;
+      if (!src || typeof src !== 'object' || (!Array.isArray(src.contacts) && !Array.isArray(src.products))) {
+        UI.toast('فایل انتخاب‌شده معتبر نیست. لطفاً فایل بکاپ JSON پارچه‌بان را انتخاب کنید.', 'e');
+        return;
+      }
+      var counts = await Backup.restoreData(src);
+      var users = await DB.all('users');
+      var mainAdmin = users.find(function(x) { return x.role === 'admin' || !x.role; }) || users[0];
+      if (mainAdmin) {
+        var uEl = document.getElementById('loginUser');
+        if (uEl) uEl.value = mainAdmin.username;
+        var pEl = document.getElementById('loginPass');
+        if (pEl) { pEl.value = ''; pEl.focus(); }
+      }
+      UI.close();
+      UI.toast('اطلاعات با موفقیت بازیابی شد (' + UI.fn(counts.invoices || 0) + ' فاکتور، ' + UI.fn(counts.contacts || 0) + ' شخص، ' + UI.fn(counts.products || 0) + ' کالا). اکنون رمز خود را وارد کنید.', 's');
+      var pwaHint = document.getElementById('pwaIosHint');
+      if (pwaHint) pwaHint.style.display = 'none';
+    } catch (e) {
+      console.error(e);
+      UI.toast('خطا در بازیابی پشتیبان: ' + (e.message || ''), 'e');
+    }
+  },
+
   /* ══════════════════════════════════════════════════════════════
      ابزار عیب‌یابی جامع و بازیابی امن رمز عبور (Troubleshoot & Recovery)
      ══════════════════════════════════════════════════════════════ */
@@ -604,8 +640,30 @@ var Auth = {
       '</div>' +
       (counts.products === 0 && counts.invoices === 0 && counts.contacts === 0 ?
         '<div style="margin-top:8px;padding:6px 10px;background:rgba(239,68,68,.08);border-radius:8px;font-size:.76rem;color:var(--d);line-height:1.6">' +
-        '⚠️ دفاتر در این آدرس مرورگر خالی است. اگر قبلاً اطلاعاتی ثبت کرده‌اید، احتمالاً آدرس یا لینک بازشده با آدرس قبلی متفاوت است، یا مرورگر در حالت ناشناس است. می‌توانید از بخش «سرور ابری» یا «فایل پشتیبان» در زیر، اطلاعات خود را بازیابی نمایید.' +
+        '⚠️ دفاتر در این آدرس مرورگر خالی است. اگر قبلاً اطلاعاتی ثبت کرده‌اید، احتمالاً آدرس یا لینک بازشده با آدرس قبلی متفاوت است، یا در آیفون از طریق صفحه اصلی (PWA) وارد شده‌اید. می‌توانید از دکمه‌های زیر اطلاعات خود را بازیابی نمایید.' +
         '</div>' : '') +
+      '</div>' +
+
+      /* ── کارت ویژه: راهنمای انتقال اطلاعات در آیفون (سافاری به صفحه اصلی PWA) ── */
+      '<div style="background:rgba(37,99,235,.05);border:1.5px solid var(--p);border-radius:12px;padding:12px 14px;margin-bottom:12px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">' +
+      '<strong style="color:var(--p);font-size:.88rem"><i class="bi bi-phone-fill"></i> انتقال اطلاعات از سافاری به آیکون صفحه اصلی (iOS PWA)</strong>' +
+      '<span class="tg tp">راهکار فوری</span>' +
+      '</div>' +
+      '<p style="font-size:.78rem;color:var(--txs);line-height:1.8;margin:0 0 8px 0">' +
+      'در آیفون (iOS)، وب‌اپلیکیشن‌هایی که از طریق «Add to Home Screen» روی صفحه قرار می‌گیرند، در یک محیط کاملاً ایزوله اجرا می‌شوند و به حافظه دیتابیس مرورگر سافاری دسترسی مستقیم ندارند؛ به همین دلیل در صفحه اصلی پایگاه داده خام است و نام کاربری اختصاصی شما را نمی‌شناسد.' +
+      '</p>' +
+      '<div style="background:var(--sf);border-radius:8px;padding:8px 10px;margin-bottom:10px;font-size:.76rem;color:var(--tx);line-height:1.8">' +
+      '<strong>مراحل انتقال:</strong>' +
+      '<div style="margin-top:2px">۱. برنامه را داخل همان مرورگر <strong>سافاری</strong> باز کنید و از منو گزینه <strong>پشتیبان‌گیری (دانلود فایل .json)</strong> را بزنید.</div>' +
+      '<div>۲. سپس در این پنجره یا نسخه صفحه اصلی، دکمه زیر را لمس کرده و فایل را انتخاب نمایید:</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+      '<label class="btn bp bs" style="cursor:pointer;font-size:.82rem;padding:6px 14px;margin:0;display:inline-flex;align-items:center;gap:6px">' +
+      '<i class="bi bi-upload"></i> انتخاب فایل پشتیبان و بازیابی کامل داده‌ها' +
+      '<input type="file" accept=".json" style="display:none" onchange="Auth.restoreBackupDirectly(this.files[0])">' +
+      '</label>' +
+      '</div>' +
       '</div>' +
 
       /* ── کارت ۲: وضعیت اتصال و بازیابی از سرور ابری Supabase ── */

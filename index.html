@@ -74,6 +74,19 @@
 </div>
 <button class="btn bp" style="width:100%;padding:12px;font-size:.95rem" id="loginBtn">ورود به برنامه</button>
 <p id="loginErr" style="color:var(--d);font-size:.82rem;margin-top:12px;display:none;line-height:1.7"></p>
+<div id="pwaIosHint" style="display:none;margin-top:16px;padding:12px 14px;background:rgba(59,130,246,.08);border:1px dashed var(--p,#3b82f6);border-radius:10px;font-size:.78rem;color:var(--tx);line-height:1.7;text-align:right">
+  <div style="font-weight:700;color:var(--p);margin-bottom:4px;display:flex;align-items:center;gap:6px">
+    <i class="bi bi-phone"></i> انتقال داده از سافاری به صفحه اصلی (PWA آیفون)
+  </div>
+  <div style="color:var(--txs)">در آیفون، نسخه صفحه اصلی دارای دیتابیس جداگانه است. اگر قبلاً در سافاری حساب یا اطلاعات داشتید:</div>
+  <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+    <label class="btn bp bs" style="cursor:pointer;font-size:.76rem;padding:5px 10px;margin:0;display:inline-flex;align-items:center;gap:4px">
+      <i class="bi bi-upload"></i> بازیابی فایل پشتیبان (بکاپ)
+      <input type="file" accept=".json" style="display:none" onchange="Auth.restoreBackupDirectly(this.files[0])">
+    </label>
+    <button type="button" class="btn bo bs" style="font-size:.76rem;padding:5px 10px" onclick="Auth.showTroubleshootModal()">راهنمای کامل</button>
+  </div>
+</div>
 <div style="margin-top:20px;text-align:center">
   <button type="button" onclick="Auth.showTroubleshootModal()" style="background:none;border:none;color:var(--txs);font-size:.78rem;cursor:pointer;padding:4px;display:inline-flex;align-items:center;gap:6px;transition:color .15s" onmouseover="this.style.color='var(--p)'" onmouseout="this.style.color='var(--txs)'" title="ابزار عیب‌یابی دیتابیس و بازیابی امن رمز عبور">
     <i class="bi bi-tools"></i> فراموشی رمز عبور یا عیب‌یابی

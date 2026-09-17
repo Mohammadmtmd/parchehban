@@ -158,6 +158,16 @@ if (yearSel) yearSel.addEventListener('change', function() {
 
       try {
         var allU = await DB.all('users');
+        var pCount = (await DB.all('products')).length;
+        var iCount = (await DB.all('invoices')).length;
+        var cCount = (await DB.all('contacts')).length;
+
+        /* اگر پایگاه داده در این کانتینر مرورگر خالی باشد، کارت راهنمای انتقال سافاری به صفحه اصلی نمایش داده می‌شود */
+        var pwaHint = document.getElementById('pwaIosHint');
+        if (pwaHint && pCount === 0 && iCount === 0 && cCount === 0) {
+          pwaHint.style.display = 'block';
+        }
+
         var mainAdmin = allU.find(function(x) { return x.role === 'admin' || !x.role; });
         if (mainAdmin && mainAdmin.username && mainAdmin.username !== 'admin') {
           var _fUser = el('loginUser');

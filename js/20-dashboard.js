@@ -178,16 +178,16 @@ var Dash = {
       var supaReady = typeof Sync !== 'undefined' && Sync.getConfig().configured;
       h += '<div class="hint-box" style="margin-bottom:18px;background:rgba(37,99,235,.07);border:1.5px solid var(--p);border-radius:12px;padding:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px">' +
         '<div>' +
-        '<div style="font-weight:700;font-size:.95rem;color:var(--p);margin-bottom:4px"><i class="bi bi-cloud-arrow-down-fill"></i> پایگاه داده در این آدرس خالی است!</div>' +
+        '<div style="font-weight:700;font-size:.95rem;color:var(--p);margin-bottom:4px"><i class="bi bi-phone"></i> پایگاه داده در این بخش یا دستگاه خالی است</div>' +
         '<div style="font-size:.84rem;color:var(--txs);line-height:1.7">' +
         (supaReady ?
           'اتصال به پایگاه داده ابری Supabase برقرار است. می‌توانید با یک کلیک اطلاعات خود را از سرور بازیابی کنید، یا در صورت تمایل فایل پشتیبان آفلاین (JSON) را بارگذاری نمایید.' :
-          'اگر قبلاً فایل پشتیبان (بکاپ) از برنامه گرفته‌اید، می‌توانید فوراً با بارگذاری آن تمام کالاها، اشخاص، فاکتورها، حساب‌ها و تنظیمات خود را بازیابی نمایید.') +
+          'اگر قبلاً در <strong>مرورگر سافاری</strong> گوشی اطلاعات داشته‌اید و اکنون با بازکردن برنامه از <strong>صفحه اصلی (PWA)</strong> صفحه خالی می‌بینید: در سیستم‌عامل iOS حافظه صفحه اصلی از سافاری مستقل است. کافیست در سافاری گزینه <strong>«پشتیبان‌گیری»</strong> را بزنید و سپس فایل دانلود شده را اینجا بارگذاری کنید تا تمام فاکتورها، حساب‌ها و کالاها فوراً منتقل شوند.') +
         '</div>' +
         '</div>' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
         (supaReady ? '<button class="btn bs" style="background:var(--ok);color:#fff" onclick="Auth.quickCloudRestore()"><i class="bi bi-cloud-arrow-down-fill"></i> بازیابی فوری از سرور ابری (Supabase)</button>' : '') +
-        '<button class="btn bp" onclick="Backup.importAll()"><i class="bi bi-file-earmark-arrow-up"></i> بارگذاری فایل پشتیبان (JSON)</button>' +
+        '<button class="btn bp" onclick="Backup.importAll()"><i class="bi bi-file-earmark-arrow-up"></i> بازیابی و انتقال فایل پشتیبان (JSON)</button>' +
         '</div>' +
         '</div>';
     }
