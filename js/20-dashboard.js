@@ -186,8 +186,10 @@ var Dash = {
         '</div>' +
         '</div>' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-        (supaReady ? '<button class="btn bs" style="background:var(--ok);color:#fff" onclick="Auth.quickCloudRestore()"><i class="bi bi-cloud-arrow-down-fill"></i> بازیابی فوری از سرور ابری (Supabase)</button>' : '') +
+        '<button class="btn bo" onclick="PWA.showHealthModal()"><i class="bi bi-activity"></i> تست اتصال دیتابیس</button>' +
+        (supaReady ? '<button class="btn bs" style="background:var(--ok);color:#fff" onclick="Auth.quickCloudRestore()"><i class="bi bi-cloud-arrow-down-fill"></i> بازیابی فوری از سرور ابری</button>' : '') +
         '<button class="btn bp" onclick="Backup.importAll()"><i class="bi bi-file-earmark-arrow-up"></i> بازیابی و انتقال فایل پشتیبان (JSON)</button>' +
+        '<button class="btn bo" onclick="PWA.openSafariExportGuide()"><i class="bi bi-compass"></i> راهنمای آیفون</button>' +
         '</div>' +
         '</div>';
     }

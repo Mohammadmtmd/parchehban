@@ -162,10 +162,14 @@ if (yearSel) yearSel.addEventListener('change', function() {
         var iCount = (await DB.all('invoices')).length;
         var cCount = (await DB.all('contacts')).length;
 
-        /* اگر پایگاه داده در این کانتینر مرورگر خالی باشد، کارت راهنمای انتقال سافاری به صفحه اصلی نمایش داده می‌شود */
-        var pwaHint = document.getElementById('pwaIosHint');
-        if (pwaHint && pCount === 0 && iCount === 0 && cCount === 0) {
-          pwaHint.style.display = 'block';
+        /* اگر پایگاه داده در این کانتینر مرورگر خالی باشد، کارت راهنمای انتقال سافاری و تست دیتابیس نمایش داده می‌شود */
+        if (typeof PWA !== 'undefined' && PWA.checkEmptyStateOnBoot) {
+          PWA.checkEmptyStateOnBoot();
+        } else {
+          var pwaHint = document.getElementById('pwaIosHint');
+          if (pwaHint && pCount === 0 && iCount === 0 && cCount === 0) {
+            pwaHint.style.display = 'block';
+          }
         }
 
         var mainAdmin = allU.find(function(x) { return x.role === 'admin' || !x.role; });

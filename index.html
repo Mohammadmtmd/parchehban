@@ -74,17 +74,18 @@
 </div>
 <button class="btn bp" style="width:100%;padding:12px;font-size:.95rem" id="loginBtn">ورود به برنامه</button>
 <p id="loginErr" style="color:var(--d);font-size:.82rem;margin-top:12px;display:none;line-height:1.7"></p>
-<div id="pwaIosHint" style="display:none;margin-top:16px;padding:12px 14px;background:rgba(59,130,246,.08);border:1px dashed var(--p,#3b82f6);border-radius:10px;font-size:.78rem;color:var(--tx);line-height:1.7;text-align:right">
+<div id="pwaIosHint" style="display:none;margin-top:16px;padding:12px 14px;background:rgba(59,130,246,.08);border:1.5px dashed var(--p,#3b82f6);border-radius:10px;font-size:.78rem;color:var(--tx);line-height:1.7;text-align:right">
   <div style="font-weight:700;color:var(--p);margin-bottom:4px;display:flex;align-items:center;gap:6px">
-    <i class="bi bi-phone"></i> انتقال داده از سافاری به صفحه اصلی (PWA آیفون)
+    <i class="bi bi-phone"></i> راهنمای داده‌ها در حالت PWA و تست دیتابیس
   </div>
-  <div style="color:var(--txs)">در آیفون، نسخه صفحه اصلی دارای دیتابیس جداگانه است. اگر قبلاً در سافاری حساب یا اطلاعات داشتید:</div>
+  <div style="color:var(--txs)">اگر در سافاری آیفون اطلاعات داشته‌اید، محیط صفحه اصلی مجزا است. می‌توانید دیتابیس را تست کنید یا فایل بکاپ را بازیابی نمایید:</div>
   <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
-    <label class="btn bp bs" style="cursor:pointer;font-size:.76rem;padding:5px 10px;margin:0;display:inline-flex;align-items:center;gap:4px">
+    <button type="button" class="btn bp bs" style="font-size:.76rem;padding:5px 10px" onclick="PWA.showHealthModal()"><i class="bi bi-activity"></i> تست اتصال دیتابیس</button>
+    <label class="btn bo bs" style="cursor:pointer;font-size:.76rem;padding:5px 10px;margin:0;display:inline-flex;align-items:center;gap:4px">
       <i class="bi bi-upload"></i> بازیابی فایل پشتیبان (بکاپ)
       <input type="file" accept=".json" style="display:none" onchange="Auth.restoreBackupDirectly(this.files[0])">
     </label>
-    <button type="button" class="btn bo bs" style="font-size:.76rem;padding:5px 10px" onclick="Auth.showTroubleshootModal()">راهنمای کامل</button>
+    <button type="button" class="btn bo bs" style="font-size:.76rem;padding:5px 10px" onclick="PWA.openSafariExportGuide()">راهنمای انتقال</button>
   </div>
 </div>
 <div style="margin-top:20px;text-align:center">
