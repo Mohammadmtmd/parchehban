@@ -393,20 +393,31 @@ var Sync = {
         var tableName = Sync.STORE_MAP[storeName] || storeName;
         var items = byStore[storeName];
 
-        var rowsToUpsert = [];
+        /* یکتا کردن سطرها بر اساس شناسه (id / uid) برای جلوگیری از خطای 21000 در PostgreSQL
+           (ON CONFLICT DO UPDATE command cannot affect row a second time)
+           در صورتی که یک رکورد چند بار پشت‌سرهم در صف ویرایش شده باشد، فقط آخرین حالت معتبر ارسال می‌شود */
+        var rowsById = {};
         items.forEach(function(item) {
+          var targetId = item.uid || (item.payload && item.payload.uid);
+          if (!targetId && item.rowId) targetId = String(item.rowId);
+          if (!targetId) return;
+
           if (item.op === 'delete') {
-            rowsToUpsert.push({
-              id: item.uid,
+            rowsById[targetId] = {
+              id: targetId,
               org_id: cfg.orgId,
               data: {},
               updated_at: new Date().toISOString(),
               is_deleted: true
-            });
+            };
           } else if (item.payload) {
-            rowsToUpsert.push(Sync._buildServerPayload(storeName, item.payload, cfg.orgId, false));
+            var pl = Sync._buildServerPayload(storeName, item.payload, cfg.orgId, false);
+            pl.id = targetId;
+            rowsById[targetId] = pl;
           }
         });
+
+        var rowsToUpsert = Object.values(rowsById);
 
         if (rowsToUpsert.length > 0) {
           var postRes = async function(rowsData) {
@@ -422,25 +433,51 @@ var Sync = {
             });
           };
 
-          var res = await postRes(rowsToUpsert);
+          var sendSafely = async function(dataList) {
+            var r = await postRes(dataList);
+            if (r.ok) return;
+            var errTxt = await r.text();
 
-          if (!res.ok) {
-            var errTxt = await res.text();
-            /* سازگاری به عقب: اگر خطای PGRST204 نبود ستون doc_number رخ دهد، بدون آن ستون دوباره ارسال می‌شود */
+            /* سازگاری به عقب: اگر خطای PGRST204 یا نبود ستون doc_number رخ دهد، بدون آن ستون دوباره ارسال می‌شود */
             if (storeName === 'checks' && errTxt && (errTxt.indexOf('doc_number') !== -1 || errTxt.indexOf('PGRST204') !== -1)) {
               Sync._skipDocNumberCol = true;
-              var fallbackRows = rowsToUpsert.map(function(r) {
-                var copy = Object.assign({}, r);
+              dataList = dataList.map(function(row) {
+                var copy = Object.assign({}, row);
                 delete copy.doc_number;
                 return copy;
               });
-              res = await postRes(fallbackRows);
-              if (res.ok) errTxt = '';
+              r = await postRes(dataList);
+              if (r.ok) return;
+              errTxt = await r.text();
             }
-            if (!res.ok) {
-              throw new Error('خطا در ارسال به جدول ' + tableName + ': ' + (errTxt || res.statusText));
+
+            /* رفع تضمینی خطای 21000 (تداخل دو سطر همسان در یک فرمان): ارسال تک‌به‌تک رکوردها */
+            if (errTxt && (errTxt.indexOf('21000') !== -1 || errTxt.indexOf('cannot affect row a second time') !== -1 || errTxt.indexOf('duplicate constrained') !== -1)) {
+              for (var i = 0; i < dataList.length; i++) {
+                var singleRow = [dataList[i]];
+                var singleRes = await postRes(singleRow);
+                if (!singleRes.ok) {
+                  var singleErr = await singleRes.text();
+                  if (storeName === 'checks' && singleErr && (singleErr.indexOf('doc_number') !== -1 || singleErr.indexOf('PGRST204') !== -1)) {
+                    var copyRow = Object.assign({}, dataList[i]);
+                    delete copyRow.doc_number;
+                    singleRes = await postRes([copyRow]);
+                    if (!singleRes.ok) {
+                      var singleErr2 = await singleRes.text();
+                      throw new Error('خطا در ارسال رکورد به جدول ' + tableName + ': ' + (singleErr2 || singleRes.statusText));
+                    }
+                  } else {
+                    throw new Error('خطا در ارسال رکورد به جدول ' + tableName + ': ' + (singleErr || singleRes.statusText));
+                  }
+                }
+              }
+              return;
             }
-          }
+
+            throw new Error('خطا در ارسال به جدول ' + tableName + ': ' + (errTxt || r.statusText));
+          };
+
+          await sendSafely(rowsToUpsert);
         }
 
         /* علامت‌گذاری آیتم‌های ارسال‌شده */
@@ -572,9 +609,10 @@ var Sync = {
     for (var s = 0; s < Sync.STORES_ORDER.length; s++) {
       var storeName = Sync.STORES_ORDER[s];
       var rows = await DB.all(storeName);
+      var seenUids = {};
       for (var i = 0; i < rows.length; i++) {
         var row = rows[i];
-        if (!row.uid) {
+        if (!row.uid || seenUids[row.uid]) {
           row.uid = uuid();
           row.updatedAt = row.updatedAt || new Date().toISOString();
           await DB._req(function() {
@@ -583,6 +621,7 @@ var Sync = {
           await Sync.enqueue(storeName, 'create', row, row.id);
           totalEnqueued++;
         }
+        seenUids[row.uid] = true;
       }
     }
     return totalEnqueued;
@@ -623,23 +662,29 @@ var Sync = {
 
       if (onProgress) onProgress(storeName, 0, rows.length);
 
-      /* اطمینان از وجود uid روی تک‌تک رکوردها */
+      /* اطمینان از وجود uid کاملاً یکتا روی تک‌تک رکوردها */
+      var seenUids = {};
       for (var r = 0; r < rows.length; r++) {
-        if (!rows[r].uid) {
+        if (!rows[r].uid || seenUids[rows[r].uid]) {
           rows[r].uid = uuid();
           await DB._req(function() {
             return DB.gs(storeName, 'readwrite').put(rows[r]);
           }, 'ensureUid');
         }
+        seenUids[rows[r].uid] = true;
       }
 
       /* ارسال در بسته‌های ۵۰ تایی برای جلوگیری از سنگین شدن ترافیک شبکه */
       var chunkSize = 50;
       for (var i = 0; i < rows.length; i += chunkSize) {
         var chunk = rows.slice(i, i + chunkSize);
-        var payload = chunk.map(function(row) {
-          return Sync._buildServerPayload(storeName, row, cfg.orgId, false);
+        /* یکتا کردن سطرها بر اساس شناسه در این بسته */
+        var chunkMap = {};
+        chunk.forEach(function(row) {
+          var p = Sync._buildServerPayload(storeName, row, cfg.orgId, false);
+          chunkMap[p.id] = p;
         });
+        var payload = Object.values(chunkMap);
 
         var sendBatch = async function(bodyData) {
           return await fetch(cfg.url + '/rest/v1/' + tableName, {
@@ -660,14 +705,32 @@ var Sync = {
           var errTxt = await res.text();
           if (storeName === 'checks' && errTxt && (errTxt.indexOf('doc_number') !== -1 || errTxt.indexOf('PGRST204') !== -1)) {
             Sync._skipDocNumberCol = true;
-            var fallbackPayload = payload.map(function(r) {
+            payload = payload.map(function(r) {
               var copy = Object.assign({}, r);
               delete copy.doc_number;
               return copy;
             });
-            res = await sendBatch(fallbackPayload);
+            res = await sendBatch(payload);
             if (res.ok) errTxt = '';
           }
+
+          /* رفع خطای 21000 در fullUpload */
+          if (!res.ok && errTxt && (errTxt.indexOf('21000') !== -1 || errTxt.indexOf('cannot affect row a second time') !== -1)) {
+            for (var k = 0; k < payload.length; k++) {
+              var sRes = await sendBatch([payload[k]]);
+              if (!sRes.ok) {
+                var sTxt = await sRes.text();
+                if (storeName === 'checks' && sTxt && (sTxt.indexOf('doc_number') !== -1 || sTxt.indexOf('PGRST204') !== -1)) {
+                  var c2 = Object.assign({}, payload[k]);
+                  delete c2.doc_number;
+                  sRes = await sendBatch([c2]);
+                }
+              }
+            }
+            errTxt = '';
+            res = { ok: true };
+          }
+
           if (!res.ok) {
             throw new Error('خطا در بارگذاری جدول ' + tableName + ': ' + (errTxt || res.statusText));
           }
