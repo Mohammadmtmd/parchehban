@@ -217,6 +217,7 @@ create table if not exists checks (
   bank_name       text,
   bank_account_id text,
   status          text default 'pending',     -- pending / passed / returned / transferred
+  doc_number      text,
   data            jsonb not null default '{}'::jsonb,
   updated_at      timestamptz not null default now(),
   is_deleted      boolean not null default false
@@ -232,6 +233,7 @@ alter table checks add column if not exists due_date text;
 alter table checks add column if not exists bank_name text;
 alter table checks add column if not exists bank_account_id text;
 alter table checks add column if not exists status text default 'pending';
+alter table checks add column if not exists doc_number text;
 alter table checks add column if not exists data jsonb not null default '{}'::jsonb;
 alter table checks add column if not exists updated_at timestamptz not null default now();
 alter table checks add column if not exists is_deleted boolean not null default false;

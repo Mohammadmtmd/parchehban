@@ -270,7 +270,7 @@ var Inv = {
       return;
     }
     var isSale = (this._type === 'sale' || this._type === 'proforma');
-    var h = '<table class="inv-tbl"><thead><tr><th style="width:30px">#</th><th>کالا</th><th style="width:90px">کالیته</th><th style="width:80px">شید</th><th style="width:70px">تعداد</th>';
+    var h = '<table class="inv-tbl"><thead><tr><th style="width:30px">#</th><th>کالا</th><th style="width:90px">کالیته</th><th style="width:80px">شید</th><th style="width:70px">مقدار</th>';
     if (isSale) h += '<th style="width:80px">ق.خرید</th>';
     h += '<th style="width:100px">قیمت</th><th style="width:90px">جمع</th><th style="width:30px"></th></tr></thead><tbody>';
     for (var i = 0; i < this.items.length; i++) {
@@ -549,7 +549,7 @@ var Inv = {
     h += '<table style="width:100%;border-collapse:collapse;margin-bottom:14px;font-size:' + (a5 ? '8.5px' : '10px') +
       '"><thead><tr><th style="' + th + 'width:25px">#</th><th style="' + th + '">شرح کالا</th>' +
       '<th style="' + th + 'width:65px">کالیته</th><th style="' + th + 'width:55px">شید</th>' +
-      '<th style="' + th + 'width:45px">تعداد</th><th style="' + th + 'width:70px">فی</th>' +
+      '<th style="' + th + 'width:45px">مقدار</th><th style="' + th + 'width:70px">فی</th>' +
       '<th style="' + th + 'width:80px">جمع</th></tr></thead><tbody>' + r + '</tbody></table>';
     h += '<div style="display:flex;justify-content:flex-end;margin-bottom:16px">' +
       '<table style="border-collapse:collapse;font-size:' + (a5 ? '8px' : '9.5px') + ';width:auto">' +

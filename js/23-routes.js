@@ -53,6 +53,9 @@ var ROUTES = {
   checks: function() {
     return Chk.render();
   },
+  rasgiri: function() {
+    return Rasgiri.render();
+  },
   ledger: function() {
     return Led.render();
   },

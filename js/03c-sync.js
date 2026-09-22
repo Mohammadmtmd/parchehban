@@ -324,7 +324,11 @@ var Sync = {
       payload.bank_name = row.bankName || '';
       payload.bank_account_id = row.bankAccountId || null;
       payload.status = row.status || 'pending';
-      payload.doc_number = row.docNumber || '';
+      /* ستون doc_number ممکن است در برخی پروژه‌های Supabase هنوز با SQL اضافه نشده باشد.
+         اطلاعات کامل سند همیشه در فیلد JSONB (data) محفوظ است. در صورت نیاز به ستون مجزا، مقداردهی می‌شود */
+      if (row.docNumber && !Sync._skipDocNumberCol) {
+        payload.doc_number = String(row.docNumber);
+      }
     } else if (store === 'bankTransfers') {
       payload.fiscal_year_id = row.fiscalYearUid || (row.fiscalYearId ? String(row.fiscalYearId) : null);
       payload.from_bank_id = row.fromBankUid || (row.fromBankId ? String(row.fromBankId) : null);
@@ -405,20 +409,37 @@ var Sync = {
         });
 
         if (rowsToUpsert.length > 0) {
-          var res = await fetch(cfg.url + '/rest/v1/' + tableName, {
-            method: 'POST',
-            headers: {
-              'apikey': cfg.key,
-              'Authorization': 'Bearer ' + cfg.key,
-              'Content-Type': 'application/json',
-              'Prefer': 'resolution=merge-duplicates,return=minimal'
-            },
-            body: JSON.stringify(rowsToUpsert)
-          });
+          var postRes = async function(rowsData) {
+            return await fetch(cfg.url + '/rest/v1/' + tableName, {
+              method: 'POST',
+              headers: {
+                'apikey': cfg.key,
+                'Authorization': 'Bearer ' + cfg.key,
+                'Content-Type': 'application/json',
+                'Prefer': 'resolution=merge-duplicates,return=minimal'
+              },
+              body: JSON.stringify(rowsData)
+            });
+          };
+
+          var res = await postRes(rowsToUpsert);
 
           if (!res.ok) {
             var errTxt = await res.text();
-            throw new Error('خطا در ارسال به جدول ' + tableName + ': ' + (errTxt || res.statusText));
+            /* سازگاری به عقب: اگر خطای PGRST204 نبود ستون doc_number رخ دهد، بدون آن ستون دوباره ارسال می‌شود */
+            if (storeName === 'checks' && errTxt && (errTxt.indexOf('doc_number') !== -1 || errTxt.indexOf('PGRST204') !== -1)) {
+              Sync._skipDocNumberCol = true;
+              var fallbackRows = rowsToUpsert.map(function(r) {
+                var copy = Object.assign({}, r);
+                delete copy.doc_number;
+                return copy;
+              });
+              res = await postRes(fallbackRows);
+              if (res.ok) errTxt = '';
+            }
+            if (!res.ok) {
+              throw new Error('خطا در ارسال به جدول ' + tableName + ': ' + (errTxt || res.statusText));
+            }
           }
         }
 
@@ -620,20 +641,36 @@ var Sync = {
           return Sync._buildServerPayload(storeName, row, cfg.orgId, false);
         });
 
-        var res = await fetch(cfg.url + '/rest/v1/' + tableName, {
-          method: 'POST',
-          headers: {
-            'apikey': cfg.key,
-            'Authorization': 'Bearer ' + cfg.key,
-            'Content-Type': 'application/json',
-            'Prefer': 'resolution=merge-duplicates,return=minimal'
-          },
-          body: JSON.stringify(payload)
-        });
+        var sendBatch = async function(bodyData) {
+          return await fetch(cfg.url + '/rest/v1/' + tableName, {
+            method: 'POST',
+            headers: {
+              'apikey': cfg.key,
+              'Authorization': 'Bearer ' + cfg.key,
+              'Content-Type': 'application/json',
+              'Prefer': 'resolution=merge-duplicates,return=minimal'
+            },
+            body: JSON.stringify(bodyData)
+          });
+        };
+
+        var res = await sendBatch(payload);
 
         if (!res.ok) {
           var errTxt = await res.text();
-          throw new Error('خطا در بارگذاری جدول ' + tableName + ': ' + (errTxt || res.statusText));
+          if (storeName === 'checks' && errTxt && (errTxt.indexOf('doc_number') !== -1 || errTxt.indexOf('PGRST204') !== -1)) {
+            Sync._skipDocNumberCol = true;
+            var fallbackPayload = payload.map(function(r) {
+              var copy = Object.assign({}, r);
+              delete copy.doc_number;
+              return copy;
+            });
+            res = await sendBatch(fallbackPayload);
+            if (res.ok) errTxt = '';
+          }
+          if (!res.ok) {
+            throw new Error('خطا در بارگذاری جدول ' + tableName + ': ' + (errTxt || res.statusText));
+          }
         }
 
         totalRecords += chunk.length;
