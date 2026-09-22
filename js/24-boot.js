@@ -197,11 +197,10 @@ if (yearSel) yearSel.addEventListener('change', function() {
   }
 })();
 
-/* ثبت Service Worker برای کارکرد کامل بدون اینترنت.
-   از پروتکل file:// پشتیبانی نمی‌شود؛ در آن حالت بی‌صدا رد می‌شود. */
+/* هماهنگی Service Worker برای اطلاع‌رسانی نسخه‌های جدید */
 if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
-  window.addEventListener('load', function() {
-    navigator.serviceWorker.register('sw.js').then(function(reg) {
+  var setupSW = function() {
+    navigator.serviceWorker.register('./sw.js', { scope: './' }).then(function(reg) {
       console.info('Service Worker فعال شد', reg.scope);
       /* اگر نسخه جدیدی از برنامه آماده شد، به کاربر خبر بده */
       reg.addEventListener('updatefound', function() {
@@ -216,9 +215,15 @@ if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
         });
       });
     }).catch(function(e) {
-      console.warn('ثبت Service Worker ناموفق بود:', e.message);
+      console.warn('ثبت Service Worker ناموفق بود:', e && e.message);
     });
-  });
+  };
+
+  if (document.readyState === 'complete') {
+    setupSW();
+  } else {
+    window.addEventListener('load', setupSW);
+  }
 }
 
 /* گزارش خطاهای پیش‌بینی‌نشده به کاربر — قبلاً بی‌صدا در کنسول می‌ماندند */

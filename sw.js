@@ -13,7 +13,7 @@
    توجه: داده‌های حسابداری در IndexedDB است و ربطی به این حافظه نهان
    ندارد؛ پاک شدن cache هیچ سندی را از بین نمی‌برد. */
 
-var VERSION = 'pb-v10.2';
+var VERSION = 'pb-v10.3';
 var SHELL_CACHE = VERSION + '-shell';
 var CDN_CACHE = VERSION + '-cdn';
 
