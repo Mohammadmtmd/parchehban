@@ -122,35 +122,14 @@ var Dash = {
       bankTotal += bal;
     });
 
-    /* محاسبه بدهکاران و بستانکاران کل برای کارت‌های شاخص */
+    /* محاسبه بدهکاران و بستانکاران کل برای کارت‌های شاخص با متد واحد و هماهنگ */
     var totalDebtors = 0, totalCreditors = 0;
-    for (var ci = 0; ci < contacts.length; ci++) {
-      var co = contacts[ci];
-      var cBal = await getOpenBal(co.id);
-      allInvs.forEach(function(inv) {
-        if (inv.type === 'proforma') return;
-        if (inv.contactId === co.id) {
-          cBal += inv.type === 'sale' ? numOf(inv.grandTotal) : -numOf(inv.grandTotal);
-          if (inv.type === 'sale' && inv.paidAmount) cBal -= numOf(inv.paidAmount);
-          if (inv.type === 'purchase' && inv.paidAmount) cBal += numOf(inv.paidAmount);
-        }
-        if (inv.brokerId === co.id && inv.brokerCommission) cBal -= numOf(inv.brokerCommission);
-      });
-      dashPays.forEach(function(pay) {
-        if (pay.contactId === co.id) cBal += pay.type === 'payment' ? numOf(pay.amount) : -numOf(pay.amount);
-      });
-      dashChks.forEach(function(chk) {
-        var isRet = (chk.status === 'returned' || chk.status === 'returned_to_me' || chk.status === 'returned_to_customer');
-        if (chk.contactId === co.id && !isRet) {
-          if (chk.type === 'received') cBal -= numOf(chk.amount);
-          if (chk.type === 'issued') cBal += numOf(chk.amount);
-        }
-        var isSupplierActive = (chk.status === 'transferred' || (chk.status === 'passed' && chk.transferToId === co.id)) && !isRet;
-        if (isSupplierActive && chk.transferToId === co.id) cBal += numOf(chk.amount);
-      });
+    var dashBalMap = await Con.allBalances();
+    contacts.forEach(function(co) {
+      var cBal = dashBalMap[co.id] || 0;
       if (cBal > 0) totalDebtors += cBal;
       else if (cBal < 0) totalCreditors += Math.abs(cBal);
-    }
+    });
 
     /* تحلیل چک‌های سررسید صیادی */
     var dueAnalysis = Chk.getDueAnalysis(dashChks);

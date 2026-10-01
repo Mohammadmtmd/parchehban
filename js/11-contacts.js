@@ -26,13 +26,85 @@ var Con = {
       UI.content('<div class="cd"><div class="em"><i class="bi bi-people"></i><p>شخصی نیست</p></div></div>');
       return;
     }
+    var balMap = await this.allBalances();
     var me = this,
       r = '';
     for (var i = 0; i < ls.length; i++) {
       var c = ls[i];
-      r += '<tr><td>' + (i + 1) + '</td><td><strong>' + esc(c.name) + '</strong></td><td><span class="tg ' + me.tt(c.type) + '">' + me.tl(c.type) + '</span></td><td>' + esc(c.phone || '—') + '</td><td style="white-space:nowrap"><button class="bi2" onclick="Led.show(' + c.id + ')"><i class="bi bi-journal-text"></i></button> <button class="bi2" onclick="Con.form(' + c.id + ')"><i class="bi bi-pencil"></i></button> <button class="bi2 d" onclick="Con.rm(' + c.id + ')"><i class="bi bi-trash3"></i></button></td></tr>';
+      var bal = balMap[c.id] || 0;
+      var bColor = bal > 0 ? 'var(--d)' : (bal < 0 ? 'var(--ok)' : 'var(--txs)');
+      var bLabel = bal > 0 ? 'بدهکار' : (bal < 0 ? 'بستانکار' : 'تسویه');
+      var bStr = bal === 0 ? 'تسویه' : (UI.fn(Math.abs(bal)) + ' ریال ' + bLabel);
+      r += '<tr><td>' + (i + 1) + '</td><td><strong>' + esc(c.name) + '</strong></td><td><span class="tg ' + me.tt(c.type) + '">' + me.tl(c.type) + '</span></td><td>' + esc(c.phone || '—') + '</td><td style="font-weight:700;color:' + bColor + '">' + bStr + '</td><td style="white-space:nowrap"><button class="bi2" title="دفتر معین" onclick="Led.show(' + c.id + ')"><i class="bi bi-journal-text"></i></button> <button class="bi2" title="ویرایش" onclick="Con.form(' + c.id + ')"><i class="bi bi-pencil"></i></button> <button class="bi2 d" title="حذف" onclick="Con.rm(' + c.id + ')"><i class="bi bi-trash3"></i></button></td></tr>';
     }
-    UI.content('<div class="cd"><div class="cd-h">اشخاص</div><div class="tw"><table><thead><tr><th>#</th><th>نام</th><th>نوع</th><th>تلفن</th><th></th></tr></thead><tbody>' + r + '</tbody></table></div></div>');
+    UI.content('<div class="cd"><div class="cd-h">اشخاص</div><div class="tw"><table><thead><tr><th>#</th><th>نام</th><th>نوع</th><th>تلفن</th><th>مانده حساب</th><th></th></tr></thead><tbody>' + r + '</tbody></table></div></div>');
+  },
+  /* ══ متد مرجع و واحد مانده‌گیری حساب کلیه اشخاص (مشتری و تامین‌کننده) ══ */
+  allBalances: async function() {
+    var contacts = await DB.all('contacts');
+    var openings = await DB.all('yearOpenings');
+    var invs = await FY.byYear('invoices');
+    var pays = await FY.byYear('payments');
+    var chks = await FY.byYear('checks');
+
+    var balMap = {};
+    for (var i = 0; i < contacts.length; i++) {
+      var c = contacts[i];
+      var ob = openings.find(function(o) {
+        return o.fiscalYearId === STATE.yearId && o.contactId === c.id;
+      });
+      balMap[c.id] = ob ? numOf(ob.balance) : numOf(c.balance);
+    }
+
+    invs.forEach(function(inv) {
+      if (inv.type === 'proforma') return;
+      if (inv.contactId && balMap[inv.contactId] !== undefined) {
+        balMap[inv.contactId] += inv.type === 'sale' ? numOf(inv.grandTotal) : -numOf(inv.grandTotal);
+      }
+      if (inv.brokerId && inv.brokerCommission && balMap[inv.brokerId] !== undefined) {
+        balMap[inv.brokerId] -= numOf(inv.brokerCommission);
+      }
+    });
+
+    pays.forEach(function(pay) {
+      /* اسناد خودکار حاصل از چک در مانده شمرده نمی‌شوند چون خود چک محاسبه می‌شود */
+      if (pay.sourceCheckId) return;
+      if (pay.contactId && balMap[pay.contactId] !== undefined) {
+        if (pay.type === 'receipt') balMap[pay.contactId] -= numOf(pay.amount);
+        else balMap[pay.contactId] += numOf(pay.amount);
+      }
+    });
+
+    chks.forEach(function(chk) {
+      var isRet = (chk.status === 'returned' || chk.status === 'returned_to_me' || chk.status === 'returned_to_customer');
+      var amt = numOf(chk.amount);
+
+      if (chk.contactId && balMap[chk.contactId] !== undefined && !isRet) {
+        if (chk.type === 'received') balMap[chk.contactId] -= amt;
+        if (chk.type === 'issued') balMap[chk.contactId] += amt;
+      }
+
+      var isSupplierActive = (chk.status === 'transferred' || (chk.status === 'passed' && chk.transferToId)) && !isRet;
+      if (isSupplierActive && chk.transferToId && balMap[chk.transferToId] !== undefined) {
+        balMap[chk.transferToId] += amt;
+      }
+    });
+
+    return balMap;
+  },
+  balance: async function(cid) {
+    var bm = await this.allBalances();
+    return bm[cid] || 0;
+  },
+  formatBal: function(bal) {
+    if (bal > 0) return UI.fn(bal) + ' ریال بدهکار';
+    if (bal < 0) return UI.fn(Math.abs(bal)) + ' ریال بستانکار';
+    return 'تسویه (۰ ریال)';
+  },
+  balTag: function(bal) {
+    if (bal > 0) return ' — بدهکار ' + UI.fn(bal) + ' ریال';
+    if (bal < 0) return ' — بستانکار ' + UI.fn(Math.abs(bal)) + ' ریال';
+    return ' — تسویه';
   },
   form: async function(id) {
     /* سطح دسترسی */
@@ -81,10 +153,13 @@ var Con = {
         '<div class="fh" style="margin-top:-2px">' +
         '<b>مثبت</b> = او به ما بدهکار است &nbsp;•&nbsp; <b>منفی</b> = ما به او بدهکاریم</div>';
     } else {
-      h += '<div class="fh" style="margin-top:14px">' +
-        'مانده فعلی: <b>' + UI.fn(Math.abs(numOf(c.balance))) + ' ریال ' +
-        (numOf(c.balance) >= 0 ? 'بدهکار' : 'بستانکار') + '</b>' +
-        ' — این عدد از روی فاکتورها و اسناد محاسبه می‌شود و اینجا قابل تغییر نیست.</div>';
+      var curBal = await this.balance(c.id);
+      var bLabel = curBal > 0 ? 'بدهکار' : curBal < 0 ? 'بستانکار' : 'تسویه';
+      var bColor = curBal > 0 ? 'var(--d)' : curBal < 0 ? 'var(--ok)' : 'var(--txs)';
+      h += '<div class="fh" style="margin-top:14px;padding:12px 14px;background:var(--bg);border-radius:8px;border:1px solid var(--bd)">' +
+        'مانده فعلی بر اساس کلیه فاکتورها، دریافت/پرداخت‌ها و چک‌ها: <strong style="color:' + bColor + '">' + UI.fn(Math.abs(curBal)) + ' ریال ' + bLabel + '</strong>' +
+        ' <span style="display:inline-block;margin-right:12px"><button class="btn bs bo" type="button" onclick="UI.close();Led.show(' + c.id + ')"><i class="bi bi-journal-text"></i> مشاهده دفتر معین</button></span>' +
+        '</div>';
     }
 
     UI.open(c ? 'ویرایش — ' + c.name : 'ثبت شخص جدید', h,

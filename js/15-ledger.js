@@ -126,16 +126,37 @@ var Led = {
             });
           }
         }
-        if (chk.type === 'issued' && !isRet) {
-          txs.push({
-            d: chk.issueDate || chk.dueDate,
-            desc: 'چک پرداختی #' + chk.checkNumber,
-            db: chk.amount,
-            cr: 0,
-            s: 3,
-            chkId: chk.id,
-            chkType: chk.type
-          });
+        if (chk.type === 'issued') {
+          if (!isRet) {
+            txs.push({
+              d: chk.issueDate || chk.dueDate,
+              desc: 'چک پرداختی #' + chk.checkNumber,
+              db: chk.amount,
+              cr: 0,
+              s: 3,
+              chkId: chk.id,
+              chkType: chk.type
+            });
+          } else {
+            txs.push({
+              d: chk.issueDate || chk.dueDate,
+              desc: 'چک پرداختی #' + chk.checkNumber,
+              db: chk.amount,
+              cr: 0,
+              s: 3,
+              chkId: chk.id,
+              chkType: chk.type
+            });
+            txs.push({
+              d: chk.returnDate || chk.dueDate || todayJ(),
+              desc: 'برگشت/عودت چک پرداختی #' + chk.checkNumber,
+              db: 0,
+              cr: chk.amount,
+              s: 3.5,
+              chkId: chk.id,
+              chkType: chk.type
+            });
+          }
         }
       }
 
@@ -358,14 +379,31 @@ Led.expCSV = function(cid) {
             });
           }
         }
-        if (chk.type === 'issued' && !isRet) {
-          txs.push({
-            d: chk.issueDate || chk.dueDate,
-            desc: 'چک پرداختی #' + chk.checkNumber,
-            db: chk.amount,
-            cr: 0,
-            s: 3
-          });
+        if (chk.type === 'issued') {
+          if (!isRet) {
+            txs.push({
+              d: chk.issueDate || chk.dueDate,
+              desc: 'چک پرداختی #' + chk.checkNumber,
+              db: chk.amount,
+              cr: 0,
+              s: 3
+            });
+          } else {
+            txs.push({
+              d: chk.issueDate || chk.dueDate,
+              desc: 'چک پرداختی #' + chk.checkNumber,
+              db: chk.amount,
+              cr: 0,
+              s: 3
+            });
+            txs.push({
+              d: chk.returnDate || chk.dueDate || todayJ(),
+              desc: 'برگشت/عودت چک پرداختی #' + chk.checkNumber,
+              db: 0,
+              cr: chk.amount,
+              s: 3.5
+            });
+          }
         }
       }
 
@@ -527,14 +565,31 @@ Led.expPDF = function(cid) {
             });
           }
         }
-        if (chk.type === 'issued' && !isRet) {
-          txs.push({
-            d: chk.issueDate || chk.dueDate,
-            desc: 'چک پرداختی #' + chk.checkNumber,
-            db: chk.amount,
-            cr: 0,
-            s: 3
-          });
+        if (chk.type === 'issued') {
+          if (!isRet) {
+            txs.push({
+              d: chk.issueDate || chk.dueDate,
+              desc: 'چک پرداختی #' + chk.checkNumber,
+              db: chk.amount,
+              cr: 0,
+              s: 3
+            });
+          } else {
+            txs.push({
+              d: chk.issueDate || chk.dueDate,
+              desc: 'چک پرداختی #' + chk.checkNumber,
+              db: chk.amount,
+              cr: 0,
+              s: 3
+            });
+            txs.push({
+              d: chk.returnDate || chk.dueDate || todayJ(),
+              desc: 'برگشت/عودت چک پرداختی #' + chk.checkNumber,
+              db: 0,
+              cr: chk.amount,
+              s: 3.5
+            });
+          }
         }
       }
 

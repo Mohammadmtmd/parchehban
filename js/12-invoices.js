@@ -4,44 +4,7 @@ var Inv = {
   prodMap: {},
   prodOpts: '',
   contactBal: async function(cid) {
-    var bal = await getOpenBal(cid);
-    var invs = await FY.byYear('invoices');
-    var pays = await FY.byYear('payments');
-    var chks = await FY.byYear('checks');
-    invs.forEach(function(inv) {
-      if (inv.type === 'proforma') return;
-      if (inv.contactId === cid) {
-        /* فقط مبلغ کل فاکتور. مبلغ «پرداخت شده» اینجا کم نمی‌شود چون
-           برای آن یک سند دریافت/پرداخت واقعی ساخته می‌شود و در حلقه
-           اسناد پایین‌تر حساب می‌گردد — در غیر این صورت دو بار
-           حساب می‌شد. */
-        bal += inv.type === 'sale' ? numOf(inv.grandTotal) : -numOf(inv.grandTotal);
-      }
-      if (inv.brokerId === cid && inv.brokerCommission) bal -= inv.brokerCommission;
-    });
-    /* اصلاح باگ: این بلوک قبلاً به آرایه تعریف‌نشده txs push می‌کرد
-       (کپی‌شده از دفتر معین) و باعث ReferenceError می‌شد؛ بنابراین مانده
-       هر شخصی که حتی یک دریافت/پرداخت داشت قابل محاسبه نبود. */
-    pays.forEach(function(pay) {
-      if (pay.contactId !== cid) return;
-      /* سند خودکارِ وصول چک اینجا شمرده نمی‌شود. مانده شخص از خودِ چک
-         محاسبه می‌گردد (به‌محض دریافت چک، در حلقه chks پایین)، نه هنگام
-         وصول. اگر این سند هم شمرده می‌شد بدهی طرف دو برابر کم می‌شد.
-         این سند فقط اثر بانکی دارد. */
-      if (pay.sourceCheckId) return;
-      if (pay.type === 'receipt') bal -= pay.amount || 0;
-      else bal += pay.amount || 0;
-    });
-    chks.forEach(function(chk) {
-      var isRet = (chk.status === 'returned' || chk.status === 'returned_to_me' || chk.status === 'returned_to_customer');
-      if (chk.contactId === cid && !isRet) {
-        if (chk.type === 'received') bal -= chk.amount;
-        if (chk.type === 'issued') bal += chk.amount;
-      }
-      var isSupplierActive = (chk.status === 'transferred' || (chk.status === 'passed' && chk.transferToId === cid)) && !isRet;
-      if (isSupplierActive && chk.transferToId === cid) bal += chk.amount;
-    });
-    return bal;
+    return Con.balance(cid);
   },
 
   render: async function(type) {
@@ -160,9 +123,11 @@ var Inv = {
     var bk = ct.filter(function(c) {
       return c.type === 'broker';
     });
+    var balMap = await Con.allBalances();
     var cO = '<option value="">— انتخاب —</option>';
     rc.forEach(function(c) {
-      cO += '<option value="' + c.id + '"' + (inv && inv.contactId === c.id ? ' selected' : '') + '>' + esc(c.name) + '</option>';
+      var bal = balMap[c.id] || 0;
+      cO += '<option value="' + c.id + '"' + (inv && inv.contactId === c.id ? ' selected' : '') + '>' + esc(c.name) + Con.balTag(bal) + '</option>';
     });
     var bO = '<option value="">— بدون —</option>';
     bk.forEach(function(c) {
@@ -217,7 +182,8 @@ var Inv = {
     var bal = await this.contactBal(cid);
     var label = bal > 0 ? 'بدهکار' : bal < 0 ? 'بستانکار' : 'تسویه';
     var color = bal > 0 ? 'var(--d)' : bal < 0 ? 'var(--ok)' : 'var(--txs)';
-    el.innerHTML = '<i class="bi bi-info-circle" style="margin-left:4px"></i>مانده حساب: <strong style="color:' + color + '">' + UI.fn(Math.abs(bal)) + ' ' + label + '</strong>';
+    el.innerHTML = '<i class="bi bi-info-circle" style="margin-left:4px"></i>مانده حساب: <strong style="color:' + color + '">' + UI.fn(Math.abs(bal)) + ' ریال ' + label + '</strong>' +
+      ' <a href="javascript:void(0)" onclick="Led.show(' + cid + ')" style="margin-right:8px;font-size:.78rem;text-decoration:underline">مشاهده معین</a>';
   },
 
   ai: function() {

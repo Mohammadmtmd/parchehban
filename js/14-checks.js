@@ -530,6 +530,7 @@ var Chk = {
     var banks = await DB.all('banks');
     var isR = type === 'received';
     var nextDoc = await this.nextDocNumber();
+    var balMap = await Con.allBalances();
 
     /* بازنویسی با ابزار مشترک فرم (js/05b-form.js).
        دو مشکل جدی فرم قبلی رفع شد:
@@ -538,10 +539,14 @@ var Chk = {
        ۲) «مرتبط» معلوم نبود یعنی چه؛ حالا بسته به نوع چک
           «دریافت از» یا «پرداخت به» نوشته می‌شود. */
 
-    var people = rl.map(function(cc) { return { v: cc.id, t: cc.name }; });
+    var people = rl.map(function(cc) {
+      var bal = balMap[cc.id] || 0;
+      return { v: cc.id, t: cc.name + Con.balTag(bal) };
+    });
     var allRecipients = ct.map(function(cc) {
       var tag = cc.type === 'customer' ? ' (مشتری)' : (cc.type === 'supplier' ? ' (تامین‌کننده)' : ' (دوطرفه)');
-      return { v: cc.id, t: cc.name + tag };
+      var bal = balMap[cc.id] || 0;
+      return { v: cc.id, t: cc.name + tag + Con.balTag(bal) };
     });
     var accs = banks.map(function(b) { return { v: b.id, t: b.name }; });
 
@@ -786,10 +791,12 @@ var Chk = {
     });
 
     /* گیرنده برای حالت واگذاری */
+    var balMap = await Con.allBalances();
     var trOp = '<option value="">— انتخاب مشتری یا تامین‌کننده —</option>';
     ct.forEach(function(cc) {
       var tag = cc.type === 'customer' ? ' (مشتری)' : (cc.type === 'supplier' ? ' (تامین‌کننده)' : '');
-      trOp += '<option value="' + cc.id + '"' + (cc.id === (c.transferToId || prevRecipient) ? ' selected' : '') + '>' + esc(cc.name) + tag + '</option>';
+      var bal = balMap[cc.id] || 0;
+      trOp += '<option value="' + cc.id + '"' + (cc.id === (c.transferToId || prevRecipient) ? ' selected' : '') + '>' + esc(cc.name) + tag + Con.balTag(bal) + '</option>';
     });
 
     var curStatusInfo = '';
@@ -996,33 +1003,34 @@ var Chk = {
     var suppliers = ct.filter(function(cc) { return cc.type === 'supplier'; });
     var both = ct.filter(function(cc) { return cc.type === 'both'; });
     var others = ct.filter(function(cc) { return cc.type !== 'customer' && cc.type !== 'supplier' && cc.type !== 'both'; });
+    var balMap = await Con.allBalances();
 
     var op = '<option value="">— انتخاب مشتری یا تامین‌کننده (دریافت‌کننده چک) —</option>';
     if (customers.length) {
       op += '<optgroup label="مشتریان (' + customers.length + ')">';
       customers.forEach(function(s) {
-        op += '<option value="' + s.id + '"' + (s.id === preSelectedTo ? ' selected' : '') + '>' + esc(s.name) + ' (مشتری)</option>';
+        op += '<option value="' + s.id + '"' + (s.id === preSelectedTo ? ' selected' : '') + '>' + esc(s.name) + ' (مشتری)' + Con.balTag(balMap[s.id] || 0) + '</option>';
       });
       op += '</optgroup>';
     }
     if (suppliers.length) {
       op += '<optgroup label="تامین‌کنندگان (' + suppliers.length + ')">';
       suppliers.forEach(function(s) {
-        op += '<option value="' + s.id + '"' + (s.id === preSelectedTo ? ' selected' : '') + '>' + esc(s.name) + ' (تامین‌کننده)</option>';
+        op += '<option value="' + s.id + '"' + (s.id === preSelectedTo ? ' selected' : '') + '>' + esc(s.name) + ' (تامین‌کننده)' + Con.balTag(balMap[s.id] || 0) + '</option>';
       });
       op += '</optgroup>';
     }
     if (both.length) {
       op += '<optgroup label="مشتری و تامین‌کننده (دوطرفه)">';
       both.forEach(function(s) {
-        op += '<option value="' + s.id + '"' + (s.id === preSelectedTo ? ' selected' : '') + '>' + esc(s.name) + ' (دوطرفه)</option>';
+        op += '<option value="' + s.id + '"' + (s.id === preSelectedTo ? ' selected' : '') + '>' + esc(s.name) + ' (دوطرفه)' + Con.balTag(balMap[s.id] || 0) + '</option>';
       });
       op += '</optgroup>';
     }
     if (others.length) {
       op += '<optgroup label="سایر طرف‌های حساب">';
       others.forEach(function(s) {
-        op += '<option value="' + s.id + '"' + (s.id === preSelectedTo ? ' selected' : '') + '>' + esc(s.name) + '</option>';
+        op += '<option value="' + s.id + '"' + (s.id === preSelectedTo ? ' selected' : '') + '>' + esc(s.name) + Con.balTag(balMap[s.id] || 0) + '</option>';
       });
       op += '</optgroup>';
     }

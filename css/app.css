@@ -63,21 +63,33 @@ body {
 .lg-page {
   position: fixed;
   inset: 0;
-  background: linear-gradient(135deg, #0f172a, #1e293b);
+  background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%);
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 24px 16px;
+  overflow-y: auto;
   z-index: 9999
 }
 
-.lg-box {
+.login-card,
+.lg-page .lg-box {
   background: var(--sf);
-  border-radius: 16px;
-  padding: 40px 36px;
-  width: 380px;
-  max-width: 92vw;
+  border-radius: 20px;
+  padding: 36px 30px;
+  width: 390px;
+  max-width: min(420px, 92vw);
+  flex: 0 0 auto !important;
   text-align: center;
-  box-shadow: 0 25px 60px rgba(0, 0, 0, .3)
+  box-shadow: 0 25px 60px rgba(0, 0, 0, .45), 0 0 0 1px rgba(255, 255, 255, .08);
+  border: 1px solid rgba(255, 255, 255, .08);
+  margin: auto
+}
+
+body.dark .login-card,
+body.dark .lg-page .lg-box {
+  background: #1e293b;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, .6), 0 0 0 1px rgba(255, 255, 255, .1);
 }
 
 .lg-logo {
@@ -994,7 +1006,7 @@ body.dark .inv-tbl th {
   flex-wrap: wrap
 }
 
-.lg-box {
+.lg-sm .lg-box {
   flex: 1;
   min-width: 140px;
   padding: 14px;
@@ -1002,27 +1014,27 @@ body.dark .inv-tbl th {
   text-align: center
 }
 
-.lg-box.bl {
+.lg-sm .lg-box.bl {
   background: var(--pl);
   color: var(--p)
 }
 
-.lg-box.gn {
+.lg-sm .lg-box.gn {
   background: var(--okl);
   color: var(--ok)
 }
 
-.lg-box.rd {
+.lg-sm .lg-box.rd {
   background: var(--dl);
   color: var(--d)
 }
 
-.lg-box h4 {
+.lg-sm .lg-box h4 {
   font-size: 1.2rem;
   font-weight: 800
 }
 
-.lg-box p {
+.lg-sm .lg-box p {
   font-size: .76rem;
   margin-top: 2px;
   font-weight: 600

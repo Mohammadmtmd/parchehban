@@ -85,20 +85,18 @@ var Pay = {
       return isR ? (c.type === 'customer' || c.type === 'both') : (c.type === 'supplier' || c.type === 'both' || c.type === 'broker');
     });
     var banks = await DB.all('banks');
+    var balMap = await Con.allBalances();
 
     /* بازنویسی با ابزار مشترک فرم (js/05b-form.js).
        مهم‌ترین تغییر: مبلغ حالا جداکننده هزارگان زنده دارد و زیرش
        به حروف نوشته می‌شود — قبلاً input[type=number] بود و کاربر
        باید صفرها را می‌شمرد. */
 
-    /* مانده هر طرف حساب کنار نامش می‌آید تا موقع ثبت معلوم باشد
+    /* مانده واقعی و لحظه‌ای هر طرف حساب کنار نامش می‌آید تا موقع ثبت معلوم باشد
        چقدر بدهکار/بستانکار است */
     var people = rl.map(function(c) {
-      var bal = numOf(c.balance);
-      var tag = '';
-      if (bal > 0) tag = ' — بدهکار ' + UI.fn(bal);
-      else if (bal < 0) tag = ' — بستانکار ' + UI.fn(-bal);
-      return { v: c.id, t: c.name + tag };
+      var bal = balMap[c.id] || 0;
+      return { v: c.id, t: c.name + Con.balTag(bal) };
     });
     var accs = banks.map(function(b) { return { v: b.id, t: b.name }; });
 
@@ -222,28 +220,28 @@ var Pay = {
     }
     await this.ll();
   },
-  showTransfer: function() {
-    DB.all('contacts').then(function(ct) {
-      var customers = ct.filter(function(c) {
-        return c.type === 'customer' || c.type === 'both';
-      });
-      var suppliers = ct.filter(function(c) {
-        return c.type === 'supplier' || c.type === 'both';
-      });
-      var cO = '<option value="">— مشتری —</option>';
-      customers.forEach(function(c) {
-        cO += '<option value="' + c.id + '">' + esc(c.name) + '</option>';
-      });
-      var sO = '<option value="">— تأمین‌کننده —</option>';
-      suppliers.forEach(function(c) {
-        sO += '<option value="' + c.id + '">' + esc(c.name) + '</option>';
-      });
-      var td = todayJ();
-      var h = '<div class="fr mb"><div class="fg"><label>تاریخ</label><input class="fc" id="trDt" value="' + esc(td) + '"></div><div class="fg"><label>مبلغ</label><input class="fc" id="trAm" type="number" dir="ltr"></div></div>';
-      h += '<div class="fr mb"><div class="fg"><label>از مشتری</label><select class="fc" id="trFrom">' + cO + '</select></div><div class="fg"><label>به تأمین‌کننده</label><select class="fc" id="trTo">' + sO + '</select></div></div>';
-      h += '<div class="fg"><label>شرح</label><input class="fc" id="trNt" placeholder="بابت..."></div>';
-      UI.open('حواله بانکی', h, '<button class="btn bw" onclick="Pay.saveTransfer()">ثبت حواله</button><button class="btn bo" onclick="UI.close()">انصراف</button>');
+  showTransfer: async function() {
+    var ct = await DB.all('contacts');
+    var balMap = await Con.allBalances();
+    var customers = ct.filter(function(c) {
+      return c.type === 'customer' || c.type === 'both';
     });
+    var suppliers = ct.filter(function(c) {
+      return c.type === 'supplier' || c.type === 'both';
+    });
+    var cO = '<option value="">— مشتری —</option>';
+    customers.forEach(function(c) {
+      cO += '<option value="' + c.id + '">' + esc(c.name) + Con.balTag(balMap[c.id] || 0) + '</option>';
+    });
+    var sO = '<option value="">— تأمین‌کننده —</option>';
+    suppliers.forEach(function(c) {
+      sO += '<option value="' + c.id + '">' + esc(c.name) + Con.balTag(balMap[c.id] || 0) + '</option>';
+    });
+    var td = todayJ();
+    var h = '<div class="fr mb"><div class="fg"><label>تاریخ</label><input class="fc" id="trDt" value="' + esc(td) + '"></div><div class="fg"><label>مبلغ</label><input class="fc" id="trAm" type="number" dir="ltr"></div></div>';
+    h += '<div class="fr mb"><div class="fg"><label>از مشتری</label><select class="fc" id="trFrom">' + cO + '</select></div><div class="fg"><label>به تأمین‌کننده</label><select class="fc" id="trTo">' + sO + '</select></div></div>';
+    h += '<div class="fg"><label>شرح</label><input class="fc" id="trNt" placeholder="بابت..."></div>';
+    UI.open('حواله بانکی', h, '<button class="btn bw" onclick="Pay.saveTransfer()">ثبت حواله</button><button class="btn bo" onclick="UI.close()">انصراف</button>');
   },
   saveTransfer: async function() {
     var fromId = intOf(elVal('trFrom')) || null;

@@ -477,60 +477,42 @@ var Rep = {
   },
   _br: async function(w) {
     var ct = await DB.all('contacts');
-    /* اصلاح: invs دو بار با var تعریف شده بود */
-    var invs = await FY.byYear('invoices');
-    var pays = await FY.byYear('payments');
-    var chks = await FY.byYear('checks');
+    var balMap = await Con.allBalances();
     var res = [];
-    for (var ci = 0; ci < ct.length; ci++) {
-      var c = ct[ci];
-      var bal = await getOpenBal(c.id);
-      invs.forEach(function(inv) {
-        if (inv.type === 'proforma') return;
-        if (inv.contactId === c.id) {
-          bal += inv.type === 'sale' ? inv.grandTotal : -inv.grandTotal;
-          if (inv.type === 'sale' && inv.paidAmount) bal -= inv.paidAmount;
-          if (inv.type === 'purchase' && inv.paidAmount) bal += inv.paidAmount;
-        }
-        if (inv.brokerId === c.id && inv.brokerCommission) bal -= inv.brokerCommission;
-      });
-      pays.forEach(function(pay) {
-        if (pay.contactId === c.id) bal += pay.type === 'payment' ? pay.amount : -pay.amount;
-      });
-      chks.forEach(function(chk) {
-        var isRet = (chk.status === 'returned' || chk.status === 'returned_to_me' || chk.status === 'returned_to_customer');
-        if (chk.contactId === c.id && !isRet) {
-          if (chk.type === 'received') bal -= chk.amount;
-          if (chk.type === 'issued') bal += chk.amount;
-        }
-        var isSupplierActive = (chk.status === 'transferred' || (chk.status === 'passed' && chk.transferToId === c.id)) && !isRet;
-        if (isSupplierActive && chk.transferToId === c.id) bal += chk.amount;
-      });
+    ct.forEach(function(c) {
+      var bal = balMap[c.id] || 0;
       if (w === 'debtors' && bal > 0) res.push({
+        id: c.id,
         name: c.name,
         type: c.type,
+        phone: c.phone,
         bal: bal
       });
       if (w === 'creditors' && bal < 0) res.push({
+        id: c.id,
         name: c.name,
         type: c.type,
+        phone: c.phone,
         bal: bal
       });
-    }
+    });
     res.sort(function(a, b) {
       return Math.abs(b.bal) - Math.abs(a.bal);
     });
-    var lb = w === 'debtors' ? 'بدهکاران' : 'بستانکاران';
+    var lb = w === 'debtors' ? 'بدهکاران (طلب از مشتریان)' : 'بستانکاران (بدهی به تأمین‌کنندگان)';
     var tr = '',
       tot = 0;
     res.forEach(function(r, i) {
       tot += r.bal;
-      tr += '<tr><td>' + (i + 1) + '</td><td><strong>' + r.name + '</strong></td>';
+      tr += '<tr class="clk" onclick="Led.show(' + r.id + ')" title="کلیک برای مشاهده صورت‌حساب معین ' + esc(r.name) + '">';
+      tr += '<td>' + (i + 1) + '</td><td><strong>' + esc(r.name) + '</strong></td>';
       tr += '<td><span class="tg ' + Con.tt(r.type) + '">' + Con.tl(r.type) + '</span></td>';
-      tr += '<td style="font-weight:700;color:var(' + (w === 'debtors' ? 'd' : 'ok') + ')">' + UI.fn(Math.abs(r.bal)) + ' ریال</td></tr>';
+      tr += '<td>' + esc(r.phone || '—') + '</td>';
+      tr += '<td style="font-weight:700;color:var(' + (w === 'debtors' ? 'd' : 'ok') + ')">' + UI.fn(Math.abs(r.bal)) + ' ریال</td>';
+      tr += '<td style="white-space:nowrap"><button class="bi2" title="دفتر معین" onclick="event.stopPropagation();Led.show(' + r.id + ')"><i class="bi bi-journal-text"></i> معین</button></td></tr>';
     });
-    var h = '<div class="cd"><div class="cd-h">' + lb + ' <span class="tg ' + (w === 'debtors' ? 'tg-r' : 'tg-g') + '">' + res.length + ' نفر — ' + UI.fn(Math.abs(tot)) + ' ریال</span></div>';
-    if (res.length) h += '<div class="tw"><table><thead><tr><th>#</th><th>نام</th><th>نوع</th><th>مانده</th></tr></thead><tbody>' + tr + '</tbody></table></div></div>';
+    var h = '<div class="cd"><div class="cd-h">' + lb + ' <span class="tg ' + (w === 'debtors' ? 'tg-r' : 'tg-g') + '">' + res.length + ' نفر — جمع: ' + UI.fn(Math.abs(tot)) + ' ریال</span></div>';
+    if (res.length) h += '<div class="tw"><table><thead><tr><th>#</th><th>نام</th><th>نوع</th><th>تلفن</th><th>مانده حساب</th><th></th></tr></thead><tbody>' + tr + '</tbody></table></div></div>';
     else h += '<div class="cd-b"><p>موردی نیست</p></div></div>';
     setHTML('rC', h);
   }

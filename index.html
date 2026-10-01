@@ -93,12 +93,12 @@
 
 <body>
 <!-- LOGIN -->
-<div id="loginPage" class="lg-page" style="display:none"><div class="lg-box">
+<div id="loginPage" class="lg-page" style="display:none"><div class="login-card lg-box">
 <div class="lg-logo">پ</div>
 <h2 style="margin-bottom:4px">پارچه‌بان</h2>
 <p style="color:var(--txs);font-size:.85rem;margin-bottom:24px">سیستم مدیریت انبار و فروش</p>
-<div class="fg"><label>نام کاربری</label><input class="fc" id="loginUser" placeholder="نام کاربری" autocomplete="username"></div>
-<div class="fg"><label>رمز عبور</label>
+<div class="fg" style="text-align:right"><label>نام کاربری</label><input class="fc" id="loginUser" placeholder="نام کاربری" autocomplete="username"></div>
+<div class="fg" style="text-align:right"><label>رمز عبور</label>
   <div style="position:relative">
     <input class="fc" id="loginPass" type="password" placeholder="رمز عبور" autocomplete="current-password" style="padding-inline-end:38px">
     <button type="button" onclick="Auth.togglePassVis('loginPass', this)" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--txs);cursor:pointer;font-size:1.15rem;padding:4px;display:flex;align-items:center;justify-content:center" title="نمایش یا مخفی‌سازی رمز عبور"><i class="bi bi-eye"></i></button>
