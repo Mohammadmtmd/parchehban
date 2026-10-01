@@ -49,7 +49,7 @@ var UI = {
     setHTML('modalBody', b || '');
     setHTML('modalFoot', f || '');
     var box = document.getElementById('modalBox');
-    if (box) box.className = w ? 'md w' : 'md';
+    if (box) box.className = w === 'xl' ? 'md xl' : (w ? 'md w' : 'md');
     var ov = document.getElementById('modalOverlay');
     if (ov) ov.classList.add('show');
   },

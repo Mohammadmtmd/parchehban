@@ -13,7 +13,7 @@
    توجه: داده‌های حسابداری در IndexedDB است و ربطی به این حافظه نهان
    ندارد؛ پاک شدن cache هیچ سندی را از بین نمی‌برد. */
 
-var VERSION = 'pb-v10.7';
+var VERSION = 'pb-v10.9';
 var SHELL_CACHE = VERSION + '-shell';
 var CDN_CACHE = VERSION + '-cdn';
 
@@ -26,6 +26,8 @@ var SHELL = [
   './vendor/vazirmatn.css',
   './vendor/bootstrap-icons.css',
   './vendor/chart.umd.min.js',
+  './vendor/html2canvas.min.js',
+  './vendor/jspdf.umd.min.js',
   './vendor/fonts/bootstrap-icons.woff2',
   './vendor/fonts/vazirmatn-Dxxo8j6PP2D_kU2muijlE8WWMmk.woff2',
   './vendor/fonts/vazirmatn-Dxxo8j6PP2D_kU2muijlGMWWMmk.woff2',

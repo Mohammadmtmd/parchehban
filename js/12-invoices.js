@@ -60,7 +60,7 @@ var Inv = {
       var rm = (v.grandTotal || 0) - (v.paidAmount || 0);
       var sg = rm <= 0 ? 'tg-g' : v.paidAmount > 0 ? 'tg-o' : 'tg-r';
       var sl = rm <= 0 ? 'تسویه' : v.paidAmount > 0 ? 'جزئی' : 'باز';
-      r += '<tr><td>' + (((pg.page - 1) * pg.per) + i + 1) + '</td><td>' + esc(v.invoiceNumber || '—') + '</td><td>' + v.date + '</td><td>' + esc(cm[v.contactId] || '—') + '</td><td>' + UI.fn(v.subtotal) + '</td><td>' + UI.fn(v.shippingCost || 0) + '</td><td>' + UI.fn(v.discount || 0) + '</td><td style="font-weight:700">' + UI.fn(v.grandTotal) + '</td><td>' + UI.fn(v.paidAmount) + '</td><td style="color:' + (rm > 0 ? 'var(--d)' : 'var(--ok)') + ';font-weight:700">' + UI.fn(rm) + '</td><td><span class="tg ' + sg + '">' + sl + '</span></td><td style="white-space:nowrap"><button class="bi2" onclick="Inv.vw(' + v.id + ')"><i class="bi bi-eye"></i></button> <button class="bi2" onclick="Inv.pr(' + v.id + ',\'a4\')"><span style="font-size:.6rem;font-weight:800">A4</span></button> <button class="bi2" onclick="Inv.pr(' + v.id + ',\'a5\')"><span style="font-size:.6rem;font-weight:800">A5</span></button> <button class="bi2" onclick="Inv.showF(\'' + type + '\',' + v.id + ')"><i class="bi bi-pencil"></i></button> <button class="bi2 d" onclick="Inv.rm(' + v.id + ',\'' + type + '\')"><i class="bi bi-trash3"></i></button></td></tr>';
+      r += '<tr><td>' + (((pg.page - 1) * pg.per) + i + 1) + '</td><td>' + esc(v.invoiceNumber || '—') + '</td><td>' + v.date + '</td><td>' + esc(cm[v.contactId] || '—') + '</td><td>' + UI.fn(v.subtotal) + '</td><td>' + UI.fn(v.shippingCost || 0) + '</td><td>' + UI.fn(v.discount || 0) + '</td><td style="font-weight:700">' + UI.fn(v.grandTotal) + '</td><td>' + UI.fn(v.paidAmount) + '</td><td style="color:' + (rm > 0 ? 'var(--d)' : 'var(--ok)') + ';font-weight:700">' + UI.fn(rm) + '</td><td><span class="tg ' + sg + '">' + sl + '</span></td><td style="white-space:nowrap"><button class="bi2" title="پیش‌نمایش چاپ و تنظیمات" onclick="Inv.vw(' + v.id + ')"><i class="bi bi-eye"></i></button> <button class="bi2" title="پیش‌نمایش و چاپ A4" onclick="Inv.vw(' + v.id + ',\'a4\')"><span style="font-size:.6rem;font-weight:800">A4</span></button> <button class="bi2" title="پیش‌نمایش و چاپ A5" onclick="Inv.vw(' + v.id + ',\'a5\')"><span style="font-size:.6rem;font-weight:800">A5</span></button> <button class="bi2" title="ویرایش" onclick="Inv.showF(\'' + type + '\',' + v.id + ')"><i class="bi bi-pencil"></i></button> <button class="bi2 d" title="حذف" onclick="Inv.rm(' + v.id + ',\'' + type + '\')"><i class="bi bi-trash3"></i></button></td></tr>';
     }
     var ft = '<tfoot><tr style="background:var(--bg);font-weight:700">';
     ft += '<td colspan="4">جمع ' + ls.length + ' فاکتور</td>';
@@ -165,7 +165,7 @@ var Inv = {
     if (!isP) h += '<div class="fg"><label>حساب دریافت/پرداخت فاکتور</label><select class="fc" id="iBk">' + bankO + '</select><div class="hint-box" style="margin-top:8px">اگر مبلغ پرداختی وارد شود، سند دریافت/پرداخت به همین حساب متصل می‌شود و در گزارش گردش حساب نمایش داده خواهد شد.</div></div>';
     h += '<div class="inv-totals" id="iT"></div>';
     h += '<div class="fr" style="margin-top:10px"><div class="fg"><label>سایز پرینت</label><select class="fc" id="iPrt"><option value="a4"' + (!inv || inv.printSize !== 'a5' ? ' selected' : '') + '>A4</option><option value="a5"' + (inv && inv.printSize === 'a5' ? ' selected' : '') + '>A5</option></select></div><div class="fg"><label>توضیحات</label><input class="fc" id="iNt" value="' + esc(inv ? (inv.notes || '') : '') + '"></div></div>';
-    UI.open(ft, h, '<button class="btn bp" onclick="Inv.save(\'' + type + '\',' + (id || 'null') + ')">' + (inv ? 'ذخیره' : 'ثبت') + '</button>' + (inv ? '<button class="btn bg" onclick="Inv.pr(' + inv.id + ',document.getElementById(\'iPrt\').value)"><i class="bi bi-printer"></i>پرینت</button>' : '') + '<button class="btn bo" onclick="UI.close()">انصراف</button>', true);
+    UI.open(ft, h, '<button class="btn bp" onclick="Inv.save(\'' + type + '\',' + (id || 'null') + ')">' + (inv ? 'ذخیره' : 'ثبت') + '</button>' + (inv ? '<button class="btn bg" onclick="Inv.vw(' + inv.id + ',{size:document.getElementById(\'iPrt\').value})"><i class="bi bi-printer"></i>پیش‌نمایش و چاپ</button>' : '') + '<button class="btn bo" onclick="UI.close()">انصراف</button>', true);
     this.ri();
     this.calc();
     if (inv && inv.contactId) this.showBal();
@@ -466,108 +466,487 @@ var Inv = {
     return linked.length;
   },
 
-  /* ══ سازنده مشترک HTML فاکتور ══
-     قبلاً دو تابع vw (پیش‌نمایش) و pr (چاپ) حدود ۶۰ خط HTML یکسان را
-     تکرار می‌کردند و هر تغییر باید در دو جا اعمال می‌شد. اکنون یک
-     سازنده مشترک با پارامتر اندازه (a4/a5) وجود دارد. */
-  _html: async function(v, sz) {
+  /* ══ سازنده پیشرفته و سفارشی‌سازی‌پذیر HTML فاکتور ══ */
+  _html: async function(v, opts) {
+    if (typeof opts === 'string') opts = { size: opts };
+    opts = Object.assign({
+      size: (v && v.printSize) || 'a4',
+      orientation: 'portrait',
+      showTotalBal: true,
+      showPayment: true,
+      showPrices: true,
+      showCatalogShade: true,
+      showSignature: true,
+      showNotes: true,
+      customNote: '',
+      fontSize: 'normal'
+    }, opts || {});
+
     var ct = await DB.all('contacts'),
-      cm = {};
+      cm = {},
+      cMapFull = {};
     ct.forEach(function(c) {
       cm[c.id] = c.name;
+      cMapFull[c.id] = c;
     });
-    var a5 = sz === 'a5';
+
+    var a5 = opts.size === 'a5';
+    var isLand = opts.orientation === 'landscape';
     var isS = v.type === 'sale';
     var isPf = v.type === 'proforma';
     var items = v.items || [];
     var rm = numOf(v.grandTotal) - numOf(v.paidAmount);
     var cBal = isPf ? 0 : await this.contactBal(v.contactId);
+    var cObj = cMapFull[v.contactId];
     var custName = cm[v.contactId] || '—';
+    var custPhone = cObj && cObj.phone ? cObj.phone : '';
+    var custAddress = cObj && cObj.address ? cObj.address : '';
+
     var headTitle = isPf ? 'پیش فاکتور فروش' : (isS ? 'صورتحساب فروش' : 'صورتحساب خرید');
-    var personLabel = isS || isPf ? 'مشتری:' : 'تأمین‌کننده:';
-    var pd = a5 ? '8mm' : '12mm';
-    var fs = a5 ? '9.5px' : '11px';
-    var bd = 'border:1px solid #ccc;padding:3px 6px;';
-    var th = 'border:1px solid #ccc;padding:4px 6px;background:#f0f0f0;text-align:center;white-space:nowrap;';
+    var personLabel = isS || isPf ? 'خریدار / مشتری:' : 'فروشنده / تأمین‌کننده:';
+
+    var pd = a5 ? (isLand ? '6mm 9mm' : '8mm 9mm') : (isLand ? '10mm 14mm' : '12mm 14mm');
+    var fs = a5 ? (opts.fontSize === 'compact' ? '8.5px' : opts.fontSize === 'large' ? '11px' : '9.5px') :
+                  (opts.fontSize === 'compact' ? '10px' : opts.fontSize === 'large' ? '12.5px' : '11px');
+
+    var bd = 'border:1px solid #cbd5e1;padding:4px 6px;';
+    var th = 'border:1px solid #cbd5e1;padding:5px 6px;background:#f1f5f9;text-align:center;font-weight:700;color:#0f172a;white-space:nowrap;';
+
     var r = '';
     items.forEach(function(it, i) {
-      r += '<tr style="white-space:nowrap">' +
-        '<td style="' + bd + 'text-align:center">' + UI.fn(i + 1) + '</td>' +
-        '<td style="' + bd + 'white-space:nowrap">' + esc(it.productName || '—') + '</td>' +
-        '<td style="' + bd + 'text-align:center">' + esc(it.catalog || '—') + '</td>' +
-        '<td style="' + bd + 'text-align:center">' + esc(it.shade || '—') + '</td>' +
-        '<td style="' + bd + 'text-align:center">' + UI.fn(it.quantity) + '</td>' +
-        '<td style="' + bd + 'text-align:center">' + UI.fn(it.unitPrice) + '</td>' +
-        '<td style="' + bd + 'text-align:center">' + UI.fn(it.total) + '</td></tr>';
+      r += '<tr style="border-bottom:1px solid #e2e8f0">' +
+        '<td style="' + bd + 'text-align:center;width:28px">' + UI.fn(i + 1) + '</td>' +
+        '<td style="' + bd + 'font-weight:600">' + esc(it.productName || '—') + '</td>';
+      if (opts.showCatalogShade) {
+        r += '<td style="' + bd + 'text-align:center;width:65px">' + esc(it.catalog || '—') + '</td>' +
+             '<td style="' + bd + 'text-align:center;width:55px">' + esc(it.shade || '—') + '</td>';
+      }
+      r += '<td style="' + bd + 'text-align:center;width:55px;font-weight:700">' + UI.fn(it.quantity) + '</td>' +
+           '<td style="' + bd + 'text-align:center;width:45px;color:#64748b">' + esc(it.unit || 'متر') + '</td>';
+      if (opts.showPrices) {
+        r += '<td style="' + bd + 'text-align:center;width:75px">' + UI.fn(it.unitPrice) + '</td>' +
+             '<td style="' + bd + 'text-align:center;width:85px;font-weight:700">' + UI.fn(it.total) + '</td>';
+      }
+      r += '</tr>';
     });
+
     var addRow = function(lab, val, bold, color) {
-      var st = (bold ? 'background:#f0f0f0;font-weight:800;' : '') + (color ? 'color:' + color + ';' : '');
-      return '<tr><td style="padding:4px 10px;border:1px solid #ddd;white-space:nowrap;' + st + '">' + lab +
-        '</td><td style="padding:4px 10px;border:1px solid #ddd;text-align:left;white-space:nowrap;' + st + '">' + val + '</td></tr>';
+      var st = (bold ? 'background:#f8fafc;font-weight:800;' : '') + (color ? 'color:' + color + ';' : 'color:#0f172a;');
+      return '<tr><td style="padding:4px 10px;border:1px solid #cbd5e1;white-space:nowrap;' + st + '">' + lab +
+        '</td><td style="padding:4px 10px;border:1px solid #cbd5e1;text-align:left;white-space:nowrap;' + st + '">' + val + '</td></tr>';
     };
-    var h = '<div style="direction:rtl;font-family:Vazirmatn,sans-serif;padding:' + pd +
-      ';font-size:' + fs + ';position:relative;min-height:' + (a5 ? '180mm' : '250mm') + ';background:#fff">';
-    h += '<div style="text-align:center;border-bottom:2.5px double #000;padding-bottom:10px;margin-bottom:14px">' +
-      '<h1 style="font-size:' + (a5 ? '15px' : '20px') + ';margin:0;font-weight:800">' + headTitle + '</h1>' +
-      '<div style="font-size:11px;color:#555;margin-top:2px">پارچه‌بان</div>' +
-      '<div style="display:flex;justify-content:space-between;margin-top:8px;font-size:10px;color:#444">' +
-      '<div>شماره: <strong>' + esc(v.invoiceNumber) + '</strong></div><div>تاریخ: ' + esc(v.date) + '</div></div></div>';
-    h += '<div style="margin-bottom:14px;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:10px;background:#fafafa">' +
-      '<strong>' + personLabel + '</strong> ' + esc(custName) + '</div>';
-    h += '<table style="width:100%;border-collapse:collapse;margin-bottom:14px;font-size:' + (a5 ? '8.5px' : '10px') +
-      '"><thead><tr><th style="' + th + 'width:25px">#</th><th style="' + th + '">شرح کالا</th>' +
-      '<th style="' + th + 'width:65px">کالیته</th><th style="' + th + 'width:55px">شید</th>' +
-      '<th style="' + th + 'width:45px">مقدار</th><th style="' + th + 'width:70px">فی</th>' +
-      '<th style="' + th + 'width:80px">جمع</th></tr></thead><tbody>' + r + '</tbody></table>';
-    h += '<div style="display:flex;justify-content:flex-end;margin-bottom:16px">' +
-      '<table style="border-collapse:collapse;font-size:' + (a5 ? '8px' : '9.5px') + ';width:auto">' +
-      addRow('جمع اقلام', UI.fn(v.subtotal) + ' ریال', false);
-    if (v.shippingCost) h += addRow('حمل', UI.fn(v.shippingCost) + ' ریال', false);
-    if (v.discount) h += addRow('تخفیف', '−' + UI.fn(v.discount) + ' ریال', false, '#16a34a');
-    h += addRow('مبلغ قابل پرداخت', UI.fn(v.grandTotal) + ' ریال', true);
-    if (v.paidAmount && !isPf) h += addRow('پرداخت شده', UI.fn(v.paidAmount) + ' ریال', false, '#16a34a');
-    if (rm > 0 && !isPf) h += addRow('مانده این فاکتور', UI.fn(rm) + ' ریال', false, '#dc2626');
-    if (!isPf && Math.abs(cBal) > 0) h += addRow('مانده حساب کل', UI.fn(Math.abs(cBal)) + ' ریال', true, '#dc2626');
-    h += '</table></div>';
-    h += '<div style="margin-bottom:16px;padding:6px 10px;border:1px dashed #bbb;border-radius:6px;font-size:9px;background:#fafafa;line-height:1.8">' +
-      '<div><strong>مبلغ کل:</strong> ' + esc(num2fa(v.grandTotal)) + '</div>';
-    if (!isPf && Math.abs(cBal) > 0) h += '<div><strong>مانده حساب کل:</strong> ' + esc(num2fa(Math.abs(cBal))) + '</div>';
+
+    var h = '<div style="direction:rtl;font-family:Vazirmatn,system-ui,sans-serif;padding:' + pd +
+      ';font-size:' + fs + ';line-height:1.6;color:#0f172a;background:#ffffff;box-sizing:border-box;min-height:100%;display:flex;flex-direction:column">';
+
+    // Header
+    h += '<div style="border-bottom:2.5px double #0f172a;padding-bottom:10px;margin-bottom:12px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center">' +
+      '<div>' +
+        '<h1 style="font-size:' + (a5 ? '15px' : '19px') + ';margin:0;font-weight:800;color:#0f172a">' + headTitle + '</h1>' +
+        '<div style="font-size:11px;color:#64748b;margin-top:2px">سیستم حسابداری و فروش پارچه‌بان</div>' +
+      '</div>' +
+      '<div style="text-align:left;font-size:10.5px;color:#334155;line-height:1.6">' +
+        '<div>شماره فاکتور: <strong style="font-size:12px;color:#0f172a">' + esc(v.invoiceNumber || v.id) + '</strong></div>' +
+        '<div>تاریخ: <strong>' + esc(v.date || todayJ()) + '</strong></div>' +
+      '</div></div></div>';
+
+    // Contact Box
+    h += '<div style="margin-bottom:12px;padding:8px 12px;border:1px solid #cbd5e1;border-radius:6px;font-size:10px;background:#f8fafc;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">' +
+      '<div><strong>' + personLabel + '</strong> <span style="font-size:11.5px;font-weight:700">' + esc(custName) + '</span></div>';
+    if (custPhone) h += '<div><span style="color:#64748b">تلفن:</span> <strong>' + esc(custPhone) + '</strong></div>';
+    if (custAddress) h += '<div style="width:100%;font-size:9.5px;color:#475569"><span style="color:#64748b">نشانی:</span> ' + esc(custAddress) + '</div>';
     h += '</div>';
-    if (v.notes) h += '<div style="margin-bottom:14px;font-size:10px"><strong>توضیحات:</strong> ' + esc(v.notes) + '</div>';
-    h += '<div style="position:absolute;bottom:' + pd + ';left:' + pd + ';right:' + pd +
-      ';display:flex;justify-content:space-between;padding-top:10px;border-top:1px solid #ccc">' +
-      '<div style="width:160px;text-align:center;font-size:9px;padding-top:20px;border-top:1px solid #999">مهر و امضای ' +
-      (isS ? 'فروشنده' : 'خریدار') + '</div>' +
-      '<div style="width:160px;text-align:center;font-size:9px;padding-top:20px;border-top:1px solid #999">مهر و امضای ' +
-      (isS ? 'خریدار' : 'فروشنده') + '</div></div></div>';
+
+    // Table Header
+    h += '<table style="width:100%;border-collapse:collapse;margin-bottom:12px;font-size:' + (a5 ? '9px' : '10.5px') +
+      '"><thead><tr><th style="' + th + '">#</th><th style="' + th + '">شرح کالا / پارچه</th>';
+    if (opts.showCatalogShade) {
+      h += '<th style="' + th + '">کالیته</th><th style="' + th + '">شید</th>';
+    }
+    h += '<th style="' + th + '">مقدار</th><th style="' + th + '">واحد</th>';
+    if (opts.showPrices) {
+      h += '<th style="' + th + '">فی (ریال)</th><th style="' + th + '">جمع کل (ریال)</th>';
+    }
+    h += '</tr></thead><tbody>' + r + '</tbody></table>';
+
+    // Totals Section
+    if (opts.showPrices) {
+      h += '<div style="display:flex;justify-content:flex-end;margin-bottom:12px">' +
+        '<table style="border-collapse:collapse;font-size:' + (a5 ? '8.5px' : '10px') + ';width:auto">' +
+        addRow('جمع اقلام', UI.fn(v.subtotal) + ' ریال', false);
+      if (v.shippingCost) h += addRow('هزینه حمل', UI.fn(v.shippingCost) + ' ریال', false);
+      if (v.discount) h += addRow('تخفیف', '−' + UI.fn(v.discount) + ' ریال', false, '#16a34a');
+      h += addRow('مبلغ قابل پرداخت', UI.fn(v.grandTotal) + ' ریال', true);
+      if (v.paidAmount && !isPf && opts.showPayment) h += addRow('مبلغ پرداخت شده', UI.fn(v.paidAmount) + ' ریال', false, '#16a34a');
+      if (rm > 0 && !isPf && opts.showPayment) h += addRow('مانده این فاکتور', UI.fn(rm) + ' ریال', false, '#dc2626');
+      if (!isPf && Math.abs(cBal) > 0 && opts.showTotalBal) {
+        var balLabel = cBal > 0 ? 'بدهکار' : 'بستانکار';
+        h += addRow('مانده حساب کل (' + balLabel + ')', UI.fn(Math.abs(cBal)) + ' ریال', true, cBal > 0 ? '#dc2626' : '#16a34a');
+      }
+      h += '</table></div>';
+
+      // Words box
+      h += '<div style="margin-bottom:12px;padding:6px 10px;border:1px dashed #94a3b8;border-radius:6px;font-size:9.5px;background:#f8fafc;line-height:1.7">' +
+        '<div><strong>مبلغ فاکتور به حروف:</strong> ' + esc(num2fa(v.grandTotal)) + ' ریال</div>';
+      if (!isPf && Math.abs(cBal) > 0 && opts.showTotalBal) {
+        h += '<div><strong>مانده کل حساب به حروف:</strong> ' + esc(num2fa(Math.abs(cBal))) + ' ریال (' + (cBal > 0 ? 'بدهکار' : 'بستانکار') + ')</div>';
+      }
+      h += '</div>';
+    }
+
+    // Notes
+    if (opts.showNotes && v.notes) {
+      h += '<div style="margin-bottom:8px;font-size:9.5px;color:#334155;background:#f8fafc;padding:6px 10px;border-radius:6px;border:1px solid #e2e8f0">' +
+        '<strong>توضیحات فاکتور:</strong> ' + esc(v.notes) + '</div>';
+    }
+    if (opts.customNote) {
+      h += '<div style="margin-bottom:8px;font-size:9.5px;color:#1e293b;background:#eff6ff;padding:6px 10px;border-radius:6px;border:1px solid #bfdbfe">' +
+        '<strong>یادداشت اختصاصی:</strong> ' + esc(opts.customNote) + '</div>';
+    }
+
+    // Signatures
+    if (opts.showSignature) {
+      h += '<div style="margin-top:auto;padding-top:16px;display:flex;justify-content:space-between;border-top:1px solid #cbd5e1">' +
+        '<div style="width:170px;text-align:center;font-size:9.5px;padding-top:28px;border-top:1px solid #64748b">مهر و امضای ' +
+        (isS ? 'فروشنده' : 'خریدار') + '</div>' +
+        '<div style="width:170px;text-align:center;font-size:9.5px;padding-top:28px;border-top:1px solid #64748b">مهر و امضای ' +
+        (isS ? 'خریدار / تحویل‌گیرنده' : 'فروشنده') + '</div></div>';
+    }
+
+    h += '</div>';
     return h;
   },
 
-  vw: async function(id) {
+  /* ══ مودال استودیوی پیش‌نمایش و تنظیمات چاپ ══ */
+  vw: async function(id, initialOpts) {
     var v = await DB.get('invoices', id);
     if (!v) {
       UI.toast('فاکتور یافت نشد', 'e');
       return;
     }
-    var h = await this._html(v, v.printSize === 'a5' ? 'a5' : 'a4');
-    UI.open('پیش‌نمایش ' + (v.invoiceNumber || ''), h,
-      '<button class="btn bp" onclick="Inv.pr(' + v.id + ',\'a4\')">چاپ A4</button>' +
-      '<button class="btn bw" onclick="Inv.pr(' + v.id + ',\'a5\')">چاپ A5</button>' +
-      '<button class="btn bo" onclick="UI.close()">بستن</button>', true);
+    this._currentInvoice = v;
+    var defaultSize = (initialOpts && initialOpts.size) || v.printSize || 'a4';
+    this._currentPrintOpts = Object.assign({
+      size: defaultSize,
+      orientation: 'portrait',
+      showTotalBal: true,
+      showPayment: true,
+      showPrices: true,
+      showCatalogShade: true,
+      showSignature: true,
+      showNotes: true,
+      customNote: '',
+      fontSize: 'normal',
+      scale: defaultSize === 'a5' ? 1.0 : 0.85
+    }, initialOpts || {});
+
+    this._zoomLevel = this._currentPrintOpts.scale;
+    var modalHtml = this._buildPreviewModalHtml(v, this._currentPrintOpts);
+
+    UI.open('پیش‌نمایش چاپ — فاکتور شماره ' + (v.invoiceNumber || v.id), modalHtml,
+      '<button class="btn bp" onclick="Inv.execPrint()"><i class="bi bi-printer-fill"></i> چاپ با چاپگر</button>' +
+      '<button class="btn bdn" onclick="Inv.exportPDF()"><i class="bi bi-file-earmark-pdf-fill"></i> ذخیره PDF</button>' +
+      '<button class="btn bg" onclick="Inv.exportJPEG()"><i class="bi bi-file-earmark-image-fill"></i> ذخیره عکس (JPEG)</button>' +
+      '<button class="btn bo" onclick="UI.close()">بستن</button>', 'xl');
+
+    this.updatePreviewSheet();
   },
 
   pr: async function(id, sz) {
-    var v = await DB.get('invoices', id);
-    if (!v) {
-      UI.toast('فاکتور یافت نشد', 'e');
-      return;
+    await this.vw(id, { size: sz || 'a4' });
+  },
+
+  _buildPreviewModalHtml: function(v, opts) {
+    var h = '<div class="pr-prev-layout">' +
+      // Sidebar: Print Options
+      '<div class="pr-prev-sidebar">' +
+        '<div class="pr-opt-sec">' +
+          '<div class="pr-opt-title"><i class="bi bi-file-earmark-text"></i> اندازه برگه چاپ</div>' +
+          '<div class="pr-btn-group">' +
+            '<button type="button" class="' + (opts.size === 'a4' ? 'active' : '') + '" onclick="Inv.setPrintOpt(\'size\',\'a4\')">A4 (بزرگ)</button>' +
+            '<button type="button" class="' + (opts.size === 'a5' ? 'active' : '') + '" onclick="Inv.setPrintOpt(\'size\',\'a5\')">A5 (کوچک)</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="pr-opt-sec">' +
+          '<div class="pr-opt-title"><i class="bi bi-arrow-repeat"></i> جهت صفحه</div>' +
+          '<div class="pr-btn-group">' +
+            '<button type="button" class="' + (opts.orientation === 'portrait' ? 'active' : '') + '" onclick="Inv.setPrintOpt(\'orientation\',\'portrait\')">عمودی</button>' +
+            '<button type="button" class="' + (opts.orientation === 'landscape' ? 'active' : '') + '" onclick="Inv.setPrintOpt(\'orientation\',\'landscape\')">افقی</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="pr-opt-sec">' +
+          '<div class="pr-opt-title"><i class="bi bi-fonts"></i> اندازه قلم و فشردگی</div>' +
+          '<div class="pr-btn-group">' +
+            '<button type="button" class="' + (opts.fontSize === 'compact' ? 'active' : '') + '" onclick="Inv.setPrintOpt(\'fontSize\',\'compact\')">فشرده</button>' +
+            '<button type="button" class="' + (opts.fontSize === 'normal' ? 'active' : '') + '" onclick="Inv.setPrintOpt(\'fontSize\',\'normal\')">معمولی</button>' +
+            '<button type="button" class="' + (opts.fontSize === 'large' ? 'active' : '') + '" onclick="Inv.setPrintOpt(\'fontSize\',\'large\')">درشت</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="pr-opt-sec">' +
+          '<div class="pr-opt-title"><i class="bi bi-check2-square"></i> محتوای چاپی فاکتور</div>' +
+          '<label class="pr-check-label"><input type="checkbox" id="prOptPrices" ' + (opts.showPrices ? 'checked' : '') + ' onchange="Inv.onPrintCheckboxChange()"> <span>نمایش قیمت‌ها و مبالغ ریالی</span></label>' +
+          '<label class="pr-check-label"><input type="checkbox" id="prOptPayment" ' + (opts.showPayment ? 'checked' : '') + ' onchange="Inv.onPrintCheckboxChange()"> <span>جزئیات پرداخت و مانده این فاکتور</span></label>' +
+          '<label class="pr-check-label"><input type="checkbox" id="prOptTotalBal" ' + (opts.showTotalBal ? 'checked' : '') + ' onchange="Inv.onPrintCheckboxChange()"> <span>نمایش مانده حساب کل شخص</span></label>' +
+          '<label class="pr-check-label"><input type="checkbox" id="prOptCatalog" ' + (opts.showCatalogShade ? 'checked' : '') + ' onchange="Inv.onPrintCheckboxChange()"> <span>ستون کالیته و شید</span></label>' +
+          '<label class="pr-check-label"><input type="checkbox" id="prOptSignature" ' + (opts.showSignature ? 'checked' : '') + ' onchange="Inv.onPrintCheckboxChange()"> <span>کادر مهر و امضای طرفین</span></label>' +
+          '<label class="pr-check-label"><input type="checkbox" id="prOptNotes" ' + (opts.showNotes ? 'checked' : '') + ' onchange="Inv.onPrintCheckboxChange()"> <span>توضیحات ثبت‌شده فاکتور</span></label>' +
+        '</div>' +
+        '<div class="pr-opt-sec">' +
+          '<div class="pr-opt-title"><i class="bi bi-pencil-square"></i> متن سفارشی پاورقی</div>' +
+          '<input class="fc" id="prOptCustomNote" placeholder="مثلاً: اجناس تا ۴۸ ساعت قابل تعویض است" value="' + esc(opts.customNote || '') + '" oninput="Inv.onPrintCustomNoteChange()" style="font-size:.8rem;padding:6px 10px">' +
+        '</div>' +
+      '</div>' +
+      // Main Stage: Document Canvas
+      '<div class="pr-prev-stage">' +
+        '<div class="pr-prev-toolbar">' +
+          '<div id="prPaperBadge" style="font-weight:700;display:flex;align-items:center;gap:6px">' +
+            '<i class="bi bi-aspect-ratio"></i> ' + (opts.size.toUpperCase()) + ' ' + (opts.orientation === 'landscape' ? 'افقی' : 'عمودی') +
+          '</div>' +
+          '<div class="pr-prev-zoom-controls">' +
+            '<button type="button" class="pr-prev-zoom-btn" onclick="Inv.zoom(-0.1)" title="کوچک‌نمایی"><i class="bi bi-zoom-out"></i></button>' +
+            '<span id="prZoomLabel" style="font-size:.78rem;min-width:44px;text-align:center">' + Math.round(opts.scale * 100) + '٪</span>' +
+            '<button type="button" class="pr-prev-zoom-btn" onclick="Inv.zoom(0.1)" title="بزرگ‌نمایی"><i class="bi bi-zoom-in"></i></button>' +
+            '<button type="button" class="pr-prev-zoom-btn" onclick="Inv.zoomReset()" title="اندازه طبیعی">۱۰۰٪</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="pr-prev-scroll" id="prPrevScroll">' +
+          '<div class="pr-paper-wrap" id="prPaperWrap" style="transform:scale(' + opts.scale + ')">' +
+            '<div id="invPaperSheet" class="pr-paper-sheet ' + opts.size + ' ' + opts.orientation + '">' +
+              '<!-- محتوای برگه فاکتور -->' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+    return h;
+  },
+
+  setPrintOpt: function(key, val) {
+    if (!this._currentPrintOpts) return;
+    this._currentPrintOpts[key] = val;
+    this._refreshSettingsUi();
+    this.updatePreviewSheet();
+  },
+
+  onPrintCheckboxChange: function() {
+    if (!this._currentPrintOpts) return;
+    this._currentPrintOpts.showPrices = !!(document.getElementById('prOptPrices') && document.getElementById('prOptPrices').checked);
+    this._currentPrintOpts.showPayment = !!(document.getElementById('prOptPayment') && document.getElementById('prOptPayment').checked);
+    this._currentPrintOpts.showTotalBal = !!(document.getElementById('prOptTotalBal') && document.getElementById('prOptTotalBal').checked);
+    this._currentPrintOpts.showCatalogShade = !!(document.getElementById('prOptCatalog') && document.getElementById('prOptCatalog').checked);
+    this._currentPrintOpts.showSignature = !!(document.getElementById('prOptSignature') && document.getElementById('prOptSignature').checked);
+    this._currentPrintOpts.showNotes = !!(document.getElementById('prOptNotes') && document.getElementById('prOptNotes').checked);
+    this.updatePreviewSheet();
+  },
+
+  onPrintCustomNoteChange: function() {
+    if (!this._currentPrintOpts) return;
+    var el = document.getElementById('prOptCustomNote');
+    this._currentPrintOpts.customNote = el ? el.value.trim() : '';
+    this.updatePreviewSheet();
+  },
+
+  _refreshSettingsUi: function() {
+    var opts = this._currentPrintOpts || {};
+    var buttons = document.querySelectorAll('.pr-btn-group button');
+    buttons.forEach(function(btn) {
+      var oc = btn.getAttribute('onclick') || '';
+      if (oc.indexOf("'" + opts.size + "'") > -1 && oc.indexOf('size') > -1) {
+        btn.classList.add('active');
+      } else if (oc.indexOf('size') > -1) {
+        btn.classList.remove('active');
+      }
+      if (oc.indexOf("'" + opts.orientation + "'") > -1 && oc.indexOf('orientation') > -1) {
+        btn.classList.add('active');
+      } else if (oc.indexOf('orientation') > -1) {
+        btn.classList.remove('active');
+      }
+      if (oc.indexOf("'" + opts.fontSize + "'") > -1 && oc.indexOf('fontSize') > -1) {
+        btn.classList.add('active');
+      } else if (oc.indexOf('fontSize') > -1) {
+        btn.classList.remove('active');
+      }
+    });
+  },
+
+  updatePreviewSheet: async function() {
+    var v = this._currentInvoice;
+    if (!v) return;
+    var opts = this._currentPrintOpts || {};
+    var sheetEl = document.getElementById('invPaperSheet');
+    if (!sheetEl) return;
+
+    sheetEl.className = 'pr-paper-sheet ' + opts.size + ' ' + opts.orientation;
+    sheetEl.innerHTML = await this._html(v, opts);
+
+    var badge = document.getElementById('prPaperBadge');
+    if (badge) {
+      var sizeText = opts.size === 'a5' ? 'A5 (۱۴۸ × ۲۱۰ میلی‌متر)' : 'A4 (۲۱۰ × ۲۹۷ میلی‌متر)';
+      badge.innerHTML = '<i class="bi bi-aspect-ratio"></i> ' + sizeText + ' — ' + (opts.orientation === 'landscape' ? 'افقی' : 'عمودی');
     }
+  },
+
+  zoom: function(delta) {
+    var newZoom = (this._zoomLevel || 0.85) + delta;
+    if (newZoom < 0.3) newZoom = 0.3;
+    if (newZoom > 2.0) newZoom = 2.0;
+    this._zoomLevel = Math.round(newZoom * 10) / 10;
+    this._applyZoom();
+  },
+
+  zoomReset: function() {
+    this._zoomLevel = 1.0;
+    this._applyZoom();
+  },
+
+  _applyZoom: function() {
+    var wrap = document.getElementById('prPaperWrap');
+    if (wrap) wrap.style.transform = 'scale(' + this._zoomLevel + ')';
+    var lbl = document.getElementById('prZoomLabel');
+    if (lbl) lbl.textContent = Math.round(this._zoomLevel * 100) + '٪';
+  },
+
+  /* ══ ارسال مستقیم به چاپگر با تنظیمات انتخابی ══ */
+  execPrint: async function() {
+    var v = this._currentInvoice;
+    if (!v) return;
+    var opts = this._currentPrintOpts || {};
     var area = document.getElementById('printArea');
     if (!area) return;
-    area.innerHTML = await this._html(v, sz === 'a5' ? 'a5' : 'a4');
+
+    area.innerHTML = await this._html(v, opts);
+
+    // اعمال سایز صفحه برای چاپ
+    var styleId = 'pbDynamicPageStyle';
+    var existingStyle = document.getElementById(styleId);
+    if (!existingStyle) {
+      existingStyle = document.createElement('style');
+      existingStyle.id = styleId;
+      document.head.appendChild(existingStyle);
+    }
+    var pageSize = (opts.size === 'a5' ? 'A5' : 'A4') + (opts.orientation === 'landscape' ? ' landscape' : ' portrait');
+    existingStyle.innerHTML = '@page { size: ' + pageSize + '; margin: 8mm; }';
+
     setTimeout(function() {
       window.print();
-    }, 300);
+    }, 250);
+  },
+
+  /* ══ ذخیره مستقیم فاکتور به صورت PDF ══ */
+  exportPDF: async function() {
+    var v = this._currentInvoice;
+    if (!v) return;
+    var paperEl = document.getElementById('invPaperSheet');
+    if (!paperEl) {
+      UI.toast('برگه فاکتور پیدا نشد', 'e');
+      return;
+    }
+    if (typeof html2canvas === 'undefined') {
+      UI.toast('کتابخانه در حال بارگذاری است. لطفاً کمی بعد امتحان کنید.', 'e');
+      return;
+    }
+    var jsPdfCtor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+    if (!jsPdfCtor) {
+      UI.toast('کتابخانه ساخت PDF در دسترس نیست. می‌توانید از دکمه چاپ و ذخیره PDF مرورگر استفاده کنید.', 'e');
+      return;
+    }
+    UI.toast('در حال ساخت فایل PDF با کیفیت بالا...', 'i');
+    try {
+      var opts = this._currentPrintOpts || {};
+      var isA5 = opts.size === 'a5';
+      var isLand = opts.orientation === 'landscape';
+
+      var canvas = await html2canvas(paperEl, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        onclone: function(clonedDoc) {
+          var el = clonedDoc.getElementById('invPaperSheet');
+          if (el) {
+            el.style.transform = 'none';
+            el.style.boxShadow = 'none';
+            el.style.margin = '0';
+          }
+        }
+      });
+
+      var imgData = canvas.toDataURL('image/jpeg', 0.95);
+      var pdf = new jsPdfCtor({
+        orientation: isLand ? 'landscape' : 'portrait',
+        unit: 'mm',
+        format: isA5 ? 'a5' : 'a4'
+      });
+
+      var pageWidth = isLand ? (isA5 ? 210 : 297) : (isA5 ? 148 : 210);
+      var pageHeight = isLand ? (isA5 ? 148 : 210) : (isA5 ? 210 : 297);
+
+      var imgWidth = pageWidth;
+      var imgHeight = (canvas.height * imgWidth) / canvas.width;
+      if (imgHeight > pageHeight) {
+        imgHeight = pageHeight;
+        imgWidth = (canvas.width * imgHeight) / canvas.height;
+      }
+      var posX = (pageWidth - imgWidth) / 2;
+      var posY = 0;
+
+      pdf.addImage(imgData, 'JPEG', posX, posY, imgWidth, imgHeight);
+      var typeName = v.type === 'sale' ? 'فروش' : (v.type === 'purchase' ? 'خرید' : 'پیش‌فاکتور');
+      var fileName = 'فاکتور-' + typeName + '-' + (v.invoiceNumber || v.id) + '.pdf';
+      pdf.save(fileName);
+      UI.toast('فایل PDF با موفقیت ذخیره شد', 's');
+    } catch (err) {
+      console.error('PDF Export Error:', err);
+      UI.toast('خطا در تولید PDF: ' + (err.message || 'نامشخص'), 'e');
+    }
+  },
+
+  /* ══ ذخیره مستقیم فاکتور به صورت عکس JPEG باکیفیت ══ */
+  exportJPEG: async function() {
+    var v = this._currentInvoice;
+    if (!v) return;
+    var paperEl = document.getElementById('invPaperSheet');
+    if (!paperEl) {
+      UI.toast('برگه فاکتور پیدا نشد', 'e');
+      return;
+    }
+    if (typeof html2canvas === 'undefined') {
+      UI.toast('کتابخانه ساخت تصویر در حال بارگذاری است. لطفاً چند لحظه دیگر امتحان کنید.', 'e');
+      return;
+    }
+    UI.toast('در حال ساخت عکس با وضوح بالا (JPEG)...', 'i');
+    try {
+      var canvas = await html2canvas(paperEl, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        onclone: function(clonedDoc) {
+          var el = clonedDoc.getElementById('invPaperSheet');
+          if (el) {
+            el.style.transform = 'none';
+            el.style.boxShadow = 'none';
+            el.style.margin = '0';
+          }
+        }
+      });
+
+      var dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+      var typeName = v.type === 'sale' ? 'فروش' : (v.type === 'purchase' ? 'خرید' : 'پیش‌فاکتور');
+      var fileName = 'فاکتور-' + typeName + '-' + (v.invoiceNumber || v.id) + '.jpeg';
+
+      var link = document.createElement('a');
+      link.download = fileName;
+      link.href = dataUrl;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      UI.toast('تصویر JPEG فاکتور با موفقیت ذخیره شد', 's');
+    } catch (err) {
+      console.error('JPEG Export Error:', err);
+      UI.toast('خطا در ذخیره تصویر: ' + (err.message || 'نامشخص'), 'e');
+    }
   },
 
   rm: async function(id, type) {

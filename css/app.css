@@ -76,13 +76,20 @@ body {
 .lg-page .lg-box {
   background: var(--sf);
   border-radius: 20px;
-  padding: 36px 30px;
-  width: 390px;
-  max-width: min(420px, 92vw);
+  padding: 32px 28px;
+  width: 12cm;
+  height: 15cm;
+  max-width: min(12cm, 92vw);
+  max-height: min(15cm, 94vh);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  box-sizing: border-box;
+  overflow-y: auto;
   flex: 0 0 auto !important;
   text-align: center;
-  box-shadow: 0 25px 60px rgba(0, 0, 0, .45), 0 0 0 1px rgba(255, 255, 255, .08);
-  border: 1px solid rgba(255, 255, 255, .08);
+  box-shadow: 0 25px 60px rgba(0, 0, 0, .45), 0 0 0 1px rgba(255, 255, 255, .12);
+  border: 1.5px solid rgba(255, 255, 255, .15);
   margin: auto
 }
 
@@ -726,6 +733,13 @@ textarea.fc {
 
 .md.w {
   max-width: 880px
+}
+
+.md.xl {
+  max-width: 1160px;
+  width: 96vw;
+  height: 92vh;
+  max-height: 94vh;
 }
 
 @keyframes mI {
@@ -1642,5 +1656,202 @@ body.dark .sc {
   padding: 5px 8px;
   font-size: 10.5px;
   color: #111;
+}
+
+/* ══ استودیو پیش‌نمایش چاپ و تنظیمات فاکتور ══ */
+.pr-prev-layout {
+  display: flex;
+  gap: 16px;
+  height: calc(92vh - 145px);
+  min-height: 480px;
+  overflow: hidden;
+}
+
+.pr-prev-sidebar {
+  width: 320px;
+  min-width: 290px;
+  flex-shrink: 0;
+  background: var(--bg);
+  border: 1px solid var(--bd);
+  border-radius: 12px;
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pr-prev-stage {
+  flex: 1;
+  min-width: 0;
+  background: #1e293b;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid var(--bd);
+}
+
+.pr-prev-toolbar {
+  padding: 8px 14px;
+  background: rgba(15, 23, 42, 0.9);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #f1f5f9;
+  font-size: .82rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 5;
+  flex-shrink: 0;
+}
+
+.pr-prev-zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pr-prev-zoom-btn {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: .8rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .15s;
+}
+
+.pr-prev-zoom-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.pr-prev-scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 24px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  background: radial-gradient(circle at center, #334155 0%, #0f172a 100%);
+}
+
+.pr-paper-wrap {
+  transform-origin: top center;
+  transition: transform .15s ease-out;
+}
+
+.pr-paper-sheet {
+  background: #ffffff !important;
+  color: #0f172a !important;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.08);
+  border-radius: 2px;
+  box-sizing: border-box;
+  margin: 0 auto;
+}
+
+.pr-paper-sheet.a4.portrait {
+  width: 210mm;
+  min-height: 297mm;
+  padding: 13mm 14mm;
+}
+
+.pr-paper-sheet.a4.landscape {
+  width: 297mm;
+  min-height: 210mm;
+  padding: 12mm 14mm;
+}
+
+.pr-paper-sheet.a5.portrait {
+  width: 148mm;
+  min-height: 210mm;
+  padding: 9mm 10mm;
+}
+
+.pr-paper-sheet.a5.landscape {
+  width: 210mm;
+  min-height: 148mm;
+  padding: 8mm 10mm;
+}
+
+.pr-opt-sec {
+  background: var(--sf);
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.pr-opt-title {
+  font-size: .84rem;
+  font-weight: 700;
+  color: var(--tx);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pr-btn-group {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.pr-btn-group button {
+  flex: 1;
+  padding: 6px 8px;
+  font-size: .8rem;
+  border-radius: 8px;
+  border: 1px solid var(--bd);
+  background: var(--bg);
+  color: var(--tx);
+  cursor: pointer;
+  font-weight: 600;
+  transition: all .15s;
+}
+
+.pr-btn-group button.active {
+  background: var(--p);
+  color: #fff;
+  border-color: var(--p);
+  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.35);
+}
+
+.pr-check-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .81rem;
+  cursor: pointer;
+  padding: 4px 0;
+  user-select: none;
+  color: var(--tx);
+}
+
+.pr-check-label input[type="checkbox"] {
+  cursor: pointer;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--p);
+}
+
+@media (max-width: 820px) {
+  .pr-prev-layout {
+    flex-direction: column;
+    height: auto;
+    max-height: 78vh;
+  }
+  .pr-prev-sidebar {
+    width: 100%;
+    max-height: 220px;
+  }
+  .pr-prev-stage {
+    min-height: 380px;
+  }
 }
 
