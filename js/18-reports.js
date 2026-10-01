@@ -498,11 +498,13 @@ var Rep = {
         if (pay.contactId === c.id) bal += pay.type === 'payment' ? pay.amount : -pay.amount;
       });
       chks.forEach(function(chk) {
-        if (chk.contactId === c.id && chk.status !== 'returned') {
+        var isRet = (chk.status === 'returned' || chk.status === 'returned_to_me' || chk.status === 'returned_to_customer');
+        if (chk.contactId === c.id && !isRet) {
           if (chk.type === 'received') bal -= chk.amount;
           if (chk.type === 'issued') bal += chk.amount;
         }
-        if (chk.status === 'transferred' && chk.transferToId === c.id) bal += chk.amount;
+        var isSupplierActive = (chk.status === 'transferred' || (chk.status === 'passed' && chk.transferToId === c.id)) && !isRet;
+        if (isSupplierActive && chk.transferToId === c.id) bal += chk.amount;
       });
       if (w === 'debtors' && bal > 0) res.push({
         name: c.name,

@@ -137,11 +137,13 @@ var Dash = {
         if (pay.contactId === co.id) cBal += pay.type === 'payment' ? numOf(pay.amount) : -numOf(pay.amount);
       });
       dashChks.forEach(function(chk) {
-        if (chk.contactId === co.id && chk.status !== 'returned') {
+        var isRet = (chk.status === 'returned' || chk.status === 'returned_to_me' || chk.status === 'returned_to_customer');
+        if (chk.contactId === co.id && !isRet) {
           if (chk.type === 'received') cBal -= numOf(chk.amount);
           if (chk.type === 'issued') cBal += numOf(chk.amount);
         }
-        if (chk.status === 'transferred' && chk.transferToId === co.id) cBal += numOf(chk.amount);
+        var isSupplierActive = (chk.status === 'transferred' || (chk.status === 'passed' && chk.transferToId === co.id)) && !isRet;
+        if (isSupplierActive && chk.transferToId === co.id) cBal += numOf(chk.amount);
       });
       if (cBal > 0) totalDebtors += cBal;
       else if (cBal < 0) totalCreditors += Math.abs(cBal);
@@ -276,11 +278,19 @@ var Dash = {
       dueAnalysis.allUrgent.forEach(function(c, i) {
         var isR = c.type === 'received';
         var badge = Chk.dueBadgeHTML(c.dueDate, c.status);
+        var partyText = esc(cMap[c.contactId] || '—');
+        if (c.status === 'transferred' && c.transferToId) {
+          partyText += '<br><span class="tg tg-p" style="font-size:10px;padding:1px 5px"><i class="bi bi-arrow-left"></i> واگذار به ' + esc(cMap[c.transferToId] || '—') + '</span>';
+        } else if (c.status === 'returned_to_me') {
+          var pName = cMap[c.transferToId || c.previousTransferToId];
+          if (pName) partyText += '<br><span class="tg tg-o" style="font-size:10px;padding:1px 5px"><i class="bi bi-arrow-return-left"></i> عودت از ' + esc(pName) + '</span>';
+        }
+
         urgentRows += '<tr class="clk" onclick="Chk.form(\'' + c.type + '\',' + c.id + ')" title="کلیک برای مشاهده و ویرایش چک">' +
           '<td>' + (i + 1) + '</td>' +
           '<td><span class="tg ' + (isR ? 'tg-g' : 'tg-r') + '">' + (isR ? 'دریافتی' : 'پرداختی') + '</span></td>' +
           '<td><strong>' + esc(c.checkNumber) + '</strong></td>' +
-          '<td>' + esc(cMap[c.contactId] || '—') + '</td>' +
+          '<td>' + partyText + '</td>' +
           '<td>' + esc(c.bank || '—') + '</td>' +
           '<td>' + esc(c.dueDate || '—') + badge + '</td>' +
           '<td style="font-weight:700;text-align:left">' + UI.fn(c.amount) + '</td>' +

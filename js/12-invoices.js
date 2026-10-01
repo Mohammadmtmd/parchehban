@@ -33,11 +33,13 @@ var Inv = {
       else bal += pay.amount || 0;
     });
     chks.forEach(function(chk) {
-      if (chk.contactId === cid && chk.status !== 'returned') {
+      var isRet = (chk.status === 'returned' || chk.status === 'returned_to_me' || chk.status === 'returned_to_customer');
+      if (chk.contactId === cid && !isRet) {
         if (chk.type === 'received') bal -= chk.amount;
         if (chk.type === 'issued') bal += chk.amount;
       }
-      if (chk.status === 'transferred' && chk.transferToId === cid) bal += chk.amount;
+      var isSupplierActive = (chk.status === 'transferred' || (chk.status === 'passed' && chk.transferToId === cid)) && !isRet;
+      if (isSupplierActive && chk.transferToId === cid) bal += chk.amount;
     });
     return bal;
   },

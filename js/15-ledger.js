@@ -85,35 +85,93 @@ var Led = {
       }
     });
     chks.forEach(function(chk) {
-      if (chk.contactId === cid && chk.status !== 'returned') {
-        if (chk.type === 'received') txs.push({
-          d: chk.issueDate || chk.dueDate,
-          desc: 'چک #' + chk.checkNumber,
-          db: 0,
-          cr: chk.amount,
-          s: 3,
-          chkId: chk.id,
-          chkType: chk.type
-        });
-        if (chk.type === 'issued') txs.push({
-          d: chk.issueDate || chk.dueDate,
-          desc: 'چک #' + chk.checkNumber,
-          db: chk.amount,
-          cr: 0,
-          s: 3,
-          chkId: chk.id,
-          chkType: chk.type
-        });
+      var isRet = (chk.status === 'returned' || chk.status === 'returned_to_me' || chk.status === 'returned_to_customer');
+
+      if (chk.contactId === cid) {
+        if (chk.type === 'received') {
+          if (!isRet) {
+            var rDesc = 'چک دریافتی #' + chk.checkNumber;
+            if (chk.status === 'transferred') rDesc = 'چک واگذارشده به تامین‌کننده (پاس‌شده) #' + chk.checkNumber;
+            else if (chk.status === 'passed') rDesc = 'چک وصول‌شده #' + chk.checkNumber;
+            txs.push({
+              d: chk.issueDate || chk.dueDate,
+              desc: rDesc,
+              db: 0,
+              cr: chk.amount,
+              s: 3,
+              chkId: chk.id,
+              chkType: chk.type
+            });
+          } else {
+            var retDesc = 'عودت چک #' + chk.checkNumber +
+              (chk.status === 'returned_to_me' ? ' (تحویل از تامین‌کننده / عدم وصول)' :
+               chk.status === 'returned_to_customer' ? ' (عودت لاشه چک به مشتری)' : ' (برگشتی / واخواست)');
+            txs.push({
+              d: chk.issueDate || chk.dueDate,
+              desc: 'چک دریافتی #' + chk.checkNumber,
+              db: 0,
+              cr: chk.amount,
+              s: 3,
+              chkId: chk.id,
+              chkType: chk.type
+            });
+            txs.push({
+              d: chk.returnDate || chk.dueDate || todayJ(),
+              desc: retDesc,
+              db: chk.amount,
+              cr: 0,
+              s: 3.5,
+              chkId: chk.id,
+              chkType: chk.type
+            });
+          }
+        }
+        if (chk.type === 'issued' && !isRet) {
+          txs.push({
+            d: chk.issueDate || chk.dueDate,
+            desc: 'چک پرداختی #' + chk.checkNumber,
+            db: chk.amount,
+            cr: 0,
+            s: 3,
+            chkId: chk.id,
+            chkType: chk.type
+          });
+        }
       }
-      if (chk.status === 'transferred' && chk.transferToId === cid) txs.push({
-        d: chk.transferDate || chk.dueDate,
-        desc: 'انتقال چک #' + chk.checkNumber,
-        db: chk.amount,
-        cr: 0,
-        s: 3,
-        chkId: chk.id,
-        chkType: chk.type
-      });
+
+      var trRecipientId = chk.transferToId || chk.previousTransferToId;
+      if (trRecipientId === cid) {
+        if (chk.status === 'transferred' || (chk.status === 'passed' && chk.transferToId === cid)) {
+          txs.push({
+            d: chk.transferDate || chk.dueDate,
+            desc: 'انتقال چک #' + chk.checkNumber,
+            db: chk.amount,
+            cr: 0,
+            s: 3,
+            chkId: chk.id,
+            chkType: chk.type
+          });
+        } else if (isRet && chk.transferDate) {
+          txs.push({
+            d: chk.transferDate,
+            desc: 'انتقال چک #' + chk.checkNumber,
+            db: chk.amount,
+            cr: 0,
+            s: 3,
+            chkId: chk.id,
+            chkType: chk.type
+          });
+          txs.push({
+            d: chk.returnDate || chk.dueDate || todayJ(),
+            desc: 'عودت چک #' + chk.checkNumber + ' از تامین‌کننده (پاس‌نشده / کسر از پرداختی)',
+            db: 0,
+            cr: chk.amount,
+            s: 3.5,
+            chkId: chk.id,
+            chkType: chk.type
+          });
+        }
+      }
     });
     txs.sort(function(a, b) {
       if (a.d < b.d) return -1;
@@ -265,29 +323,79 @@ Led.expCSV = function(cid) {
       }
     });
     chks.forEach(function(chk) {
-      if (chk.contactId === cid && chk.status !== 'returned') {
-        if (chk.type === 'received') txs.push({
-          d: chk.issueDate || chk.dueDate,
-          desc: 'چک #' + chk.checkNumber,
-          db: 0,
-          cr: chk.amount,
-          s: 3
-        });
-        if (chk.type === 'issued') txs.push({
-          d: chk.issueDate || chk.dueDate,
-          desc: 'چک #' + chk.checkNumber,
-          db: chk.amount,
-          cr: 0,
-          s: 3
-        });
+      var isRet = (chk.status === 'returned' || chk.status === 'returned_to_me' || chk.status === 'returned_to_customer');
+
+      if (chk.contactId === cid) {
+        if (chk.type === 'received') {
+          if (!isRet) {
+            var rDesc = 'چک دریافتی #' + chk.checkNumber;
+            if (chk.status === 'transferred') rDesc = 'چک واگذارشده به تامین‌کننده (پاس‌شده) #' + chk.checkNumber;
+            else if (chk.status === 'passed') rDesc = 'چک وصول‌شده #' + chk.checkNumber;
+            txs.push({
+              d: chk.issueDate || chk.dueDate,
+              desc: rDesc,
+              db: 0,
+              cr: chk.amount,
+              s: 3
+            });
+          } else {
+            var retDesc = 'عودت چک #' + chk.checkNumber +
+              (chk.status === 'returned_to_me' ? ' (تحویل از تامین‌کننده / عدم وصول)' :
+               chk.status === 'returned_to_customer' ? ' (عودت لاشه چک به مشتری)' : ' (برگشتی / واخواست)');
+            txs.push({
+              d: chk.issueDate || chk.dueDate,
+              desc: 'چک دریافتی #' + chk.checkNumber,
+              db: 0,
+              cr: chk.amount,
+              s: 3
+            });
+            txs.push({
+              d: chk.returnDate || chk.dueDate || todayJ(),
+              desc: retDesc,
+              db: chk.amount,
+              cr: 0,
+              s: 3.5
+            });
+          }
+        }
+        if (chk.type === 'issued' && !isRet) {
+          txs.push({
+            d: chk.issueDate || chk.dueDate,
+            desc: 'چک پرداختی #' + chk.checkNumber,
+            db: chk.amount,
+            cr: 0,
+            s: 3
+          });
+        }
       }
-      if (chk.status === 'transferred' && chk.transferToId === cid) txs.push({
-        d: chk.transferDate || chk.dueDate,
-        desc: 'انتقال چک #' + chk.checkNumber,
-        db: chk.amount,
-        cr: 0,
-        s: 3
-      });
+
+      var trRecipientId = chk.transferToId || chk.previousTransferToId;
+      if (trRecipientId === cid) {
+        if (chk.status === 'transferred' || (chk.status === 'passed' && chk.transferToId === cid)) {
+          txs.push({
+            d: chk.transferDate || chk.dueDate,
+            desc: 'انتقال چک #' + chk.checkNumber,
+            db: chk.amount,
+            cr: 0,
+            s: 3
+          });
+        } else if (isRet && chk.transferDate) {
+          txs.push({
+            d: chk.transferDate,
+            desc: 'انتقال چک #' + chk.checkNumber,
+            db: chk.amount,
+            cr: 0,
+            s: 3
+          });
+          txs.push({
+            d: chk.returnDate || chk.dueDate || todayJ(),
+            desc: 'عودت چک #' + chk.checkNumber + ' از تامین‌کننده (پاس‌نشده / کسر از پرداختی)',
+            db: 0,
+            cr: chk.amount,
+            s: 3.5
+          });
+        }
+      }
     });
     txs.sort(function(a, b) {
       if (a.d < b.d) return -1;
@@ -384,29 +492,79 @@ Led.expPDF = function(cid) {
       }
     });
     chks.forEach(function(chk) {
-      if (chk.contactId === cid && chk.status !== 'returned') {
-        if (chk.type === 'received') txs.push({
-          d: chk.issueDate || chk.dueDate,
-          desc: 'چک #' + chk.checkNumber,
-          db: 0,
-          cr: chk.amount,
-          s: 3
-        });
-        if (chk.type === 'issued') txs.push({
-          d: chk.issueDate || chk.dueDate,
-          desc: 'چک #' + chk.checkNumber,
-          db: chk.amount,
-          cr: 0,
-          s: 3
-        });
+      var isRet = (chk.status === 'returned' || chk.status === 'returned_to_me' || chk.status === 'returned_to_customer');
+
+      if (chk.contactId === cid) {
+        if (chk.type === 'received') {
+          if (!isRet) {
+            var rDesc = 'چک دریافتی #' + chk.checkNumber;
+            if (chk.status === 'transferred') rDesc = 'چک واگذارشده به تامین‌کننده (پاس‌شده) #' + chk.checkNumber;
+            else if (chk.status === 'passed') rDesc = 'چک وصول‌شده #' + chk.checkNumber;
+            txs.push({
+              d: chk.issueDate || chk.dueDate,
+              desc: rDesc,
+              db: 0,
+              cr: chk.amount,
+              s: 3
+            });
+          } else {
+            var retDesc = 'عودت چک #' + chk.checkNumber +
+              (chk.status === 'returned_to_me' ? ' (تحویل از تامین‌کننده / عدم وصول)' :
+               chk.status === 'returned_to_customer' ? ' (عودت لاشه چک به مشتری)' : ' (برگشتی / واخواست)');
+            txs.push({
+              d: chk.issueDate || chk.dueDate,
+              desc: 'چک دریافتی #' + chk.checkNumber,
+              db: 0,
+              cr: chk.amount,
+              s: 3
+            });
+            txs.push({
+              d: chk.returnDate || chk.dueDate || todayJ(),
+              desc: retDesc,
+              db: chk.amount,
+              cr: 0,
+              s: 3.5
+            });
+          }
+        }
+        if (chk.type === 'issued' && !isRet) {
+          txs.push({
+            d: chk.issueDate || chk.dueDate,
+            desc: 'چک پرداختی #' + chk.checkNumber,
+            db: chk.amount,
+            cr: 0,
+            s: 3
+          });
+        }
       }
-      if (chk.status === 'transferred' && chk.transferToId === cid) txs.push({
-        d: chk.transferDate || chk.dueDate,
-        desc: 'انتقال چک #' + chk.checkNumber,
-        db: chk.amount,
-        cr: 0,
-        s: 3
-      });
+
+      var trRecipientId = chk.transferToId || chk.previousTransferToId;
+      if (trRecipientId === cid) {
+        if (chk.status === 'transferred' || (chk.status === 'passed' && chk.transferToId === cid)) {
+          txs.push({
+            d: chk.transferDate || chk.dueDate,
+            desc: 'انتقال چک #' + chk.checkNumber,
+            db: chk.amount,
+            cr: 0,
+            s: 3
+          });
+        } else if (isRet && chk.transferDate) {
+          txs.push({
+            d: chk.transferDate,
+            desc: 'انتقال چک #' + chk.checkNumber,
+            db: chk.amount,
+            cr: 0,
+            s: 3
+          });
+          txs.push({
+            d: chk.returnDate || chk.dueDate || todayJ(),
+            desc: 'عودت چک #' + chk.checkNumber + ' از تامین‌کننده (پاس‌نشده / کسر از پرداختی)',
+            db: 0,
+            cr: chk.amount,
+            s: 3.5
+          });
+        }
+      }
     });
     txs.sort(function(a, b) {
       if (a.d < b.d) return -1;
