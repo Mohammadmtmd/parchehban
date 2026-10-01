@@ -16,6 +16,9 @@ var Dash = {
     await this.load();
   },
   load: async function() {
+    if (typeof Chk !== 'undefined' && Chk.autoPassDueChecks) {
+      await Chk.autoPassDueChecks();
+    }
     var contacts = await DB.all('contacts');
     var allInvs = await FY.byYear('invoices');
 

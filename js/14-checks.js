@@ -36,6 +36,35 @@ var Chk = {
     }
     return changed;
   },
+  /* ══ پاس شدن خودکار چک‌ها به صورت پیش‌فرض با فرارسیدن تاریخ سررسید ══
+     چک‌هایی که تاریخ سررسید آن‌ها رسیده یا گذشته است (و دستی به عنوان برگشتی یا عودت علامت نخورده‌اند)،
+     به صورت پیش‌فرض پاس‌شده در نظر گرفته می‌شوند تا هشدار یا خطای سررسید گذشته نمایش داده نشود.
+     در صورت عدم پاس شدن در واقعیت، کاربر می‌تواند وضعیت چک را دستی به عودت یا برگشتی تغییر دهد. */
+  autoPassDueChecks: async function() {
+    var all = await DB.all('checks');
+    var today = Jalali.today();
+    var todayP = pn(today);
+    var changed = false;
+
+    for (var i = 0; i < all.length; i++) {
+      var c = all[i];
+      var isRet = (c.status === 'returned' || c.status === 'returned_to_me' || c.status === 'returned_to_customer');
+      if (c.status !== 'passed' && !isRet && c.dueDate) {
+        var dueP = pn(c.dueDate);
+        if (dueP > 0 && dueP <= todayP) {
+          if (c.status === 'transferred' && c.transferToId && !c.previousTransferToId) {
+            c.previousTransferToId = c.transferToId;
+          }
+          c.status = 'passed';
+          if (!c.passedDate) c.passedDate = c.dueDate;
+          await DB.put('checks', c);
+          await this.syncAutoPayment(c.id);
+          changed = true;
+        }
+      }
+    }
+    return changed;
+  },
   onSearch: function(val) {
     this._q = val;
     this.ll();
@@ -93,8 +122,13 @@ var Chk = {
       if (diff === null) return;
       var item = Object.assign({}, c, { diffDays: diff });
 
+      /* طبق درخواست کاربر: با رسیدن یا گذشتن تاریخ چک، پیش‌فرض پاس‌شده است و نباید خطای سررسید گذشته بدهد.
+         تنها چک‌هایی که دستی به عنوان برگشتی یا عودت علامت خورده‌اند در صورت گذشته بودن نیاز به پیگیری دارند. */
       if (diff < 0) {
-        overdue.push(item);
+        var isRet = (c.status === 'returned' || c.status === 'returned_to_me');
+        if (isRet) {
+          overdue.push(item);
+        }
       } else if (diff === 0) {
         dueToday.push(item);
       } else if (diff <= 3) {
@@ -103,7 +137,7 @@ var Chk = {
         within7.push(item);
       }
 
-      if (diff <= 7) {
+      if (diff >= 0 && diff <= 7) {
         if (c.type === 'issued') totalIssuedAmt += numOf(c.amount);
         else totalReceivedAmt += numOf(c.amount);
       }
@@ -131,7 +165,11 @@ var Chk = {
       icon = '<i class="bi bi-arrow-return-left" title="عودت به خود (نزد ما)" style="margin-inline-end:3px"></i>';
     }
     if (diff < 0) {
-      return '<span class="tg tg-r" style="font-weight:700;margin-inline-start:4px">' + icon + '<i class="bi bi-exclamation-octagon-fill" style="margin-inline-end:3px"></i>' + Math.abs(diff) + ' روز گذشته</span>';
+      var isRet = (status === 'returned' || status === 'returned_to_me');
+      if (isRet) {
+        return '<span class="tg tg-r" style="font-weight:700;margin-inline-start:4px">' + icon + '<i class="bi bi-exclamation-octagon-fill" style="margin-inline-end:3px"></i>' + Math.abs(diff) + ' روز گذشته (برگشتی)</span>';
+      }
+      return '<span class="tg tg-g" style="font-weight:600;margin-inline-start:4px"><i class="bi bi-check-circle-fill" style="margin-inline-end:3px"></i>موعد سررسیده (پاس‌شده)</span>';
     }
     if (diff === 0) {
       return '<span class="tg tg-o" style="font-weight:800;margin-inline-start:4px;animation:pulse 1.5s infinite">' + icon + '<i class="bi bi-clock-fill" style="margin-inline-end:3px"></i>امروز</span>';
@@ -242,6 +280,7 @@ var Chk = {
     else fl = this._fl;
 
     await this.ensureDocNumbers();
+    await this.autoPassDueChecks();
     var all = await FY.byYear('checks');
     var ct = await DB.all('contacts'),
       cm = {};
@@ -307,6 +346,9 @@ var Chk = {
     if (fl === 'transferred') ls = ls.filter(function(c) {
       return c.status === 'transferred';
     });
+    if (fl === 'passed') ls = ls.filter(function(c) {
+      return c.status === 'passed';
+    });
     if (fl === 'returned') ls = ls.filter(function(c) {
       return c.status === 'returned' || c.status === 'returned_to_me' || c.status === 'returned_to_customer';
     });
@@ -321,7 +363,8 @@ var Chk = {
     if (fl === 'overdue') ls = ls.filter(function(c) {
       if (c.status === 'passed' || c.status === 'returned_to_customer') return false;
       var d = me.calcDiffDays(c.dueDate);
-      return d !== null && d < 0;
+      var isRet = (c.status === 'returned' || c.status === 'returned_to_me');
+      return isRet && d !== null && d < 0;
     });
 
     /* جستجو بر اساس شماره سند ۴ رقمی، شماره چک، صیاد، حساب، طرف حساب، بانک و مبلغ */
@@ -441,15 +484,17 @@ var Chk = {
     }
 
     var trCount = all.filter(function(x){return x.status === 'transferred'}).length;
+    var passCount = all.filter(function(x){return x.status === 'passed'}).length;
     var retCount = all.filter(function(x){return x.status === 'returned' || x.status === 'returned_to_me' || x.status === 'returned_to_customer'}).length;
     var tabBar = '<div class="tab-bar">' +
       '<button class="tab-btn' + (fl === 'all' ? ' active' : '') + '" onclick="Chk.ll(\'all\')">همه چک‌ها (' + all.length + ')</button>' +
       '<button class="tab-btn' + (fl === 'received' ? ' active' : '') + '" onclick="Chk.ll(\'received\')">دریافتی (' + all.filter(function(x){return x.type==='received'}).length + ')</button>' +
       '<button class="tab-btn' + (fl === 'transferred' ? ' active' : '') + '" onclick="Chk.ll(\'transferred\')">انتقال‌یافته (' + trCount + ')</button>' +
+      '<button class="tab-btn' + (fl === 'passed' ? ' active' : '') + '" onclick="Chk.ll(\'passed\')">وصول / پاس‌شده (' + passCount + ')</button>' +
       '<button class="tab-btn' + (fl === 'returned' ? ' active' : '') + '" onclick="Chk.ll(\'returned\')">عودت / برگشتی (' + retCount + ')</button>' +
       '<button class="tab-btn' + (fl === 'issued' ? ' active' : '') + '" onclick="Chk.ll(\'issued\')">پرداختی (' + all.filter(function(x){return x.type==='issued'}).length + ')</button>' +
       '<button class="tab-btn' + (fl === 'due7' ? ' active' : '') + '" onclick="Chk.ll(\'due7\')" style="color:' + (analysis.dueToday.length || analysis.within3.length || analysis.within7.length ? 'var(--w)' : '') + '"><i class="bi bi-clock-history"></i> سررسید ۷ روز (' + (analysis.dueToday.length + analysis.within3.length + analysis.within7.length) + ')</button>' +
-      '<button class="tab-btn' + (fl === 'overdue' ? ' active' : '') + '" onclick="Chk.ll(\'overdue\')" style="color:' + (analysis.overdue.length ? 'var(--d)' : '') + '"><i class="bi bi-exclamation-triangle"></i> سررسید گذشته (' + analysis.overdue.length + ')</button>' +
+      (analysis.overdue.length ? '<button class="tab-btn' + (fl === 'overdue' ? ' active' : '') + '" onclick="Chk.ll(\'overdue\')" style="color:var(--d)"><i class="bi bi-exclamation-triangle"></i> برگشتی‌های سررسید گذشته (' + analysis.overdue.length + ')</button>' : '') +
       '</div>';
 
     /* نوار ابزار جستجو و مرتب‌سازی */
