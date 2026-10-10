@@ -320,6 +320,35 @@ alter table app_users add column if not exists data jsonb not null default '{}':
 alter table app_users add column if not exists updated_at timestamptz not null default now();
 alter table app_users add column if not exists is_deleted boolean not null default false;
 
+-- ── ۱۳. پیش‌فاکتورها و فاکتورهای آزاد (free_invoices) ──────────────
+create table if not exists free_invoices (
+  id              text primary key,
+  org_id          text not null default 'shop1',
+  invoice_number  text,
+  title           text,
+  date            text,
+  buyer_name      text,
+  buyer_phone     text,
+  grand_total     numeric(18,2) default 0,
+  currency        text default 'ریال',
+  paper_size      text default 'a4',
+  data            jsonb not null default '{}'::jsonb,
+  updated_at      timestamptz not null default now(),
+  is_deleted      boolean not null default false
+);
+alter table free_invoices add column if not exists org_id text not null default 'shop1';
+alter table free_invoices add column if not exists invoice_number text;
+alter table free_invoices add column if not exists title text;
+alter table free_invoices add column if not exists date text;
+alter table free_invoices add column if not exists buyer_name text;
+alter table free_invoices add column if not exists buyer_phone text;
+alter table free_invoices add column if not exists grand_total numeric(18,2) default 0;
+alter table free_invoices add column if not exists currency text default 'ریال';
+alter table free_invoices add column if not exists paper_size text default 'a4';
+alter table free_invoices add column if not exists data jsonb not null default '{}'::jsonb;
+alter table free_invoices add column if not exists updated_at timestamptz not null default now();
+alter table free_invoices add column if not exists is_deleted boolean not null default false;
+
 -- ── ایندکس‌های کارایی بالا جهت همگام‌سازی سریع ────────────────────
 create index if not exists idx_fy_sync   on fiscal_years (org_id, updated_at);
 create index if not exists idx_cat_sync  on categories (org_id, updated_at);

@@ -44,6 +44,9 @@ var ROUTES = {
   proforma: function() {
     return Inv.render('proforma');
   },
+  'free-invoice': function() {
+    return FreeInv.render();
+  },
   warehouse: function() {
     return Wh.render();
   },

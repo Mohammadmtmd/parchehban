@@ -1855,3 +1855,846 @@ body.dark .sc {
   }
 }
 
+/* ══════════════════════════════════════════════════════════════
+   FREE INVOICE (پیش‌فاکتور و فاکتور آزاد)
+   ══════════════════════════════════════════════════════════════ */
+.free-inv-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding-bottom: 40px;
+}
+
+.free-inv-toolbar {
+  background: var(--sf);
+  border: 1px solid var(--bd);
+  border-radius: 14px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
+}
+
+.free-inv-tool-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.free-inv-tool-group.actions-group {
+  border-bottom: 1px dashed var(--bd);
+  padding-bottom: 10px;
+}
+
+.free-tool-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .8rem;
+  color: var(--txs);
+}
+
+.btn-group-pill {
+  display: inline-flex;
+  background: var(--bg);
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.btn-group-pill button {
+  background: none;
+  border: none;
+  padding: 4px 9px;
+  font-size: .76rem;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--txs);
+  transition: all .15s;
+}
+
+.btn-group-pill button.active {
+  background: var(--p);
+  color: #fff;
+  box-shadow: 0 1px 4px rgba(37, 99, 235, 0.3);
+}
+
+.free-supa-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: .75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .15s;
+}
+
+.free-supa-badge.connected {
+  background: rgba(22, 163, 74, 0.12);
+  color: #16a34a;
+  border: 1px solid rgba(22, 163, 74, 0.3);
+}
+
+.free-supa-badge.local {
+  background: rgba(245, 158, 11, 0.12);
+  color: #d97706;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.free-inv-sheet-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 12px 0 24px;
+  overflow-x: auto;
+}
+
+/* ساختار برگه کاغذ چاپ */
+.free-inv-sheet {
+  background: #ffffff !important;
+  color: #111827 !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.08);
+  border-radius: 3px;
+  box-sizing: border-box;
+  margin: 0 auto;
+  font-family: Vazirmatn, system-ui, sans-serif;
+  direction: rtl;
+  position: relative;
+}
+
+.free-inv-sheet.a4 {
+  width: 210mm;
+  min-height: 297mm;
+  padding: 12mm 14mm;
+  font-size: 11pt;
+}
+
+.free-inv-sheet.a5 {
+  width: 148mm;
+  min-height: 210mm;
+  padding: 7mm 8mm;
+  font-size: 8.8pt;
+}
+
+/* سربرگ فاکتور آزاد */
+.free-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.free-hdr-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1.2;
+}
+
+.free-logo-box {
+  width: 58px;
+  height: 58px;
+  border: 1.5px dashed #cbd5e1;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  background: #f8fafc;
+  flex-shrink: 0;
+  transition: border-color .15s;
+}
+
+.free-logo-box:hover {
+  border-color: #2563eb;
+}
+
+.free-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.free-logo-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: .65rem;
+  color: #64748b;
+  gap: 2px;
+}
+
+.free-logo-placeholder i {
+  font-size: 1.2rem;
+}
+
+.free-logo-del {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  background: rgba(220, 38, 38, 0.85);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.free-company-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.free-inp-title {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #0f172a;
+  border: none;
+  background: transparent;
+  padding: 2px 0;
+  width: 100%;
+  font-family: inherit;
+}
+
+.free-inp-sub {
+  font-size: .78rem;
+  color: #64748b;
+  border: none;
+  background: transparent;
+  padding: 1px 0;
+  width: 100%;
+  font-family: inherit;
+}
+
+.free-inv-sheet.a5 .free-inp-title {
+  font-size: 1.05rem;
+}
+
+.free-inv-sheet.a5 .free-inp-sub {
+  font-size: .68rem;
+}
+
+.free-hdr-center {
+  flex: 1;
+  text-align: center;
+}
+
+.free-title-badge {
+  display: inline-block;
+  background: #f1f5f9;
+  border: 1.5px solid #0f172a;
+  border-radius: 8px;
+  padding: 4px 14px;
+}
+
+.free-inv-title-inp {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #0f172a;
+  text-align: center;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  width: 160px;
+}
+
+.free-inv-sheet.a5 .free-inv-title-inp {
+  font-size: 1rem;
+  width: 120px;
+}
+
+.free-hdr-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+  flex: 1;
+}
+
+.free-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .84rem;
+}
+
+.meta-label {
+  font-weight: 700;
+  color: #475569;
+}
+
+.free-meta-inp {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: .84rem;
+  font-weight: 700;
+  width: 100px;
+  font-family: inherit;
+  text-align: center;
+}
+
+.btn-today-date {
+  padding: 2px 6px !important;
+  font-size: .72rem !important;
+}
+
+/* خط تفکیک ضخیم افقی نساجی */
+.textile-divider-line {
+  height: 4px;
+  background: linear-gradient(90deg, #1e3a8a 0%, #3b82f6 50%, #1e3a8a 100%);
+  border-radius: 2px;
+  margin: 10px 0 14px;
+}
+
+/* کادر گرد مشخصات خریدار */
+.free-buyer-box {
+  border: 1.5px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  background: #f8fafc;
+}
+
+.free-inv-sheet.a5 .free-buyer-box {
+  padding: 6px 10px;
+  margin-bottom: 10px;
+}
+
+.free-buyer-hdr {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: .82rem;
+  font-weight: 700;
+  color: #1e3a8a;
+  margin-bottom: 8px;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 4px;
+}
+
+.btn-pick-contact {
+  padding: 2px 8px !important;
+  font-size: .72rem !important;
+}
+
+.free-buyer-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px 12px;
+  font-size: .8rem;
+}
+
+.buyer-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.buyer-cell.full-width {
+  grid-column: span 3;
+}
+
+.buyer-cell label {
+  color: #475569;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.buyer-cell input {
+  flex: 1;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: .8rem;
+  background: #ffffff;
+  font-family: inherit;
+  color: #0f172a;
+}
+
+.buyer-cell input:focus {
+  border-color: #2563eb;
+  outline: none;
+}
+
+/* جدول اقلام */
+.free-table-wrap {
+  margin-bottom: 14px;
+  overflow-x: auto;
+}
+
+.free-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .82rem;
+}
+
+.free-inv-sheet.a5 .free-table {
+  font-size: .74rem;
+}
+
+.free-table th {
+  background: #f1f5f9;
+  color: #0f172a;
+  border: 1px solid #94a3b8;
+  padding: 6px 8px;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.free-table td {
+  border: 1px solid #cbd5e1;
+  padding: 4px 6px;
+  vertical-align: middle;
+}
+
+.free-table td.td-idx {
+  text-align: center;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.cell-inp {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: inherit;
+  padding: 2px 4px;
+  color: #0f172a;
+  box-sizing: border-box;
+}
+
+.cell-inp:focus {
+  background: #eff6ff;
+  border-radius: 4px;
+  outline: 1px solid #3b82f6;
+}
+
+.no-wrap-cell,
+.no-wrap-mode .td-desc input {
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.num-inp {
+  font-weight: 600;
+}
+
+.row-ops-btns {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+}
+
+.btn-op-icon {
+  background: none;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: .85rem;
+  border-radius: 4px;
+  transition: all .15s;
+}
+
+.btn-op-icon:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.free-table-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+}
+
+/* بخش محاسبات مالی و حروف */
+.free-bottom-section {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 14px;
+  align-items: flex-start;
+}
+
+.free-bottom-right {
+  flex: 1.4;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* کادر خط‌چین حروف فارسی */
+.free-words-box {
+  border: 2px dashed #93c5fd;
+  background: #eff6ff;
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.words-line {
+  display: flex;
+  gap: 6px;
+  font-size: .78rem;
+  line-height: 1.6;
+}
+
+.words-title {
+  font-weight: 700;
+  color: #1e40af;
+  white-space: nowrap;
+}
+
+.words-text {
+  font-weight: 600;
+  color: #1e3a8a;
+}
+
+/* کادر شرایط فاکتور */
+.free-terms-box {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: #f8fafc;
+}
+
+.terms-hdr {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: .76rem;
+  font-weight: 700;
+  color: #475569;
+  margin-bottom: 4px;
+}
+
+.btn-hide-terms {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: .7rem;
+}
+
+.btn-hide-terms:hover {
+  color: #ef4444;
+}
+
+.free-terms-text {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: .74rem;
+  color: #334155;
+  resize: vertical;
+  line-height: 1.7;
+}
+
+.free-terms-text:focus {
+  outline: none;
+}
+
+/* کادر مبالغ */
+.free-totals-card {
+  flex: 1;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.totals-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .8rem;
+}
+
+.totals-table td {
+  padding: 5px 10px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.totals-table .val-cell {
+  text-align: left;
+  direction: ltr;
+  font-weight: 600;
+}
+
+.totals-inp {
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: .78rem;
+  font-family: inherit;
+  width: 90px;
+  text-align: left;
+  direction: ltr;
+}
+
+.row-payable {
+  background: #f1f5f9;
+  font-weight: 800;
+  border-top: 1.5px solid #0f172a;
+}
+
+.row-prev-bal {
+  background: #fff1f2;
+}
+
+.text-d-bold {
+  color: #dc2626 !important;
+  font-weight: 800 !important;
+}
+
+.inline-check {
+  font-size: .78rem;
+  display: inline-flex;
+  margin: 0;
+}
+
+.prev-bal-inputs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.fc-xs {
+  padding: 2px 4px !important;
+  font-size: .72rem !important;
+  height: 24px !important;
+}
+
+/* کادر مهر و امضا */
+.free-signatures-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 10px;
+}
+
+.sig-col {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px;
+  background: #f8fafc;
+}
+
+.sig-title {
+  font-size: .78rem;
+  font-weight: 700;
+  color: #475569;
+  text-align: center;
+  margin-bottom: 6px;
+  border-bottom: 1px dashed #e2e8f0;
+  padding-bottom: 4px;
+}
+
+.sig-box {
+  min-height: 80px;
+  border: 1.5px dashed #cbd5e1;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  background: #ffffff;
+  transition: all .15s;
+}
+
+.sig-box:hover {
+  border-color: #3b82f6;
+  background: #f0f7ff;
+}
+
+.sig-box.has-sig {
+  border-style: solid;
+  border-color: #e2e8f0;
+}
+
+.sig-img {
+  max-height: 75px;
+  max-width: 170px;
+  object-fit: contain;
+}
+
+.btn-clear-sig {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  background: none;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  font-size: .95rem;
+}
+
+.sig-empty-hint {
+  font-size: .74rem;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* مودال رسم امضا */
+.sig-modal-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sig-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--bd);
+  gap: 8px;
+}
+
+.sig-tab-btn {
+  background: none;
+  border: none;
+  padding: 8px 14px;
+  font-size: .84rem;
+  font-weight: 700;
+  color: var(--txs);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.sig-tab-btn.active {
+  color: var(--p);
+  border-bottom-color: var(--p);
+}
+
+.sig-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg);
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+.sig-tool-sec {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .78rem;
+}
+
+.sig-color-options {
+  display: flex;
+  gap: 6px;
+}
+
+.sig-color-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+
+.sig-color-dot.active {
+  transform: scale(1.15);
+  box-shadow: 0 0 0 2px var(--p);
+}
+
+.dot-black { background: #111111; }
+.dot-blue { background: #1e3a8a; }
+.dot-red { background: #dc2626; }
+
+.sig-canvas-wrap {
+  border: 1.5px solid var(--bd);
+  border-radius: 8px;
+  background: #ffffff;
+  display: flex;
+  justify-content: center;
+  cursor: crosshair;
+  overflow: hidden;
+}
+
+.sig-upload-box {
+  border: 2px dashed var(--bd);
+  border-radius: 12px;
+  padding: 28px 20px;
+  text-align: center;
+  background: var(--bg);
+}
+
+.contact-pick-item {
+  padding: 8px 12px;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all .15s;
+}
+
+.contact-pick-item:hover {
+  background: var(--pl);
+  border-color: var(--p);
+}
+
+/* ══ استایل‌های پرینت استاندارد ══ */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  .free-inv-toolbar,
+  .sb,
+  .tp,
+  .sb-backdrop,
+  .tw2,
+  #modalOverlay,
+  .no-print {
+    display: none !important;
+  }
+  .free-inv-container {
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+  .free-inv-sheet-wrap {
+    padding: 0 !important;
+  }
+  .free-inv-sheet {
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    min-height: auto !important;
+  }
+}
+
+
