@@ -91,7 +91,7 @@ var Led = {
         if (chk.type === 'received') {
           if (!isRet) {
             var rDesc = 'چک دریافتی #' + chk.checkNumber;
-            if (chk.status === 'transferred') rDesc = 'چک واگذارشده به تامین‌کننده (پاس‌شده) #' + chk.checkNumber;
+            if (chk.status === 'transferred' || (chk.status === 'passed' && chk.transferToId)) rDesc = 'چک واگذارشده به تامین‌کننده (پاس‌شده) #' + chk.checkNumber;
             else if (chk.status === 'passed') rDesc = 'چک وصول‌شده #' + chk.checkNumber;
             txs.push({
               d: chk.issueDate || chk.dueDate,
@@ -350,7 +350,7 @@ Led.expCSV = function(cid) {
         if (chk.type === 'received') {
           if (!isRet) {
             var rDesc = 'چک دریافتی #' + chk.checkNumber;
-            if (chk.status === 'transferred') rDesc = 'چک واگذارشده به تامین‌کننده (پاس‌شده) #' + chk.checkNumber;
+            if (chk.status === 'transferred' || (chk.status === 'passed' && chk.transferToId)) rDesc = 'چک واگذارشده به تامین‌کننده (پاس‌شده) #' + chk.checkNumber;
             else if (chk.status === 'passed') rDesc = 'چک وصول‌شده #' + chk.checkNumber;
             txs.push({
               d: chk.issueDate || chk.dueDate,
@@ -536,7 +536,7 @@ Led.expPDF = function(cid) {
         if (chk.type === 'received') {
           if (!isRet) {
             var rDesc = 'چک دریافتی #' + chk.checkNumber;
-            if (chk.status === 'transferred') rDesc = 'چک واگذارشده به تامین‌کننده (پاس‌شده) #' + chk.checkNumber;
+            if (chk.status === 'transferred' || (chk.status === 'passed' && chk.transferToId)) rDesc = 'چک واگذارشده به تامین‌کننده (پاس‌شده) #' + chk.checkNumber;
             else if (chk.status === 'passed') rDesc = 'چک وصول‌شده #' + chk.checkNumber;
             txs.push({
               d: chk.issueDate || chk.dueDate,

@@ -261,8 +261,9 @@ var Dash = {
         var isR = c.type === 'received';
         var badge = Chk.dueBadgeHTML(c.dueDate, c.status);
         var partyText = esc(cMap[c.contactId] || '—');
-        if (c.status === 'transferred' && c.transferToId) {
-          partyText += '<br><span class="tg tg-p" style="font-size:10px;padding:1px 5px"><i class="bi bi-arrow-left"></i> واگذار به ' + esc(cMap[c.transferToId] || '—') + '</span>';
+        var trToId = (typeof Chk !== 'undefined' && typeof Chk.getTransferRecipientId === 'function') ? Chk.getTransferRecipientId(c) : (c.transferToId || c.previousTransferToId);
+        if (trToId && c.status !== 'returned_to_me' && c.status !== 'returned_to_customer') {
+          partyText += '<br><span class="tg tg-p" style="font-size:10px;padding:1px 5px"><i class="bi bi-arrow-left"></i> واگذار به ' + esc(cMap[trToId] || '—') + '</span>';
         } else if (c.status === 'returned_to_me') {
           var pName = cMap[c.transferToId || c.previousTransferToId];
           if (pName) partyText += '<br><span class="tg tg-o" style="font-size:10px;padding:1px 5px"><i class="bi bi-arrow-return-left"></i> عودت از ' + esc(pName) + '</span>';
@@ -276,7 +277,7 @@ var Dash = {
           '<td>' + esc(c.bank || '—') + '</td>' +
           '<td>' + esc(c.dueDate || '—') + badge + '</td>' +
           '<td style="font-weight:700;text-align:left">' + UI.fn(c.amount) + '</td>' +
-          '<td><span class="tg ' + Chk.stg(c.status) + '">' + Chk.sl(c.status) + '</span></td>' +
+          '<td>' + (typeof Chk !== 'undefined' && typeof Chk.statusBadgeHTML === 'function' ? Chk.statusBadgeHTML(c) : ('<span class="tg ' + Chk.stg(c.status) + '">' + Chk.sl(c.status) + '</span>')) + '</td>' +
           '<td style="white-space:nowrap" onclick="event.stopPropagation()">' +
           '<button class="bi2" onclick="Chk.cs(' + c.id + ')" title="تغییر وضعیت چک"><i class="bi bi-arrow-repeat"></i></button> ' +
           '<button class="bi2" onclick="Chk.form(\'' + c.type + '\',' + c.id + ')" title="ویرایش"><i class="bi bi-pencil"></i></button>' +

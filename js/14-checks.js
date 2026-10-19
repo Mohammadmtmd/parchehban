@@ -40,6 +40,34 @@ var Chk = {
      چک‌هایی که تاریخ سررسید آن‌ها رسیده یا گذشته است (و دستی به عنوان برگشتی یا عودت علامت نخورده‌اند)،
      به صورت پیش‌فرض پاس‌شده در نظر گرفته می‌شوند تا هشدار یا خطای سررسید گذشته نمایش داده نشود.
      در صورت عدم پاس شدن در واقعیت، کاربر می‌تواند وضعیت چک را دستی به عودت یا برگشتی تغییر دهد. */
+  /* ══ تشخیص و نگهداری دائمی چک‌های واگذارشده ══ */
+  isTransferred: function(c) {
+    if (!c) return false;
+    if (c.status === 'returned_to_me' || c.status === 'returned_to_customer') return false;
+    return c.status === 'transferred' || !!c.transferToId || (!!c.previousTransferToId && c.status === 'passed');
+  },
+  getTransferRecipientId: function(c) {
+    if (!c) return null;
+    if (c.status === 'returned_to_me' || c.status === 'returned_to_customer') return null;
+    return c.transferToId || c.previousTransferToId || null;
+  },
+  statusBadgeHTML: function(c) {
+    if (!c) return '';
+    if (c.status === 'passed') {
+      if (this.isTransferred(c)) {
+        return '<span class="tg tg-g" title="چک واگذارشده به تامین‌کننده که موعد آن رسیده و وصول گردیده است"><i class="bi bi-check-circle-fill"></i> وصول (واگذارشده)</span>';
+      }
+      return '<span class="tg tg-g"><i class="bi bi-check-circle-fill"></i> وصول</span>';
+    }
+    if (c.status === 'transferred') {
+      return '<span class="tg tg-p"><i class="bi bi-arrow-left-right"></i> انتقال‌یافته</span>';
+    }
+    return '<span class="tg ' + this.stg(c.status) + '">' + this.sl(c.status) + '</span>';
+  },
+  /* ══ پاس شدن خودکار چک‌ها به صورت پیش‌فرض با فرارسیدن تاریخ سررسید ══
+     چک‌هایی که تاریخ سررسید آن‌ها رسیده یا گذشته است (و دستی به عنوان برگشتی یا عودت علامت نخورده‌اند)،
+     به صورت پیش‌فرض پاس‌شده در نظر گرفته می‌شوند تا هشدار یا خطای سررسید گذشته نمایش داده نشود.
+     اطلاعات واگذاری (طرف حساب، تاریخ و توضیحات انتقال) برای همیشه حفظ می‌گردد و چک در تب انتقال‌یافته باقی می‌ماند. */
   autoPassDueChecks: async function() {
     var all = await DB.all('checks');
     var today = Jalali.today();
@@ -52,7 +80,7 @@ var Chk = {
       if (c.status !== 'passed' && !isRet && c.dueDate) {
         var dueP = pn(c.dueDate);
         if (dueP > 0 && dueP <= todayP) {
-          if (c.status === 'transferred' && c.transferToId && !c.previousTransferToId) {
+          if (c.transferToId && !c.previousTransferToId) {
             c.previousTransferToId = c.transferToId;
           }
           c.status = 'passed';
@@ -61,6 +89,21 @@ var Chk = {
           await this.syncAutoPayment(c.id);
           changed = true;
         }
+      }
+    }
+    return changed;
+  },
+  /* بازیابی و ترمیم خودکار فیلدهای انتقال در صورت وجود سوابق پیشین */
+  fixTransferredChecks: async function() {
+    var all = await DB.all('checks');
+    var changed = false;
+    for (var i = 0; i < all.length; i++) {
+      var c = all[i];
+      var isRet = (c.status === 'returned_to_me' || c.status === 'returned_to_customer');
+      if (!isRet && !c.transferToId && c.previousTransferToId) {
+        c.transferToId = c.previousTransferToId;
+        await DB.put('checks', c);
+        changed = true;
       }
     }
     return changed;
@@ -280,6 +323,7 @@ var Chk = {
     else fl = this._fl;
 
     await this.ensureDocNumbers();
+    await this.fixTransferredChecks();
     await this.autoPassDueChecks();
     var all = await FY.byYear('checks');
     var ct = await DB.all('contacts'),
@@ -344,7 +388,7 @@ var Chk = {
       return c.type === 'received';
     });
     if (fl === 'transferred') ls = ls.filter(function(c) {
-      return c.status === 'transferred';
+      return me.isTransferred(c);
     });
     if (fl === 'passed') ls = ls.filter(function(c) {
       return c.status === 'passed';
@@ -416,9 +460,11 @@ var Chk = {
       var bnkTxt = esc(c.bank || '—');
       if (c.branch) bnkTxt += '<br><small style="color:var(--txs)">شعبه ' + esc(c.branch) + '</small>';
       var personText = esc(cm[c.contactId] || '—');
-      if (c.status === 'transferred' && c.transferToId) {
+      var trToId = me.getTransferRecipientId(c);
+      if (me.isTransferred(c) && trToId) {
         personText = '<span style="color:var(--txs);font-size:.78rem">از:</span> ' + personText +
-          '<br><span class="tg tg-p" style="font-size:.73rem;padding:2px 6px"><i class="bi bi-arrow-left"></i> واگذار به ' + esc(cm[c.transferToId] || '—') + '</span>';
+          '<br><span class="tg tg-p" style="font-size:.73rem;padding:2px 6px"><i class="bi bi-arrow-left"></i> واگذار به ' + esc(cm[trToId] || '—') +
+          (c.transferDate ? ' <span style="opacity:.8;font-size:.7rem">(' + esc(c.transferDate) + ')</span>' : '') + '</span>';
       } else if (c.status === 'returned_to_me') {
         var prevName = cm[c.transferToId || c.previousTransferToId];
         personText = '<span style="color:var(--txs);font-size:.78rem">مشتری:</span> ' + personText +
@@ -438,14 +484,15 @@ var Chk = {
         '<td style="font-weight:700">' + UI.fn(c.amount) + '</td>' +
         '<td>' + personText + '</td>' +
         '<td>' + esc(c.dueDate || '—') + dueBadge + '</td>' +
-        '<td><span class="tg ' + Chk.stg(c.status) + '">' + Chk.sl(c.status) + '</span></td>' +
+        '<td>' + me.statusBadgeHTML(c) + '</td>' +
         '<td style="white-space:nowrap">';
 
+      var isTrItem = me.isTransferred(c);
       if (c.type === 'received') {
-        r += '<button class="bi2" onclick="Chk.openTransferModal(' + c.id + ')" title="' + (c.status === 'transferred' ? 'مدیریت واگذاری یا عودت چک' : 'انتقال و واگذاری به مشتری یا تامین‌کننده') + '"><i class="bi bi-arrow-left-right"></i></button> ';
+        r += '<button class="bi2" onclick="Chk.openTransferModal(' + c.id + ')" title="' + (isTrItem ? 'مدیریت واگذاری یا عودت چک' : 'انتقال و واگذاری به مشتری یا تامین‌کننده') + '"><i class="bi bi-arrow-left-right"></i></button> ';
       }
-      if (c.status === 'transferred') {
-        r += '<button class="bi2" onclick="Chk.printSingleVoucher(' + c.id + ')" title="چاپ قبض پرداخت چک"><i class="bi bi-printer"></i></button> ';
+      if (isTrItem) {
+        r += '<button class="bi2" onclick="Chk.printSingleVoucher(' + c.id + ')" title="چاپ قبض پرداخت چک واگذارشده"><i class="bi bi-printer"></i></button> ';
       }
       r += '<button class="bi2" onclick="Chk.cs(' + c.id + ')" title="تغییر وضعیت چک"><i class="bi bi-arrow-repeat"></i></button> ' +
         '<button class="bi2" onclick="Chk.form(\'' + c.type + '\',' + c.id + ')" title="ویرایش"><i class="bi bi-pencil"></i></button> ' +
@@ -483,9 +530,9 @@ var Chk = {
         '</div></div>';
     }
 
-    var trCount = all.filter(function(x){return x.status === 'transferred'}).length;
-    var passCount = all.filter(function(x){return x.status === 'passed'}).length;
-    var retCount = all.filter(function(x){return x.status === 'returned' || x.status === 'returned_to_me' || x.status === 'returned_to_customer'}).length;
+    var trCount = all.filter(function(x){ return me.isTransferred(x); }).length;
+    var passCount = all.filter(function(x){ return x.status === 'passed'; }).length;
+    var retCount = all.filter(function(x){ return x.status === 'returned' || x.status === 'returned_to_me' || x.status === 'returned_to_customer'; }).length;
     var tabBar = '<div class="tab-bar">' +
       '<button class="tab-btn' + (fl === 'all' ? ' active' : '') + '" onclick="Chk.ll(\'all\')">همه چک‌ها (' + all.length + ')</button>' +
       '<button class="tab-btn' + (fl === 'received' ? ' active' : '') + '" onclick="Chk.ll(\'received\')">دریافتی (' + all.filter(function(x){return x.type==='received'}).length + ')</button>' +
@@ -703,7 +750,18 @@ var Chk = {
       d.transferDate = trDt;
       d.transferNotes = trNt;
       if (trTo) {
-        d.status = 'transferred';
+        if (id) {
+          var prevChk = await DB.get('checks', id);
+          if (prevChk && prevChk.status === 'passed') {
+            d.status = 'passed';
+          } else if (prevChk && (prevChk.status === 'returned_to_me' || prevChk.status === 'returned_to_customer' || prevChk.status === 'returned')) {
+            d.status = prevChk.status;
+          } else {
+            d.status = 'transferred';
+          }
+        } else {
+          d.status = 'transferred';
+        }
       } else if (id) {
         var prevChk = await DB.get('checks', id);
         if (prevChk && prevChk.status === 'transferred') {
@@ -753,10 +811,10 @@ var Chk = {
     ct.forEach(function(x) { cm[x.id] = x.name; });
 
     var isR = c.type === 'received';
-    var isTr = c.status === 'transferred';
+    var isTr = this.isTransferred(c);
     var isRetMe = c.status === 'returned_to_me';
     var isRetCust = c.status === 'returned_to_customer';
-    var prevRecipient = c.transferToId || c.previousTransferToId;
+    var prevRecipient = this.getTransferRecipientId(c);
     var recipientName = cm[prevRecipient] || 'تامین‌کننده / شخص';
     var contactName = cm[c.contactId] || 'مشتری / طرف حساب';
 
@@ -801,9 +859,11 @@ var Chk = {
 
     var curStatusInfo = '';
     if (isTr) {
+      var isPassedTr = (c.status === 'passed');
       curStatusInfo = '<div style="margin-bottom:12px;padding:10px 14px;background:rgba(59,130,246,.08);border:1.5px solid var(--p);border-radius:10px;font-size:.84rem;color:var(--tx)">' +
-        '<div style="font-weight:700;color:var(--p);margin-bottom:3px"><i class="bi bi-arrow-left-right"></i> وضعیت فعلی: واگذارشده به تامین‌کننده</div>' +
-        'این چک در تاریخ <strong>' + esc(c.transferDate || c.dueDate || '—') + '</strong> به <strong>«' + esc(recipientName) + '»</strong> واگذار شده است. مبلغ آن در حساب مشتری پاس‌شده منظور شده و یادآور سررسید فعال است.' +
+        '<div style="font-weight:700;color:var(--p);margin-bottom:3px"><i class="bi bi-arrow-left-right"></i> وضعیت انتقال: واگذارشده به «' + esc(recipientName) + '»' + (isPassedTr ? ' (وصول‌شده / پاس‌شده)' : '') + '</div>' +
+        'این چک در تاریخ <strong>' + esc(c.transferDate || c.dueDate || '—') + '</strong> به <strong>«' + esc(recipientName) + '»</strong> واگذار شده است. ' +
+        (isPassedTr ? 'این چک به سررسید رسیده و به صورت وصول‌شده ثبت شده است. سوابق واگذاری دائم ثبت و در تب «انتقال‌یافته» حفظ می‌گردد.' : 'مبلغ آن در حساب مشتری پاس‌شده منظور شده و یادآور سررسید فعال است.') +
         '</div>';
     } else if (isRetMe) {
       curStatusInfo = '<div style="margin-bottom:12px;padding:10px 14px;background:rgba(234,88,12,.08);border:1.5px solid var(--o,#ea580c);border-radius:10px;font-size:.84rem;color:var(--tx)">' +
@@ -836,7 +896,7 @@ var Chk = {
       '<div class="fg"><label>تاریخ واگذاری</label><input class="fc" id="nTrDate" value="' + esc(c.transferDate || todayJ()) + '" style="direction:ltr;text-align:center"></div>' +
       '<div class="fg"><label>توضیحات واگذاری</label><input class="fc" id="nTrNotes" value="' + esc(c.transferNotes || '') + '" placeholder="بابت فاکتور، تسویه..."></div>' +
       '</div>' +
-      '<div style="font-size:.78rem;color:var(--p);line-height:1.6"><i class="bi bi-info-circle-fill"></i> اثر حسابداری: مبلغ چک به عنوان پاس‌شده به حساب مشتری منظور می‌شود، از حساب تامین‌کننده کسر می‌گردد، و یادآور سررسید چک فعال باقی می‌ماند.</div>' +
+      '<div style="font-size:.78rem;color:var(--p);line-height:1.6"><i class="bi bi-info-circle-fill"></i> اثر حسابداری: مبلغ چک به عنوان پاس‌شده به حساب مشتری منظور می‌شود، از حساب تامین‌کننده کسر می‌گردد، و سوابق انتقال دائم ثبت می‌ماند.</div>' +
       '</div>' +
 
       /* فیلدهای اختصاصی عودت یا برگشت چک */
@@ -851,10 +911,10 @@ var Chk = {
       /* فیلدهای اختصاصی وصول نهایی */
       '<div id="secPassFields" style="display:' + (c.status === 'passed' ? 'block' : 'none') + ';background:rgba(22,163,74,.05);border:1px dashed var(--ok);border-radius:8px;padding:12px;margin-bottom:12px">' +
       '<div class="fr">' +
-      '<div class="fg"><label>حساب بانکی (برای ثبت سند وصول)</label><select class="fc" id="nBk">' + bO + '</select></div>' +
+      '<div class="fg"><label>حساب بانکی ' + (isTr ? '(اختیاری برای چک واگذارشده)' : '(برای ثبت سند وصول)') + '</label><select class="fc" id="nBk">' + bO + '</select></div>' +
       '<div class="fg"><label>تاریخ وصول</label><input class="fc" id="nPassDate" value="' + esc(c.passedDate || todayJ()) + '" style="direction:ltr;text-align:center"></div>' +
       '</div>' +
-      '<div style="font-size:.78rem;color:var(--ok);line-height:1.6"><i class="bi bi-check-circle-fill"></i> اثر حسابداری: چک به طور قطعی وصول شده و یادآور سررسید آن پایان می‌یابد.</div>' +
+      '<div style="font-size:.78rem;color:var(--ok);line-height:1.6"><i class="bi bi-check-circle-fill"></i> اثر حسابداری: چک به عنوان وصول‌شده ثبت می‌گردد و سوابق انتقال آن دائم در سیستم و تب انتقال‌یافته محفوظ می‌ماند.</div>' +
       '</div>';
 
     UI.open('تغییر وضعیت چک ' + esc(c.checkNumber), h,
@@ -896,6 +956,10 @@ var Chk = {
     } else if (newSt === 'passed') {
       c.passedDate = Jalali.parse(elVal('nPassDate')) || todayJ();
       c.bankAccountId = intOf(elVal('nBk')) || null;
+      // دائم حفظ شدن اطلاعات انتقال در هنگام پاس شدن چک
+      if (c.transferToId && !c.previousTransferToId) {
+        c.previousTransferToId = c.transferToId;
+      }
     } else if (newSt === 'pending') {
       c.bankAccountId = null;
     }
@@ -905,7 +969,9 @@ var Chk = {
     UI.close();
 
     var msg = 'وضعیت چک به «' + this.sl(newSt) + '» تغییر یافت.';
-    if (newSt === 'returned_to_me') {
+    if (newSt === 'passed' && this.isTransferred(c)) {
+      msg = 'چک به عنوان وصول‌شده ثبت شد؛ سوابق انتقال دائم در تب «انتقال‌یافته» حفظ گردید.';
+    } else if (newSt === 'returned_to_me') {
       msg = 'چک به خود عودت داده شد: مبلغ از حساب تامین‌کننده کسر و به طلب شما از مشتری افزوده شد.';
     } else if (newSt === 'returned_to_customer') {
       msg = 'چک به مشتری عودت داده شد: مبلغ از حساب تامین‌کننده کسر و به طلب شما از مشتری افزوده شد.';
@@ -986,13 +1052,14 @@ var Chk = {
       if (n && fromNames.indexOf(n) === -1) fromNames.push(n);
     });
 
-    var isTransferred = checks.some(function(c) { return c.status === 'transferred'; });
+    var isTransferred = checks.some(function(c) { return Chk.isTransferred(c); });
     var preSelectedTo = '';
     var preTransferDate = todayJ();
     var preTransferNotes = '';
     for (var i = 0; i < checks.length; i++) {
-      if (checks[i].transferToId) {
-        preSelectedTo = checks[i].transferToId;
+      var rId = Chk.getTransferRecipientId(checks[i]);
+      if (rId) {
+        preSelectedTo = rId;
         if (checks[i].transferDate) preTransferDate = checks[i].transferDate;
         if (checks[i].transferNotes) preTransferNotes = checks[i].transferNotes;
         break;
@@ -1038,9 +1105,10 @@ var Chk = {
     var infoBanner = '';
     if (isTransferred) {
       var currentRecipient = cm[preSelectedTo] || 'نامشخص';
+      var isPassed = checks.some(function(c) { return c.status === 'passed'; });
       infoBanner = '<div style="margin-bottom:12px;padding:10px 14px;background:var(--sf);border:1.5px solid var(--p,#3b82f6);border-radius:10px;font-size:.84rem;color:var(--tx);display:flex;align-items:center;gap:8px">' +
         '<i class="bi bi-arrow-repeat" style="font-size:1.1rem;color:var(--p);flex-shrink:0"></i>' +
-        '<div>این چک قبلاً به <strong>«' + esc(currentRecipient) + '»</strong> واگذار شده است. برای تغییر دریافت‌کننده، شخص جدید (مشتری یا تامین‌کننده) را انتخاب نمایید یا در صورت نیاز واگذاری را لغو کنید.</div>' +
+        '<div>این چک قبلاً به <strong>«' + esc(currentRecipient) + '»</strong> واگذار شده است' + (isPassed ? ' (وضعیت فعلی: وصول‌شده / پاس‌شده)' : '') + '. مشخصات انتقال دائم ثبت شده است؛ برای تغییر دریافت‌کننده، شخص جدید را انتخاب نمایید یا در صورت نیاز واگذاری را لغو کنید.</div>' +
         '</div>';
     }
 
@@ -1100,7 +1168,9 @@ var Chk = {
 
     for (var i = 0; i < checks.length; i++) {
       var c = checks[i];
-      c.status = 'transferred';
+      if (c.status !== 'passed') {
+        c.status = 'transferred';
+      }
       c.transferToId = toId;
       c.transferDate = payDate;
       c.transferNotes = notes;
@@ -1461,7 +1531,9 @@ var Chk = {
     var matched = ct.find(function(x) { return x.name.trim().toLowerCase() === r.toLowerCase(); });
     for (var i = 0; i < this._currentVoucher.checks.length; i++) {
       var c = this._currentVoucher.checks[i];
-      c.status = 'transferred';
+      if (c.status !== 'passed') {
+        c.status = 'transferred';
+      }
       if (matched) c.transferToId = matched.id;
       c.transferDate = d;
       c.transferNotes = n;
@@ -1502,7 +1574,8 @@ var Chk = {
     var ct = await DB.all('contacts');
     var cm = {};
     ct.forEach(function(x) { cm[x.id] = x.name; });
-    var recip = cm[c.transferToId] || '';
+    var trId = this.getTransferRecipientId(c);
+    var recip = cm[trId] || '';
     if (!recip) {
       UI.toast('برای صدور قبض پرداخت، ابتدا دریافت‌کننده (مشتری یا تامین‌کننده) را مشخص نمایید', 'i');
       await this.openTransferModal(id);
