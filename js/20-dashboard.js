@@ -9,7 +9,15 @@ var Dash = {
     UI.title('bi-grid-1x2-fill', 'داشبورد مدیریتی جامع');
     UI.act('<button class="btn bo bs" onclick="Dash.load()" title="تازه‌سازی داده‌ها"><i class="bi bi-arrow-clockwise"></i> بروزرسانی</button>');
     UI.content('<div class="ld"><div class="spn"></div></div>');
-    await this.load();
+    try {
+      await this.load();
+    } catch (err) {
+      console.error('Dash.render error:', err);
+      UI.content('<div class="hint-box" style="margin:20px;background:var(--dl);color:var(--d);padding:18px;border-radius:12px;border:1px solid var(--d)">' +
+        '<strong>خطا در بارگذاری داشبورد:</strong> ' + esc(err && err.message ? err.message : 'خطای بارگذاری داده‌ها') +
+        '<div style="margin-top:10px"><button class="btn bp bs" onclick="Dash.load()"><i class="bi bi-arrow-clockwise"></i> تلاش مجدد</button></div>' +
+        '</div>');
+    }
   },
   setP: async function(p) {
     this.period = p;
@@ -455,9 +463,14 @@ var Dash = {
   renderCharts: function(allInvs, cMap) {
     try {
       if (typeof Chart === 'undefined') return;
-      var me = this;
-      if (me._wc) me._wc.destroy();
-      if (me._cc) me._cc.destroy();
+      if (me._wc) {
+        try { me._wc.destroy(); } catch (e) {}
+        me._wc = null;
+      }
+      if (me._cc) {
+        try { me._cc.destroy(); } catch (e) {}
+        me._cc = null;
+      }
       var byDate = {};
       allInvs.forEach(function(inv) {
         if (inv.type === 'proforma') return;

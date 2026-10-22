@@ -107,19 +107,31 @@ if (yearSel) yearSel.addEventListener('change', function() {
   }
   try {
     step = 'بازکردن پایگاه داده';
-    await withTimeout(DB.init(), 20000, step);
+    await withTimeout(DB.init(), 15000, step);
     if (localStorage.getItem('pb_dark') === 'true') document.body.classList.add('dark');
-    step = 'ساخت کاربر پیش‌فرض';
-    await withTimeout(Auth.ensureDefaultUser(), 15000, step);
+    
+    step = 'بررسی حساب کاربری اولیه';
+    try {
+      await withTimeout(Auth.ensureDefaultUser(), 8000, step);
+    } catch (uErr) {
+      console.warn('ensureDefaultUser non-fatal:', uErr);
+    }
+
     /* مهاجرت‌های داده — یک بار و فقط یک بار اجرا می‌شوند */
     step = 'مهاجرت داده';
-    await withTimeout(Migrate.run(), 60000, step);
+    try {
+      await withTimeout(Migrate.run(), 10000, step);
+    } catch (mErr) {
+      console.warn('Migrate non-fatal:', mErr);
+    }
 
     /* دریافت تنظیمات ابری پایدار و بررسی خودکار بازیابی اطلاعات */
     step = 'بررسی اتصال ابری Supabase';
     try {
       if (typeof Sync !== 'undefined') {
-        if (Sync.fetchServerConfig) await Sync.fetchServerConfig();
+        if (Sync.fetchServerConfig) {
+          await withTimeout(Sync.fetchServerConfig(), 2500, 'تنظیمات ابری').catch(function() {});
+        }
         if (Sync.init) Sync.init();
 
         var supaCfg = Sync.getConfig();
@@ -130,11 +142,13 @@ if (yearSel) yearSel.addEventListener('change', function() {
 
           /* اگر دیتابیس محلی خالی است، استعلام و بازیابی خودکار از Supabase */
           if (pAll.length === 0 && iAll.length === 0 && cAll.length === 0) {
-            var rem = await Sync.checkRemoteCounts();
+            var rem = await withTimeout(Sync.checkRemoteCounts(), 3000, 'بررسی دیتابیس ابری').catch(function() {});
             if (rem && rem.ok && rem.total > 0) {
               step = 'بازیابی خودکار از سرور ابری';
               console.info('دیتابیس در این دستگاه خالی است اما ' + rem.total + ' رکورد روی Supabase وجود دارد. در حال بازیابی...');
-              await Sync.fullDownload();
+              await withTimeout(Sync.fullDownload(), 15000, 'دانلود ابری').catch(function(e) {
+                console.warn('fullDownload on boot warning:', e);
+              });
               console.info('بازیابی خودکار با موفقیت پایان یافت.');
             }
           }

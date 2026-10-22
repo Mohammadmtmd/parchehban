@@ -162,6 +162,23 @@ var Auth = {
     return list;
   },
 
+  /* تطابق مستقیم مقادیر هش بدون هیچ‌گونه فراخوانی بازگشتی */
+  _matchHash: async function(user, plain) {
+    if (!user || !user.password || plain === null || plain === undefined) return false;
+    var vars = Auth._variations(plain);
+    for (var i = 0; i < vars.length; i++) {
+      var v = vars[i];
+      if (user.salt) {
+        var hNew = await Auth.hash(v, user.salt);
+        if (user.password === hNew) return true;
+      }
+      var hV1 = await Auth.legacyHashV1(v);
+      if (user.password === hV1) return true;
+      if (user.password === Auth.legacyHashBtoa(v)) return true;
+    }
+    return false;
+  },
+
   /* بررسی رمز عبور با پشتیبانی کامل از ارقام فارسی/انگلیسی و ارتقای خودکار */
   verify: async function(user, plain) {
     if (!user || !user.password) return false;
@@ -169,12 +186,6 @@ var Auth = {
     var vars = Auth._variations(plain);
     for (var i = 0; i < vars.length; i++) {
       var v = vars[i];
-
-      /* اگر کاربر مدیر سیستم پیش‌فرض است و هنوز رمز اولیه دارد، هر دو حالت admin و admin123 پذیرفته شود */
-      if ((user.username || '').toLowerCase() === 'admin') {
-        var isDef = await Auth.isDefaultAdminPass();
-        if (isDef && (v === 'admin' || v === 'admin123')) return true;
-      }
 
       /* ۱. تطابق با ساختار جدید (Salt اختصاصی کاربر) */
       if (user.salt) {
@@ -197,6 +208,14 @@ var Auth = {
         user.password = await Auth.hash(v, user.salt);
         try { await DB.put('users', user); } catch (e) {}
         return true;
+      }
+
+      /* ۴. اگر کاربر مدیر است و هنوز رمز اولیه را تغییر نداده، هر دو عبارت admin و admin123 پذیرفته شود */
+      if ((user.username || '').toLowerCase() === 'admin') {
+        if (v === 'admin' || v === 'admin123') {
+          var isDef = (await Auth._matchHash(user, 'admin123')) || (await Auth._matchHash(user, 'admin'));
+          if (isDef) return true;
+        }
       }
     }
 
@@ -413,9 +432,9 @@ var Auth = {
         var other = users[i];
         if (String(other.id) === String(primary.id)) continue;
         if ((other.username || '').toLowerCase() === 'admin') {
-          var isDefault = await Auth.verify(other, 'admin123');
+          var isDefault = (await Auth._matchHash(other, 'admin123')) || (await Auth._matchHash(other, 'admin'));
           if (isDefault) {
-            await DB.gs('users', 'readwrite').delete(other.id);
+            await DB.del('users', other.id);
             console.info('حساب کاربری پیش‌فرض روح پاکسازی شد.');
           }
         }
@@ -440,13 +459,17 @@ var Auth = {
     return stored;
   },
 
-  /* بررسی اینکه آیا مدیر هنوز رمز پیش‌فرض admin123 دارد یا خیر */
+  /* بررسی اینکه آیا مدیر هنوز رمز پیش‌فرض admin123 یا admin دارد یا خیر */
   isDefaultAdminPass: async function() {
     try {
       var users = await DB.all('users');
       var admin = users.find(function(u) { return (u.username || '').toLowerCase() === 'admin'; });
       if (!admin) return false;
-      return await Auth.verify(admin, 'admin123');
+      var match123 = await Auth._matchHash(admin, 'admin123');
+      if (match123) return true;
+      var matchAdmin = await Auth._matchHash(admin, 'admin');
+      if (matchAdmin) return true;
+      return false;
     } catch (e) {
       return false;
     }
