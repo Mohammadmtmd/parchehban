@@ -193,7 +193,9 @@ var FreeInv = {
   _renderSheetHtml: function() {
     var s = this._state;
     var subtotal = 0;
+    var totalQty = 0;
     s.items.forEach(function(it) {
+      totalQty += (numOf(it.qty) || 0);
       subtotal += (numOf(it.qty) * numOf(it.price));
     });
 
@@ -325,6 +327,10 @@ var FreeInv = {
         /* کادر فشرده مبالغ در پایین جدول */
         '<div class="free-totals-card">' +
           '<table class="totals-table">' +
+            '<tr class="row-qty">' +
+              '<td><strong>جمع مقدار / متراژ:</strong></td>' +
+              '<td class="val-cell"><strong>' + UI.fn(totalQty) + '</strong></td>' +
+            '</tr>' +
             '<tr>' +
               '<td>جمع اقلام:</td>' +
               '<td class="val-cell">' + UI.fn(subtotal) + ' ' + cur + '</td>' +

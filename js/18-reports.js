@@ -290,10 +290,12 @@ var Rep = {
     }
 
     /* کارت‌های خلاصه آماری P&L */
+    var profitAfterBroker = grossProfit - brokerCommissions;
+    var marginAfterBrokerPct = netSales > 0 ? (profitAfterBroker / netSales) * 100 : 0;
     h += '<div class="sg" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr));margin-bottom:20px">';
     h += '<div class="sc"><div class="si g"><i class="bi bi-cash-stack"></i></div><div class="sti"><h3>' + UI.fn(netSales) + '</h3><p>درآمد خالص فروش</p></div></div>';
     h += '<div class="sc"><div class="si o"><i class="bi bi-cart-check-fill"></i></div><div class="sti"><h3>' + UI.fn(Math.round(totalCOGS)) + '</h3><p>بهای تمام‌شده موثق (COGS)</p></div></div>';
-    h += '<div class="sc"><div class="si ' + (grossProfit >= 0 ? 'g' : 'r') + '"><i class="bi bi-graph-up-arrow"></i></div><div class="sti"><h3 style="color:' + (grossProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + UI.fn(Math.round(grossProfit)) + '</h3><p>سود ناخالص بازرگانی (' + grossMarginPct.toFixed(1) + '٪)</p></div></div>';
+    h += '<div class="sc"><div class="si ' + (profitAfterBroker >= 0 ? 'g' : 'r') + '"><i class="bi bi-graph-up-arrow"></i></div><div class="sti"><h3 style="color:' + (profitAfterBroker >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + UI.fn(Math.round(profitAfterBroker)) + '</h3><p>' + (brokerCommissions > 0 ? 'سود فروش (پس از کمیسیون)' : 'سود ناخالص بازرگانی') + ' (' + marginAfterBrokerPct.toFixed(1) + '٪)</p></div></div>';
     h += '<div class="sc"><div class="si ' + (netProfit >= 0 ? 'b' : 'r') + '"><i class="bi bi-award-fill"></i></div><div class="sti"><h3 style="color:' + (netProfit >= 0 ? 'var(--p)' : 'var(--d)') + '">' + UI.fn(Math.round(netProfit)) + '</h3><p>سود خالص عملیاتی (' + netMarginPct.toFixed(1) + '٪)</p></div></div>';
     h += '</div>';
 
@@ -316,6 +318,7 @@ var Rep = {
 
     if (brokerCommissions > 0) {
       h += '<tr style="color:var(--d)"><td style="padding-inline-start:28px">کسر می‌شود: کارمزد و پورسانت واسطه‌های فروش</td><td style="text-align:left">(' + UI.fn(brokerCommissions) + ')</td><td></td><td style="text-align:center">−' + (netSales > 0 ? ((brokerCommissions / netSales) * 100).toFixed(1) : 0) + '٪</td></tr>';
+      h += '<tr style="font-weight:700;background:rgba(37,99,235,.05)"><td>= سود فروش پس از کسر کمیسیون واسطه‌ها</td><td></td><td style="text-align:left;font-weight:800;color:' + (profitAfterBroker >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + UI.fn(Math.round(profitAfterBroker)) + '</td><td style="text-align:center;font-weight:700">' + marginAfterBrokerPct.toFixed(1) + '٪</td></tr>';
     }
 
     if (classifiedOpEx > 0) {
@@ -371,6 +374,8 @@ var Rep = {
     invoiceBreakdown.slice(0, 30).forEach(function(inv, idx) {
       var contactTitle = cMap[inv.contactId] || 'مشتری آزاد';
       var badgeUnv = inv.hasUnverifiedItems ? ' <span class="tg tg-o" style="font-size:10px" title="شامل قلم فاقد قیمت خرید">⚠ بررسی</span>' : '';
+      var pVal = inv.profitAfterBroker !== undefined ? inv.profitAfterBroker : (inv.grossProfit - (inv.brokerCommission || 0));
+      var commBadge = (inv.brokerCommission > 0) ? ' <span class="tg tg-r" style="font-size:10px" title="کمیسیون واسطه">کمیسیون: −' + UI.fn(inv.brokerCommission) + '</span>' : '';
 
       invRows += '<tr class="clk" onclick="Inv.vw(' + inv.invoiceId + ')">' +
         '<td>' + (idx + 1) + '</td>' +
@@ -379,14 +384,14 @@ var Rep = {
         '<td style="text-align:center">' + esc(inv.date) + '</td>' +
         '<td style="text-align:left">' + UI.fn(inv.grandTotal) + '</td>' +
         '<td style="text-align:left">' + UI.fn(Math.round(inv.cogs)) + '</td>' +
-        '<td style="text-align:left;font-weight:700;color:' + (inv.grossProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + UI.fn(Math.round(inv.grossProfit)) + '</td>' +
+        '<td style="text-align:left;font-weight:700;color:' + (pVal >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + UI.fn(Math.round(pVal)) + commBadge + '</td>' +
         '<td style="text-align:center"><span class="tg ' + (inv.marginPct >= 15 ? 'tg-g' : inv.marginPct > 0 ? 'tg-o' : 'tg-r') + '">' + inv.marginPct.toFixed(1) + '٪</span></td>' +
         '</tr>';
     });
 
     h += '<div class="cd">';
     h += '<div class="cd-h"><span><i class="bi bi-receipt" style="margin-inline-end:6px;color:var(--p)"></i>سود به تفکیک فاکتورهای فروش (کلیک برای مشاهده)</span><span class="mut" style="font-size:11px">' + invoiceBreakdown.length + ' فاکتور</span></div>';
-    h += '<div class="tw"><table><thead><tr><th>#</th><th>شماره فاکتور</th><th>مشتری</th><th style="text-align:center">تاریخ</th><th style="text-align:left">مبلغ فاکتور</th><th style="text-align:left">بهای تمام‌شده</th><th style="text-align:left">سود ناخالص</th><th style="text-align:center">حاشیه سود</th></tr></thead><tbody>';
+    h += '<div class="tw"><table><thead><tr><th>#</th><th>شماره فاکتور</th><th>مشتری</th><th style="text-align:center">تاریخ</th><th style="text-align:left">مبلغ فاکتور</th><th style="text-align:left">بهای تمام‌شده</th><th style="text-align:left">سود فاکتور (با کسر کمیسیون)</th><th style="text-align:center">حاشیه سود</th></tr></thead><tbody>';
     h += (invRows || '<tr><td colspan="8" style="text-align:center">فاکتوری در این دوره ثبت نشده است</td></tr>');
     h += '</tbody></table></div></div>';
 

@@ -39,7 +39,8 @@ var Inv = {
       tDis = 0,
       tGrand = 0,
       tPaid = 0,
-      tRem = 0;
+      tRem = 0,
+      tQty = 0;
     ls.forEach(function(v) {
       tSub += v.subtotal || 0;
       tShip += v.shippingCost || 0;
@@ -47,6 +48,9 @@ var Inv = {
       tGrand += v.grandTotal || 0;
       tPaid += v.paidAmount || 0;
       tRem += (v.grandTotal || 0) - (v.paidAmount || 0);
+      (v.items || []).forEach(function(it) {
+        tQty += (parseFloat(it.quantity) || 0);
+      });
     });
     /* صفحه‌بندی */
     var pk = 'inv_' + type;
@@ -63,12 +67,12 @@ var Inv = {
       r += '<tr><td>' + (((pg.page - 1) * pg.per) + i + 1) + '</td><td>' + esc(v.invoiceNumber || '—') + '</td><td>' + v.date + '</td><td>' + esc(cm[v.contactId] || '—') + '</td><td>' + UI.fn(v.subtotal) + '</td><td>' + UI.fn(v.shippingCost || 0) + '</td><td>' + UI.fn(v.discount || 0) + '</td><td style="font-weight:700">' + UI.fn(v.grandTotal) + '</td><td>' + UI.fn(v.paidAmount) + '</td><td style="color:' + (rm > 0 ? 'var(--d)' : 'var(--ok)') + ';font-weight:700">' + UI.fn(rm) + '</td><td><span class="tg ' + sg + '">' + sl + '</span></td><td style="white-space:nowrap"><button class="bi2" title="پیش‌نمایش چاپ و تنظیمات" onclick="Inv.vw(' + v.id + ')"><i class="bi bi-eye"></i></button> <button class="bi2" title="پیش‌نمایش و چاپ A4" onclick="Inv.vw(' + v.id + ',\'a4\')"><span style="font-size:.6rem;font-weight:800">A4</span></button> <button class="bi2" title="پیش‌نمایش و چاپ A5" onclick="Inv.vw(' + v.id + ',\'a5\')"><span style="font-size:.6rem;font-weight:800">A5</span></button> <button class="bi2" title="ویرایش" onclick="Inv.showF(\'' + type + '\',' + v.id + ')"><i class="bi bi-pencil"></i></button> <button class="bi2 d" title="حذف" onclick="Inv.rm(' + v.id + ',\'' + type + '\')"><i class="bi bi-trash3"></i></button></td></tr>';
     }
     var ft = '<tfoot><tr style="background:var(--bg);font-weight:700">';
-    ft += '<td colspan="4">جمع ' + ls.length + ' فاکتور</td>';
+    ft += '<td colspan="4">جمع ' + ls.length + ' فاکتور (مقدار کل: ' + UI.fn(tQty) + ')</td>';
     ft += '<td>' + UI.fn(tSub) + '</td><td>' + UI.fn(tShip) + '</td><td>' + UI.fn(tDis) + '</td>';
     ft += '<td>' + UI.fn(tGrand) + '</td><td>' + UI.fn(tPaid) + '</td><td>' + UI.fn(tRem) + '</td>';
     ft += '<td colspan="2"></td></tr></tfoot>';
     var title = type === 'proforma' ? 'پیش فاکتور' : type === 'sale' ? 'فروش' : 'خرید';
-    var h = '<div class="cd"><div class="cd-h">' + title + '</div>';
+    var h = '<div class="cd"><div class="cd-h"><span>' + title + '</span><span class="tg tg-b" style="font-size:12px"><i class="bi bi-box-seam" style="margin-inline-end:4px"></i>جمع مقدار / متراژ کل: ' + UI.fn(tQty) + '</span></div>';
     h += '<div class="tw"><table><thead><tr><th>#</th><th>شماره</th><th>تاریخ</th><th>شخص</th><th>جمع</th><th>حمل</th><th>تخفیف</th><th>نهایی</th><th>پرداختی</th><th>مانده</th><th>وضعیت</th><th></th></tr></thead>';
     h += '<tbody>' + r + '</tbody>' + ft + '</table></div>';
     h += Pag.html(pk);
@@ -152,8 +156,8 @@ var Inv = {
     h += '<div class="fr mb"><div class="fg"><label>' + (isP || isS ? 'مشتری' : 'تأمین‌کننده') + '</label><select class="fc" id="iCt" onchange="Inv.showBal()">' + cO + '</select></div><div class="fg"><label>حمل</label><input class="fc" id="iSh" type="number" value="' + (inv ? (inv.shippingCost || 0) : 0) + '" dir="ltr" oninput="Inv.calc()"></div></div>';
     h += '<div id="iBal" style="font-size:.82rem;color:var(--txs);margin-bottom:10px"></div>';
     if (!isP) {
-      h += '<div class="sec-div" onclick="var e=document.getElementById(\'iBs\');e.style.display=e.style.display===\'none\'?\'block\':\'none\'"><i class="bi bi-chevron-down"></i>واسطه</div>';
-      h += '<div id="iBs" style="display:' + (inv && inv.brokerId ? 'block' : 'none') + ';padding:16px 0"><div class="fr"><div class="fg"><label>واسطه</label><select class="fc" id="iBr">' + bO + '</select></div><div class="fg"><label>کمیسیون</label><input class="fc" id="iCm" type="number" value="' + (inv ? (inv.brokerCommission || 0) : 0) + '" dir="ltr"></div></div></div>';
+      h += '<div class="sec-div" onclick="var e=document.getElementById(\'iBs\');e.style.display=e.style.display===\'none\'?\'block\':\'none\'"><i class="bi bi-chevron-down"></i>واسطه و حق کمیسیون</div>';
+      h += '<div id="iBs" style="display:' + (inv && (inv.brokerId || inv.brokerCommission) ? 'block' : 'none') + ';padding:16px 0"><div class="fr"><div class="fg"><label>شخص واسطه</label><select class="fc" id="iBr" onchange="Inv.calc()">' + bO + '</select></div><div class="fg"><label>مبلغ کمیسیون (ریال)</label><input class="fc" id="iCm" type="number" value="' + (inv ? (inv.brokerCommission || 0) : 0) + '" dir="ltr" oninput="Inv.calc()"></div></div></div>';
     }
     h += '<div class="cd mb"><div class="cd-h">اقلام <button class="btn bs bo" onclick="Inv.ai()" style="margin-right:auto">+</button></div><div id="iW"></div></div>';
     var banks = await DB.all('banks');
@@ -260,19 +264,24 @@ var Inv = {
 
   calc: function() {
     var sub = 0;
+    var totQty = 0;
     this.items.forEach(function(it) {
       sub += (it.total || 0);
+      totQty += (parseFloat(it.quantity) || 0);
     });
     var sh = elNum('iSh');
     var dis = elNum('iDis');
     var pd = elNum('iPd');
+    var cm = elNum('iCm');
     var gr = Math.max(0, sub + sh - dis);
     var rm = gr - pd;
     var el = document.getElementById('iT');
     if (!el) return;
-    var h = '<div class="inv-ti"><label>جمع اقلام</label><div class="val">' + UI.fn(sub) + '</div></div>';
+    var h = '<div class="inv-ti" style="border:1.5px solid var(--p)"><label style="color:var(--p);font-weight:700">جمع مقدار / متراژ</label><div class="val" style="color:var(--p);font-weight:800">' + UI.fn(totQty) + '</div></div>';
+    h += '<div class="inv-ti"><label>جمع اقلام</label><div class="val">' + UI.fn(sub) + '</div></div>';
     if (sh) h += '<div class="inv-ti"><label>حمل</label><div class="val">' + UI.fn(sh) + '</div></div>';
     if (dis) h += '<div class="inv-ti"><label>تخفیف</label><div class="val g">−' + UI.fn(dis) + '</div></div>';
+    if (cm > 0) h += '<div class="inv-ti"><label>کمیسیون واسطه</label><div class="val r">−' + UI.fn(cm) + '</div></div>';
     h += '<div class="inv-ti"><label>نهایی</label><div class="val g">' + UI.fn(gr) + '</div></div>';
     h += '<div class="inv-ti"><label>پرداختی</label><div class="val">' + UI.fn(pd) + '</div></div>';
     if (this._type === 'sale' || this._type === 'proforma') {
@@ -280,11 +289,13 @@ var Inv = {
         subtotal: sub,
         discount: dis,
         shippingCost: sh,
+        brokerCommission: cm,
         items: this.items
       });
       var hasValidBuyPrices = this.items.some(function(it) { return (it.buyPrice || 0) > 0; });
       if (hasValidBuyPrices) {
-        h += '<div class="inv-ti"><label>سود ناخالص</label><div class="val ' + (invProfitCalc.grossProfit >= 0 ? 'g' : 'r') + '">' + UI.fn(Math.round(invProfitCalc.grossProfit)) + '</div></div>';
+        var finalProfit = invProfitCalc.profitAfterBroker;
+        h += '<div class="inv-ti"><label>سود فاکتور (با کسر کمیسیون)</label><div class="val ' + (finalProfit >= 0 ? 'g' : 'r') + '">' + UI.fn(Math.round(finalProfit)) + '</div></div>';
       }
     }
     h += '<div class="inv-ti"><label>مانده</label><div class="val ' + (rm > 0 ? 'r' : 'g') + '">' + UI.fn(rm) + '</div></div>';
@@ -387,7 +398,7 @@ var Inv = {
          در حالی که همان فیلدها در فاکتور خرید هم نمایش داده می‌شد و
          اطلاعات وارد‌شده بی‌صدا از بین می‌رفت. */
       brokerId: isP ? null : (intOf(elVal('iBr')) || null),
-      brokerCommission: isP ? 0 : intOf(elVal('iCm')),
+      brokerCommission: isP ? 0 : elNum('iCm'),
       items: items,
       subtotal: sub,
       shippingCost: sh,
@@ -575,10 +586,20 @@ var Inv = {
     }
     h += '</tr></thead><tbody>' + r + '</tbody></table>';
 
+    var totalQty = 0;
+    items.forEach(function(it) {
+      totalQty += (parseFloat(it.quantity) || 0);
+    });
+
     // Totals Section
     if (opts.showPrices) {
-      h += '<div style="display:flex;justify-content:flex-end;margin-bottom:12px">' +
+      h += '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:12px">' +
+        '<div style="border:1.5px solid #0f172a;border-radius:6px;padding:8px 14px;background:#f8fafc;display:flex;flex-direction:column;gap:3px;min-width:140px">' +
+        '<span style="font-size:' + (a5 ? '8.5px' : '9.5px') + ';color:#475569;font-weight:700">جمع کل مقدار / متراژ:</span>' +
+        '<strong style="font-size:' + (a5 ? '13px' : '15px') + ';color:#0f172a;font-family:Vazirmatn,system-ui">' + UI.fn(totalQty) + '</strong>' +
+        '</div>' +
         '<table style="border-collapse:collapse;font-size:' + (a5 ? '8.5px' : '10px') + ';width:auto">' +
+        addRow('جمع کل مقدار / متراژ', UI.fn(totalQty), true, '#0f172a') +
         addRow('جمع اقلام', UI.fn(v.subtotal) + ' ریال', false);
       if (v.shippingCost) h += addRow('هزینه حمل', UI.fn(v.shippingCost) + ' ریال', false);
       if (v.discount) h += addRow('تخفیف', '−' + UI.fn(v.discount) + ' ریال', false, '#16a34a');
@@ -590,6 +611,13 @@ var Inv = {
         h += addRow('مانده حساب کل (' + balLabel + ')', UI.fn(Math.abs(cBal)) + ' ریال', true, cBal > 0 ? '#dc2626' : '#16a34a');
       }
       h += '</table></div>';
+    } else {
+      h += '<div style="display:flex;justify-content:flex-end;margin-bottom:12px">' +
+        '<div style="border:1.5px solid #0f172a;border-radius:6px;padding:8px 14px;background:#f8fafc;display:flex;flex-direction:column;gap:3px;min-width:140px">' +
+        '<span style="font-size:' + (a5 ? '8.5px' : '9.5px') + ';color:#475569;font-weight:700">جمع کل مقدار / متراژ:</span>' +
+        '<strong style="font-size:' + (a5 ? '13px' : '15px') + ';color:#0f172a;font-family:Vazirmatn,system-ui">' + UI.fn(totalQty) + '</strong>' +
+        '</div></div>';
+    }
 
       // Words box
       h += '<div style="margin-bottom:12px;padding:6px 10px;border:1px dashed #94a3b8;border-radius:6px;font-size:9.5px;background:#f8fafc;line-height:1.7">' +

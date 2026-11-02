@@ -89,6 +89,8 @@ var Dash = {
       0
     );
     var grossProfit = plData.grossProfit;
+    var brokerComms = plData.brokerCommissions || 0;
+    var profitAfterBroker = grossProfit - brokerComms;
     var netProfit = plData.netOperatingProfit;
 
     var bankTotal = 0;
@@ -207,12 +209,13 @@ var Dash = {
     /* ══ کارت‌های شاخص کلیدی (KPIs) — همگی با کلیک به بخش مربوطه وارد می‌شوند ══ */
     h += '<div class="sg" style="grid-template-columns:repeat(auto-fit,minmax(195px,1fr));margin-bottom:22px">';
 
-    /* سود و زیان -> صفحه P&L */
+    /* سود و زیان -> صفحه P&L (با کسر دقیق کمیسیون واسطه‌ها) */
     var hasUnverified = plData.unverifiedItemsCount > 0;
-    h += '<div class="sc" style="cursor:pointer" onclick="ROUTES.profit()" title="سود ناخالص: ' + UI.fn(Math.round(grossProfit)) + ' | سود خالص عملیاتی: ' + UI.fn(Math.round(netProfit)) + (hasUnverified ? ' (' + plData.unverifiedItemsCount + ' قلم فاقد قیمت خرید)' : '') + '">' +
-      '<div class="si ' + (grossProfit >= 0 ? 'g' : 'r') + '"><i class="bi bi-graph-up-arrow"></i></div>' +
-      '<div class="sti"><h3>' + UI.fn(Math.round(grossProfit)) + '</h3>' +
-      '<p>سود ناخالص (' + pl[this.period] + ')' + (hasUnverified ? ' <span style="color:var(--w);font-size:11px" title="' + plData.unverifiedItemsCount + ' قلم کالا در فروش با بهای نامشخص">⚠</span>' : '') + ' ←</p></div></div>';
+    var profitVal = profitAfterBroker;
+    h += '<div class="sc" style="cursor:pointer" onclick="ROUTES.profit()" title="سود فروش (با کسر کمیسیون): ' + UI.fn(Math.round(profitVal)) + (brokerComms > 0 ? ' (کمیسیون واسطه‌ها: ' + UI.fn(Math.round(brokerComms)) + ' ریال)' : '') + ' | سود ناخالص: ' + UI.fn(Math.round(grossProfit)) + ' | سود خالص عملیاتی: ' + UI.fn(Math.round(netProfit)) + (hasUnverified ? ' (' + plData.unverifiedItemsCount + ' قلم فاقد قیمت خرید)' : '') + '">' +
+      '<div class="si ' + (profitVal >= 0 ? 'g' : 'r') + '"><i class="bi bi-graph-up-arrow"></i></div>' +
+      '<div class="sti"><h3>' + UI.fn(Math.round(profitVal)) + '</h3>' +
+      '<p>' + (brokerComms > 0 ? 'سود فروش (پس از کمیسیون)' : 'سود فروش') + ' (' + pl[this.period] + ')' + (hasUnverified ? ' <span style="color:var(--w);font-size:11px" title="' + plData.unverifiedItemsCount + ' قلم کالا در فروش با بهای نامشخص">⚠</span>' : '') + ' ←</p></div></div>';
 
     /* فروش -> فاکتورهای فروش */
     h += '<div class="sc" style="cursor:pointer" onclick="ROUTES.sales()" title="مشاهده فهرست فاکتورهای فروش">' +
