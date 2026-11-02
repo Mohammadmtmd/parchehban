@@ -1,33 +1,131 @@
-/* ══ DASHBOARD ══ */
+/* ══════════════════════════════════════════════════════════════════════════════
+   PARCHEHBAN ERP — داشبورد مدیریتی جامع و حرفه‌ای (Professional ERP Dashboard)
+   ══════════════════════════════════════════════════════════════════════════════
+   منبع واحد حقیقت محاسبات مالی: FinanceEngine (js/02b-finance.js)
+   منبع واحد مانده‌گیری حساب اشخاص: Con.allBalances (js/11-contacts.js)
+   منبع واحد مانده حساب‌های بانکی: Bank.balance (js/22-banks.js)
+   موجودی تجمعی انبار: Prod.stockMap (js/10-products.js)
+   قانون غیرقابل‌نقض: محاسبات کاملاً Pure و درون حافظه؛ هیچ داده‌ای در DB دستکاری نمی‌شود.
+   ══════════════════════════════════════════════════════════════════════════════ */
+
 var Dash = {
-  period: 'month',
-  _wc: null,
-  _cc: null,
+  period: 'month', // 'week' | 'month' | 'quarter' | 'year' | 'all' | 'custom'
+  customStart: '',
+  customEnd: '',
+  chartView: 'combined', // 'combined' | 'salesPur'
+  prodSort: 'profit', // 'profit' | 'sales'
+  prodQuery: '',
+  activityFilter: 'all', // 'all' | 'sales' | 'purchases' | 'payments' | 'checks'
+  lastUpdated: null,
+  _perfChart: null,
+  _custChart: null,
+  _cache: null,
+
+  /* ══ نمایش و راه‌اندازی داشبورد ══ */
   render: async function() {
     currentPage = 'dashboard';
     UI.nav('dashboard');
-    UI.title('bi-grid-1x2-fill', 'داشبورد مدیریتی جامع');
-    UI.act('<button class="btn bo bs" onclick="Dash.load()" title="تازه‌سازی داده‌ها"><i class="bi bi-arrow-clockwise"></i> بروزرسانی</button>');
+    UI.title('bi-speedometer2', 'داشبورد مدیریتی پارچه‌بان');
+    UI.act(
+      '<button class="btn bo bs" onclick="Dash.load()" title="تازه‌سازی فوری داده‌ها">' +
+        '<i class="bi bi-arrow-clockwise"></i> بروزرسانی' +
+      '</button>'
+    );
     UI.content('<div class="ld"><div class="spn"></div></div>');
     try {
       await this.load();
     } catch (err) {
       console.error('Dash.render error:', err);
-      UI.content('<div class="hint-box" style="margin:20px;background:var(--dl);color:var(--d);padding:18px;border-radius:12px;border:1px solid var(--d)">' +
-        '<strong>خطا در بارگذاری داشبورد:</strong> ' + esc(err && err.message ? err.message : 'خطای بارگذاری داده‌ها') +
-        '<div style="margin-top:10px"><button class="btn bp bs" onclick="Dash.load()"><i class="bi bi-arrow-clockwise"></i> تلاش مجدد</button></div>' +
-        '</div>');
+      UI.content(
+        '<div class="hint-box" style="margin:24px;background:var(--dl);color:var(--d);padding:20px;border-radius:12px;border:1px solid var(--d)">' +
+          '<strong><i class="bi bi-exclamation-octagon-fill"></i> خطا در بارگذاری داشبورد:</strong> ' +
+          esc(err && err.message ? err.message : 'خطای بارگذاری داده‌ها') +
+          '<div style="margin-top:12px">' +
+            '<button class="btn bp bs" onclick="Dash.load()"><i class="bi bi-arrow-clockwise"></i> تلاش مجدد</button>' +
+          '</div>' +
+        '</div>'
+      );
     }
   },
+
+  /* ══ تغییر دوره زمانی ══ */
   setP: async function(p) {
     this.period = p;
+    if (p !== 'custom') {
+      await this.load();
+    } else {
+      this.toggleCustomRangeBar(true);
+    }
+  },
+
+  /* ══ اعمال بازه تاریخ دلخواه ══ */
+  applyCustomRange: async function() {
+    var sVal = elVal('dashStartDt').trim();
+    var eVal = elVal('dashEndDt').trim();
+    if (!sVal || !eVal) {
+      UI.toast('لطفاً هر دو تاریخ ابتدا و انتهای بازه را وارد نمایید', 'w');
+      return;
+    }
+    var normS = Jalali.parse(sVal);
+    var normE = Jalali.parse(eVal);
+    if (!normS || !normE) {
+      UI.toast('فرمت تاریخ نامعتبر است (مثال: ۱۴۰۳/۰۸/۱۵)', 'e');
+      return;
+    }
+    if (pn(normS) > pn(normE)) {
+      UI.toast('تاریخ شروع نمی‌تواند پس از تاریخ پایان باشد', 'w');
+      return;
+    }
+    this.customStart = normS;
+    this.customEnd = normE;
+    this.period = 'custom';
     await this.load();
   },
+
+  toggleCustomRangeBar: function(forceOpen) {
+    var bar = document.getElementById('dashCustomBar');
+    if (!bar) return;
+    if (forceOpen === true) {
+      bar.style.display = 'flex';
+      var sInput = document.getElementById('dashStartDt');
+      if (sInput && !sInput.value) sInput.value = this.customStart || Jalali.addMonths(Jalali.today(), -1);
+      var eInput = document.getElementById('dashEndDt');
+      if (eInput && !eInput.value) eInput.value = this.customEnd || Jalali.today();
+      if (sInput) sInput.focus();
+    } else {
+      bar.style.display = (bar.style.display === 'none' || !bar.style.display) ? 'flex' : 'none';
+    }
+  },
+
+  /* ══ تاریخ فارسی امروز برای سربرگ ══ */
+  _getFormattedToday: function() {
+    var td = Jalali.today();
+    var p = td.split('/');
+    var jy = parseInt(p[0], 10);
+    var jm = parseInt(p[1], 10);
+    var jd = parseInt(p[2], 10);
+    var weekDays = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه', 'جمعه', 'شنبه'];
+    var monthNames = ['', 'فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'];
+    var dayName = weekDays[new Date().getDay()] || '';
+    return dayName + '، ' + jd + ' ' + monthNames[jm] + ' ' + jy;
+  },
+
+  /* ══ بارگذاری و تجمیع داده‌های جامع داشبورد ══ */
   load: async function() {
     if (typeof Chk !== 'undefined' && Chk.autoPassDueChecks) {
       await Chk.autoPassDueChecks();
     }
+
     var contacts = await DB.all('contacts');
+    var fiscalYears = await DB.all('fiscalYears');
+    var currentYear = null;
+    if (STATE.yearId != null) {
+      currentYear = await DB.get('fiscalYears', STATE.yearId);
+    }
+    if (!currentYear && fiscalYears.length) {
+      currentYear = fiscalYears.find(function(y) { return y.isCurrent && !y.isClosed; }) || fiscalYears[fiscalYears.length - 1];
+    }
+
     var allInvs = await FY.byYear('invoices');
 
     /* هوشمندی انتخاب سال مالی در صورت عدم وجود فاکتور در سال فعلی */
@@ -46,6 +144,7 @@ var Dash = {
           STATE.yearId = intOf(bestYear);
           localStorage.setItem('pb_year', STATE.yearId);
           await FY.refreshSel();
+          currentYear = await DB.get('fiscalYears', STATE.yearId);
           allInvs = await FY.byYear('invoices');
         } else if (!allInvs.length) {
           allInvs = totalInvs;
@@ -58,499 +157,1301 @@ var Dash = {
       cMap[c.id] = c.name;
     });
 
-    var startNum = getPeriodStart(this.period);
+    var banks = await DB.all('banks');
+    var dashPays = await FY.byYear('payments');
+    var dashChks = await FY.byYear('checks');
+    var dashBts = [];
+    try { dashBts = await DB.all('bankTransfers'); } catch (e) {}
+
+    var products = await DB.all('products');
+    var categories = await DB.all('categories');
+    var catMap = {};
+    categories.forEach(function(ct) { catMap[ct.id] = ct.name; });
+
+    var stockMap = await Prod.stockMap();
+    var dashBalMap = await Con.allBalances();
+
+    /* ══ محاسبه مرزهای زمانی بازه انتخابی ══ */
+    var today = Jalali.today();
+    var startNum = 0, endNum = 0;
+    var rangeDescription = '';
+
+    if (this.period === 'week') {
+      var sDt = Jalali.addDays(today, -7);
+      startNum = pn(sDt);
+      endNum = pn(today);
+      rangeDescription = '۷ روز اخیر (' + sDt + ' تا ' + today + ')';
+    } else if (this.period === 'month') {
+      var sDt = Jalali.addMonths(today, -1);
+      startNum = pn(sDt);
+      endNum = pn(today);
+      rangeDescription = '۳۰ روز اخیر (' + sDt + ' تا ' + today + ')';
+    } else if (this.period === 'quarter') {
+      var sDt = Jalali.addMonths(today, -3);
+      startNum = pn(sDt);
+      endNum = pn(today);
+      rangeDescription = '۳ ماه اخیر (' + sDt + ' تا ' + today + ')';
+    } else if (this.period === 'year') {
+      if (currentYear && currentYear.startDate) {
+        startNum = pn(currentYear.startDate);
+        endNum = pn(currentYear.endDate || today);
+        rangeDescription = 'سال مالی ' + esc(currentYear.name || '') + ' (' + currentYear.startDate + ' تا ' + (currentYear.endDate || today) + ')';
+      } else {
+        var sDt = Jalali.addMonths(today, -12);
+        startNum = pn(sDt);
+        endNum = pn(today);
+        rangeDescription = 'سال جاری';
+      }
+    } else if (this.period === 'custom') {
+      startNum = pn(this.customStart);
+      endNum = pn(this.customEnd);
+      rangeDescription = 'بازه دلخواه (' + (this.customStart || '—') + ' تا ' + (this.customEnd || '—') + ')';
+    } else {
+      // 'all'
+      startNum = 0;
+      endNum = 0;
+      rangeDescription = 'تمام دوران فعالیت';
+    }
+
+    /* فیلتر فاکتورهای دوره */
     var periodInvs = allInvs.filter(function(inv) {
-      return inv.type !== 'proforma' && (Dash.period === 'all' || pn(inv.date) >= startNum);
+      if (!inv || inv.type === 'proforma') return false;
+      var dNum = pn(inv.date);
+      if (startNum > 0 && dNum < startNum) return false;
+      if (endNum > 0 && dNum > endNum) return false;
+      return true;
     });
 
-    var tPur = 0, tSal = 0, purCount = 0, salCount = 0;
+    var tPur = 0, purCount = 0;
+    var tSal = 0, salCount = 0;
+    var cashPaidOnSales = 0;
     periodInvs.forEach(function(v) {
       if (v.type === 'purchase') {
         tPur += numOf(v.grandTotal);
         purCount++;
-      } else {
+      } else if (v.type === 'sale') {
         tSal += numOf(v.grandTotal);
+        cashPaidOnSales += numOf(v.paidAmount);
         salCount++;
       }
     });
 
-    /* مانده بانک‌ها و دریافت/پرداخت‌ها */
-    var banks = await DB.all('banks'),
-      dashPays = await FY.byYear('payments'),
-      dashChks = await FY.byYear('checks'),
-      dashBts = [];
-    try { dashBts = await DB.all('bankTransfers'); } catch (e) {}
-
-    /* بهای تمام‌شده و سود دوره بر اساس موتور یکپارچه مالی (FinanceEngine) */
-    var plData = FinanceEngine.calculatePeriodPL(
-      allInvs,
-      dashPays,
-      (Dash.period === 'all' ? 0 : startNum),
-      0
-    );
+    /* ══ محاسبه سود و زیان (P&L) از منبع حقیقت FinanceEngine ══ */
+    var plData = FinanceEngine.calculatePeriodPL(allInvs, dashPays, startNum, endNum);
+    var netSales = plData.netSales;
+    var totalCOGS = plData.cogs;
     var grossProfit = plData.grossProfit;
-    var brokerComms = plData.brokerCommissions || 0;
-    var profitAfterBroker = grossProfit - brokerComms;
+    var brokerCommissions = plData.brokerCommissions || 0;
+    var profitAfterBroker = grossProfit - brokerCommissions;
     var netProfit = plData.netOperatingProfit;
+    var grossMarginPct = plData.grossMarginPct;
+    var netMarginPct = plData.netMarginPct;
+    var unverifiedItemsCount = plData.unverifiedItemsCount || 0;
+    var unverifiedRevenueTotal = plData.unverifiedRevenueTotal || 0;
+    var hasUnverified = unverifiedItemsCount > 0;
 
-    var bankTotal = 0;
+    /* ══ محاسبه دقیق مانده نقد و بانک‌ها مطابق استاندارد Bank.balance ══ */
+    var bankBalances = [];
+    var totalBankBal = 0;
+    var bankReceiptsPeriod = 0;
+    var bankPaymentsPeriod = 0;
+
     banks.forEach(function(b) {
       var bal = numOf(b.openingBalance);
-      allInvs.forEach(function(inv) {
-        if (inv.type === 'proforma' || inv.bankId !== b.id || !(inv.paidAmount > 0)) return;
-        if (inv.type === 'sale') bal += numOf(inv.paidAmount);
-        else bal -= numOf(inv.paidAmount);
-      });
       dashPays.forEach(function(p) {
         if (p.bankId === b.id) {
-          if (p.type === 'receipt') bal += numOf(p.amount);
-          else bal -= numOf(p.amount);
-        }
-      });
-      dashChks.forEach(function(c) {
-        if (c.status === 'passed' && c.bankAccountId === b.id) {
-          if (c.type === 'received') bal += numOf(c.amount);
-          else bal -= numOf(c.amount);
+          var pAmt = numOf(p.amount);
+          var pDNum = pn(p.date);
+          var inPeriod = (startNum === 0 || pDNum >= startNum) && (endNum === 0 || pDNum <= endNum);
+          if (p.type === 'receipt') {
+            bal += pAmt;
+            if (inPeriod) bankReceiptsPeriod += pAmt;
+          } else {
+            bal -= pAmt;
+            if (inPeriod) bankPaymentsPeriod += pAmt;
+          }
         }
       });
       dashBts.forEach(function(bt) {
         if (bt.fromBankId === b.id) bal -= numOf(bt.amount);
         if (bt.toBankId === b.id) bal += numOf(bt.amount);
       });
-      bankTotal += bal;
+      bankBalances.push({
+        id: b.id,
+        name: b.name,
+        bankName: b.bankName || '',
+        accountNumber: b.accountNumber || '',
+        balance: bal
+      });
+      totalBankBal += bal;
     });
 
-    /* محاسبه بدهکاران و بستانکاران کل برای کارت‌های شاخص با متد واحد و هماهنگ */
-    var totalDebtors = 0, totalCreditors = 0;
-    var dashBalMap = await Con.allBalances();
+    /* ══ تجمیع مطالبات (بدهکاران) و بدهی‌ها (بستانکاران) از Con.allBalances ══ */
+    var totalDebtors = 0, debtorCount = 0, debtorList = [];
+    var totalCreditors = 0, creditorCount = 0, creditorList = [];
+
     contacts.forEach(function(co) {
       var cBal = dashBalMap[co.id] || 0;
-      if (cBal > 0) totalDebtors += cBal;
-      else if (cBal < 0) totalCreditors += Math.abs(cBal);
+      if (cBal > 0) {
+        totalDebtors += cBal;
+        debtorCount++;
+        debtorList.push({ id: co.id, name: co.name, phone: co.phone, balance: cBal, type: co.type });
+      } else if (cBal < 0) {
+        var absBal = Math.abs(cBal);
+        totalCreditors += absBal;
+        creditorCount++;
+        creditorList.push({ id: co.id, name: co.name, phone: co.phone, balance: absBal, rawBal: cBal, type: co.type });
+      }
     });
 
-    /* تحلیل چک‌های سررسید صیادی */
+    debtorList.sort(function(a, b) { return b.balance - a.balance; });
+    creditorList.sort(function(a, b) { return b.balance - a.balance; });
+    var top5Debtors = debtorList.slice(0, 5);
+    var top5Creditors = creditorList.slice(0, 5);
+
+    /* ══ ارزش‌گذاری شفاف موجودی انبار بر اساس آخرین فاکتورهای خرید موثق ══ */
+    var latestBuyPrices = {};
+    allInvs.forEach(function(inv) {
+      if (inv.type !== 'purchase') return;
+      (inv.items || []).forEach(function(it) {
+        if (it.productId && numOf(it.unitPrice) > 0) {
+          if (!latestBuyPrices[it.productId] || pn(inv.date) >= pn(latestBuyPrices[it.productId].date)) {
+            latestBuyPrices[it.productId] = { price: numOf(it.unitPrice), date: inv.date };
+          }
+        }
+      });
+    });
+
+    var totalStockMeters = 0;
+    var estimatedInvValue = 0;
+    var inStockCount = 0;
+    var outOfStockCount = 0;
+    var lowStockProducts = [];
+    var outOfStockProducts = [];
+    var prodsWithVerifiedPrice = 0;
+    var prodsWithoutBuyPrice = 0;
+
+    products.forEach(function(p) {
+      var st = stockMap[p.id] || 0;
+      if (st > 0) {
+        totalStockMeters += st;
+        inStockCount++;
+        var bp = (latestBuyPrices[p.id] ? latestBuyPrices[p.id].price : 0) || numOf(p.buyPrice);
+        if (bp > 0) {
+          estimatedInvValue += (st * bp);
+          prodsWithVerifiedPrice++;
+        } else {
+          prodsWithoutBuyPrice++;
+        }
+        if (p.minStock && st <= p.minStock) {
+          lowStockProducts.push({ id: p.id, name: p.name, stock: st, minStock: p.minStock, unit: p.unit });
+        }
+      } else {
+        outOfStockCount++;
+        outOfStockProducts.push({ id: p.id, name: p.name, stock: st, unit: p.unit });
+      }
+    });
+
+    /* ══ تحلیل ۱۰ مشتری برتر دوره ══ */
+    var custSalesMap = {};
+    periodInvs.forEach(function(inv) {
+      if (inv.type !== 'sale') return;
+      var cid = inv.contactId || 'unknown';
+      if (!custSalesMap[cid]) {
+        custSalesMap[cid] = {
+          contactId: inv.contactId,
+          name: cMap[inv.contactId] || 'مشتری آزاد',
+          invoiceCount: 0,
+          totalSales: 0,
+          paidAmount: 0
+        };
+      }
+      custSalesMap[cid].invoiceCount++;
+      custSalesMap[cid].totalSales += numOf(inv.grandTotal);
+      custSalesMap[cid].paidAmount += numOf(inv.paidAmount);
+    });
+
+    var topCustomersList = [];
+    for (var k in custSalesMap) {
+      topCustomersList.push(custSalesMap[k]);
+    }
+    topCustomersList.sort(function(a, b) { return b.totalSales - a.totalSales; });
+    var top10Customers = topCustomersList.slice(0, 10);
+
+    /* ══ تحلیل سود کالاها از productBreakdown ══ */
+    var prodProfitList = [];
+    for (var pk in plData.productBreakdown) {
+      var pb = plData.productBreakdown[pk];
+      var avgSell = pb.qty > 0 ? Math.round(pb.revenue / pb.qty) : 0;
+      var pMargin = pb.revenue > 0 ? (pb.profit / pb.revenue) * 100 : 0;
+      prodProfitList.push({
+        id: pb.id,
+        name: pb.name,
+        qty: pb.qty,
+        avgSell: avgSell,
+        cogs: pb.cogs,
+        revenue: pb.revenue,
+        profit: pb.profit,
+        margin: pMargin,
+        unverified: pb.unverifiedCount > 0,
+        unverifiedCount: pb.unverifiedCount
+      });
+    }
+
+    /* ══ کالاهای پرفروش و کم‌گردش ══ */
+    var topMovers = prodProfitList.slice().sort(function(a, b) { return b.qty - a.qty; }).slice(0, 5);
+    var slowMovers = [];
+    products.forEach(function(p) {
+      var matched = prodProfitList.find(function(x) { return x.id === p.id; });
+      if (!matched) {
+        slowMovers.push({ id: p.id, name: p.name, stock: stockMap[p.id] || 0, unit: p.unit });
+      }
+    });
+    slowMovers = slowMovers.slice(0, 5);
+
+    /* ══ تحلیل چک‌های صیادی و سررسید ══ */
     var dueAnalysis = Chk.getDueAnalysis(dashChks);
+    var returnedChecks = dashChks.filter(function(c) {
+      return c.status === 'returned' || c.status === 'returned_to_me' || c.status === 'returned_to_customer';
+    });
 
-    /* استخراج ۵ فاکتور آخر خرید و فروش */
-    var salesList = allInvs.filter(function(x) { return x.type === 'sale'; })
-      .sort(function(a, b) { return (b.id || 0) - (a.id || 0); });
-    var latest5Sales = salesList.slice(0, 5);
+    /* ══ آخرین فعالیت‌های تجاری برنامه ══ */
+    var recentActivities = [];
+    // ۵ فاکتور فروش
+    allInvs.filter(function(x) { return x.type === 'sale'; }).slice(0, 5).forEach(function(inv) {
+      recentActivities.push({
+        kind: 'sale',
+        typeLabel: 'فاکتور فروش',
+        id: inv.id,
+        num: inv.invoiceNumber || '—',
+        person: cMap[inv.contactId] || 'مشتری آزاد',
+        date: inv.date,
+        amount: numOf(inv.grandTotal),
+        status: (numOf(inv.paidAmount) >= numOf(inv.grandTotal)) ? 'تسویه' : 'مانده: ' + UI.fn(numOf(inv.grandTotal) - numOf(inv.paidAmount)),
+        isPositive: true,
+        action: 'Inv.vw(' + inv.id + ')'
+      });
+    });
+    // ۵ فاکتور خرید
+    allInvs.filter(function(x) { return x.type === 'purchase'; }).slice(0, 5).forEach(function(inv) {
+      recentActivities.push({
+        kind: 'purchase',
+        typeLabel: 'فاکتور خرید',
+        id: inv.id,
+        num: inv.invoiceNumber || '—',
+        person: cMap[inv.contactId] || 'تأمین‌کننده',
+        date: inv.date,
+        amount: numOf(inv.grandTotal),
+        status: (numOf(inv.paidAmount) >= numOf(inv.grandTotal)) ? 'تسویه' : 'مانده: ' + UI.fn(numOf(inv.grandTotal) - numOf(inv.paidAmount)),
+        isPositive: false,
+        action: 'Inv.vw(' + inv.id + ')'
+      });
+    });
+    // ۵ تراکنش مالی
+    dashPays.slice(0, 5).forEach(function(p) {
+      recentActivities.push({
+        kind: 'payment',
+        typeLabel: p.type === 'receipt' ? 'دریافت وجه' : 'پرداخت وجه',
+        id: p.id,
+        num: p.category || 'تراکنش',
+        person: cMap[p.contactId] || p.note || '—',
+        date: p.date,
+        amount: numOf(p.amount),
+        status: 'ثبت شد',
+        isPositive: p.type === 'receipt',
+        action: 'ROUTES.payments()'
+      });
+    });
+    // ۵ چک صیادی
+    dashChks.slice(0, 5).forEach(function(c) {
+      recentActivities.push({
+        kind: 'check',
+        typeLabel: c.type === 'received' ? 'چک دریافتی' : 'چک پرداختی',
+        id: c.id,
+        num: c.checkNumber || '—',
+        person: cMap[c.contactId] || '—',
+        date: c.dueDate || c.date,
+        amount: numOf(c.amount),
+        status: Chk.sl(c.status),
+        isPositive: c.type === 'received',
+        action: 'Chk.form(\'' + c.type + '\',' + c.id + ')'
+      });
+    });
+    recentActivities.sort(function(a, b) { return (pn(b.date) - pn(a.date)) || (b.id - a.id); });
 
-    var purchaseList = allInvs.filter(function(x) { return x.type === 'purchase'; })
-      .sort(function(a, b) { return (b.id || 0) - (a.id || 0); });
-    var latest5Purchases = purchaseList.slice(0, 5);
+    /* ══ ذخیره وضعیت در حافظه کش برای فیلتر و تعامل آنی ══ */
+    this.lastUpdated = new Date().toLocaleTimeString('fa-IR');
+    this._cache = {
+      contacts: contacts,
+      cMap: cMap,
+      allInvs: allInvs,
+      periodInvs: periodInvs,
+      plData: plData,
+      banks: banks,
+      bankBalances: bankBalances,
+      totalBankBal: totalBankBal,
+      bankReceiptsPeriod: bankReceiptsPeriod,
+      bankPaymentsPeriod: bankPaymentsPeriod,
+      totalDebtors: totalDebtors,
+      debtorCount: debtorCount,
+      top5Debtors: top5Debtors,
+      totalCreditors: totalCreditors,
+      creditorCount: creditorCount,
+      top5Creditors: top5Creditors,
+      products: products,
+      stockMap: stockMap,
+      totalStockMeters: totalStockMeters,
+      estimatedInvValue: estimatedInvValue,
+      inStockCount: inStockCount,
+      outOfStockCount: outOfStockCount,
+      lowStockProducts: lowStockProducts,
+      outOfStockProducts: outOfStockProducts,
+      topMovers: topMovers,
+      slowMovers: slowMovers,
+      top10Customers: top10Customers,
+      prodProfitList: prodProfitList,
+      dueAnalysis: dueAnalysis,
+      returnedChecks: returnedChecks,
+      recentActivities: recentActivities,
+      startNum: startNum,
+      endNum: endNum,
+      rangeDescription: rangeDescription
+    };
 
-    /* استخراج ۵ چک پرداختی و دریافتی آخر */
-    var issuedList = dashChks.filter(function(x) { return x.type === 'issued'; })
-      .sort(function(a, b) { return (b.id || 0) - (a.id || 0); });
-    var latest5IssuedChecks = issuedList.slice(0, 5);
+    /* ══ رندر HTML کامل داشبورد ══ */
+    var h = '<div class="erp-dash">';
 
-    var receivedList = dashChks.filter(function(x) { return x.type === 'received'; })
-      .sort(function(a, b) { return (b.id || 0) - (a.id || 0); });
-    var latest5ReceivedChecks = receivedList.slice(0, 5);
-
-    var pl = { week: 'هفته جاری', month: 'ماه جاری', year: 'سال مالی جاری', all: 'تمام دوران' };
-    var me = this, h = '';
-
-    /* بنر بازیابی سریع در صورت خالی بودن دیتابیس */
-    var prodCount = 0;
-    try { prodCount = (await DB.all('products')).length; } catch (e) {}
-    if (contacts.length === 0 && allInvs.length === 0 && prodCount === 0) {
+    /* ── بنر راهنمای بازیابی یا تست PWA در صورت خالی بودن دیتابیس ── */
+    if (contacts.length === 0 && allInvs.length === 0 && products.length === 0) {
       var supaReady = typeof Sync !== 'undefined' && Sync.getConfig().configured;
-      h += '<div class="hint-box" style="margin-bottom:18px;background:rgba(37,99,235,.07);border:1.5px solid var(--p);border-radius:12px;padding:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px">' +
+      h += '<div class="hint-box" style="margin-bottom:6px;background:rgba(37,99,235,.07);border:1.5px solid var(--p);border-radius:12px;padding:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px">' +
         '<div>' +
         '<div style="font-weight:700;font-size:.95rem;color:var(--p);margin-bottom:4px"><i class="bi bi-phone"></i> پایگاه داده در این بخش یا دستگاه خالی است</div>' +
         '<div style="font-size:.84rem;color:var(--txs);line-height:1.7">' +
         (supaReady ?
           'اتصال به پایگاه داده ابری Supabase برقرار است. می‌توانید با یک کلیک اطلاعات خود را از سرور بازیابی کنید، یا در صورت تمایل فایل پشتیبان آفلاین (JSON) را بارگذاری نمایید.' :
-          'اگر قبلاً در <strong>مرورگر سافاری</strong> گوشی اطلاعات داشته‌اید و اکنون با بازکردن برنامه از <strong>صفحه اصلی (PWA)</strong> صفحه خالی می‌بینید: در سیستم‌عامل iOS حافظه صفحه اصلی از سافاری مستقل است. کافیست در سافاری گزینه <strong>«پشتیبان‌گیری»</strong> را بزنید و سپس فایل دانلود شده را اینجا بارگذاری کنید تا تمام فاکتورها، حساب‌ها و کالاها فوراً منتقل شوند.') +
+          'در صورتی که قبلاً در مرورگر یا دستگاه دیگر نسخه پشتیبان تهیه کرده‌اید، می‌توانید فایل پشتیبان (JSON) را بازیابی نمایید.') +
         '</div>' +
         '</div>' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-        '<button class="btn bo" onclick="PWA.showHealthModal()"><i class="bi bi-activity"></i> تست اتصال دیتابیس</button>' +
+        '<button class="btn bo" onclick="PWA.showHealthModal()"><i class="bi bi-activity"></i> تست سلامت دیتابیس</button>' +
         (supaReady ? '<button class="btn bs" style="background:var(--ok);color:#fff" onclick="Auth.quickCloudRestore()"><i class="bi bi-cloud-arrow-down-fill"></i> بازیابی فوری از سرور ابری</button>' : '') +
-        '<button class="btn bp" onclick="Backup.importAll()"><i class="bi bi-file-earmark-arrow-up"></i> بازیابی و انتقال فایل پشتیبان (JSON)</button>' +
-        '<button class="btn bo" onclick="PWA.openSafariExportGuide()"><i class="bi bi-compass"></i> راهنمای آیفون</button>' +
+        '<button class="btn bp" onclick="Backup.importAll()"><i class="bi bi-file-earmark-arrow-up"></i> بازیابی فایل پشتیبان</button>' +
         '</div>' +
         '</div>';
     }
 
-    /* بنر هشدار امنیت در صورت رمز پیش‌فرض */
+    /* ── هدر مدیریتی ۳۶۰ درجه ── */
+    var supaCfg = (typeof Sync !== 'undefined') ? Sync.getConfig() : { configured: false };
+    var isOnline = navigator.onLine;
+    var syncBadge = supaCfg.configured ?
+      (isOnline ? '<span class="erp-meta-pill" style="color:var(--ok)"><i class="bi bi-cloud-check-fill"></i> همگام ابری</span>' : '<span class="erp-meta-pill" style="color:var(--w)"><i class="bi bi-cloud-slash-fill"></i> آفلاین (ابری)</span>') :
+      '<span class="erp-meta-pill" style="color:var(--txs)" title="کلیک برای تنظیم همگام‌سازی ابری" onclick="ROUTES.settings()"><i class="bi bi-hdd"></i> حافظه محلی</span>';
+
+    h += '<div class="erp-header-card">' +
+      '<div class="erp-header-top">' +
+        '<div class="erp-header-title">' +
+          '<h2><i class="bi bi-speedometer2" style="color:var(--p)"></i> داشبورد مدیریتی پارچه‌بان</h2>' +
+          '<p>دیدبان عملیات مالی، فروش، وضعیت چک‌های صیادی و موجودی انبار نساجی</p>' +
+        '</div>' +
+        '<div class="erp-header-meta">' +
+          '<span class="erp-meta-pill"><i class="bi bi-calendar3"></i> ' + this._getFormattedToday() + '</span>' +
+          '<span class="erp-meta-pill" style="cursor:pointer" onclick="ROUTES.years()" title="مدیریت سال‌های مالی"><i class="bi bi-archive-fill"></i> سال مالی: <strong>' + esc(currentYear ? currentYear.name : 'فعال') + '</strong></span>' +
+          syncBadge +
+          '<span class="erp-meta-pill" style="font-size:0.75rem;color:var(--txm)"><i class="bi bi-clock-history"></i> ' + this.lastUpdated + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="erp-header-controls">' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+          '<span style="font-size:0.8rem;font-weight:700;color:var(--txs)">دوره گزارش:</span>' +
+          '<div class="erp-period-group">' +
+            [
+              { id: 'week', label: 'هفته جاری' },
+              { id: 'month', label: 'ماه جاری' },
+              { id: 'quarter', label: '۳ ماهه' },
+              { id: 'year', label: 'سال مالی' },
+              { id: 'all', label: 'تمام دوران' },
+              { id: 'custom', label: 'بازه دلخواه…' }
+            ].map(function(item) {
+              var activeClass = (Dash.period === item.id) ? ' active' : '';
+              return '<button class="erp-period-btn' + activeClass + '" onclick="Dash.setP(\'' + item.id + '\')">' + item.label + '</button>';
+            }).join('') +
+          '</div>' +
+        '</div>' +
+        '<div style="font-size:0.8rem;color:var(--txs)">' +
+          '<i class="bi bi-info-circle"></i> ' + rangeDescription +
+        '</div>' +
+      '</div>' +
+      '<div class="erp-custom-range-bar" id="dashCustomBar" style="display:' + (this.period === 'custom' ? 'flex' : 'none') + '">' +
+        '<span>از تاریخ:</span>' +
+        '<input type="text" id="dashStartDt" class="fc" style="width:115px;padding:4px 8px;font-size:0.8rem;text-align:center" value="' + esc(this.customStart || Jalali.addMonths(Jalali.today(), -1)) + '" placeholder="۱۴۰۳/۰۱/۰۱">' +
+        '<span>تا تاریخ:</span>' +
+        '<input type="text" id="dashEndDt" class="fc" style="width:115px;padding:4px 8px;font-size:0.8rem;text-align:center" value="' + esc(this.customEnd || Jalali.today()) + '" placeholder="۱۴۰۳/۱۲/۲۹">' +
+        '<button class="btn bp bs" onclick="Dash.applyCustomRange()"><i class="bi bi-check-lg"></i> اعمال بازه</button>' +
+        '<button class="btn bo bs" onclick="Dash.setP(\'month\')">انصراف</button>' +
+      '</div>' +
+    '</div>';
+
+    /* ── بخش اول: ۸ شاخص کلیدی مالی (KPI Cards) ── */
+    var profitColorClass = profitAfterBroker >= 0 ? 'green' : 'red';
+    var netColorClass = netProfit >= 0 ? 'blue' : 'red';
+    var avgInvoiceVal = salCount > 0 ? Math.round(netSales / salCount) : 0;
+
+    h += '<div class="erp-kpi-grid">';
+
+    // ۱. فروش دوره
+    h += '<div class="erp-kpi-card" onclick="ROUTES.sales()" title="مشاهده فاکتورهای فروش">' +
+      '<div class="erp-kpi-head">' +
+        '<span class="erp-kpi-title">فروش دوره</span>' +
+        '<div class="erp-kpi-icon blue"><i class="bi bi-receipt-cutoff"></i></div>' +
+      '</div>' +
+      '<div class="erp-kpi-value">' + UI.fn(netSales) + ' <small style="font-size:0.8rem;font-weight:500">ریال</small></div>' +
+      '<div class="erp-kpi-sub">' +
+        '<span>' + UI.fn(salCount) + ' فاکتور · میانگین ' + UI.fn(avgInvoiceVal) + '</span>' +
+        '<span class="erp-kpi-link-hint">مشاهده ←</span>' +
+      '</div>' +
+    '</div>';
+
+    // ۲. خرید دوره
+    h += '<div class="erp-kpi-card" onclick="ROUTES.purchase()" title="مشاهده فاکتورهای خرید">' +
+      '<div class="erp-kpi-head">' +
+        '<span class="erp-kpi-title">خرید دوره</span>' +
+        '<div class="erp-kpi-icon amber"><i class="bi bi-cart-fill"></i></div>' +
+      '</div>' +
+      '<div class="erp-kpi-value">' + UI.fn(tPur) + ' <small style="font-size:0.8rem;font-weight:500">ریال</small></div>' +
+      '<div class="erp-kpi-sub">' +
+        '<span>' + UI.fn(purCount) + ' فاکتور تأمین کالا</span>' +
+        '<span class="erp-kpi-link-hint">مشاهده ←</span>' +
+      '</div>' +
+    '</div>';
+
+    // ۳. سود ناخالص (پس از کسر کمیسیون واسطه‌ها)
+    h += '<div class="erp-kpi-card" onclick="ROUTES.profit()" title="سود ناخالص بازرگانی بر پایه بهای تمام‌شده موثق">' +
+      '<div class="erp-kpi-head">' +
+        '<span class="erp-kpi-title">' + (brokerCommissions > 0 ? 'سود ناخالص (پس از کمیسیون)' : 'سود ناخالص بازرگانی') + '</span>' +
+        '<div class="erp-kpi-icon ' + profitColorClass + '"><i class="bi bi-graph-up-arrow"></i></div>' +
+      '</div>' +
+      '<div class="erp-kpi-value" style="color:' + (profitAfterBroker >= 0 ? 'var(--ok)' : 'var(--d)') + '">' +
+        UI.fn(Math.round(profitAfterBroker)) + ' <small style="font-size:0.8rem;font-weight:500">ریال</small>' +
+      '</div>' +
+      '<div class="erp-kpi-sub">' +
+        '<span>حاشیه سود: ' + grossMarginPct.toFixed(1) + '٪' + (hasUnverified ? ' <span style="color:var(--w)" title="' + unverifiedItemsCount + ' قلم فاقد قیمت خرید">⚠</span>' : '') + '</span>' +
+        '<span class="erp-kpi-link-hint">صورت P&L ←</span>' +
+      '</div>' +
+    '</div>';
+
+    // ۴. سود خالص عملیاتی
+    h += '<div class="erp-kpi-card" onclick="ROUTES.profit()" title="سود خالص عملیاتی پس از کسر هزینه‌های جاری">' +
+      '<div class="erp-kpi-head">' +
+        '<span class="erp-kpi-title">سود خالص عملیاتی</span>' +
+        '<div class="erp-kpi-icon ' + netColorClass + '"><i class="bi bi-award-fill"></i></div>' +
+      '</div>' +
+      '<div class="erp-kpi-value" style="color:' + (netProfit >= 0 ? 'var(--p)' : 'var(--d)') + '">' +
+        UI.fn(Math.round(netProfit)) + ' <small style="font-size:0.8rem;font-weight:500">ریال</small>' +
+      '</div>' +
+      '<div class="erp-kpi-sub">' +
+        '<span>حاشیه خالص: ' + netMarginPct.toFixed(1) + '٪</span>' +
+        '<span class="erp-kpi-link-hint">جزئیات ←</span>' +
+      '</div>' +
+    '</div>';
+
+    // ۵. طلب از مشتریان (مطالبات)
+    h += '<div class="erp-kpi-card" onclick="ROUTES.debtors()" title="مشاهده لیست بدهکاران">' +
+      '<div class="erp-kpi-head">' +
+        '<span class="erp-kpi-title">طلب از مشتریان</span>' +
+        '<div class="erp-kpi-icon cyan"><i class="bi bi-arrow-down-left-circle-fill"></i></div>' +
+      '</div>' +
+      '<div class="erp-kpi-value" style="color:var(--p)">' + UI.fn(totalDebtors) + ' <small style="font-size:0.8rem;font-weight:500">ریال</small></div>' +
+      '<div class="erp-kpi-sub">' +
+        '<span>' + UI.fn(debtorCount) + ' مشتری بدهکار</span>' +
+        '<span class="erp-kpi-link-hint">بدهکاران ←</span>' +
+      '</div>' +
+    '</div>';
+
+    // ۶. بدهی به تأمین‌کنندگان
+    h += '<div class="erp-kpi-card" onclick="ROUTES.creditors()" title="مشاهده لیست بستانکاران">' +
+      '<div class="erp-kpi-head">' +
+        '<span class="erp-kpi-title">بدهی به تأمین‌کنندگان</span>' +
+        '<div class="erp-kpi-icon red"><i class="bi bi-arrow-up-right-circle-fill"></i></div>' +
+      '</div>' +
+      '<div class="erp-kpi-value" style="color:var(--d)">' + UI.fn(totalCreditors) + ' <small style="font-size:0.8rem;font-weight:500">ریال</small></div>' +
+      '<div class="erp-kpi-sub">' +
+        '<span>' + UI.fn(creditorCount) + ' تأمین‌کننده بستانکار</span>' +
+        '<span class="erp-kpi-link-hint">بستانکاران ←</span>' +
+      '</div>' +
+    '</div>';
+
+    // ۷. موجودی نقد و بانک‌ها
+    h += '<div class="erp-kpi-card" onclick="ROUTES.banks()" title="مشاهده حساب‌های بانکی و صندوق">' +
+      '<div class="erp-kpi-head">' +
+        '<span class="erp-kpi-title">مانده نقد و بانک‌ها</span>' +
+        '<div class="erp-kpi-icon purple"><i class="bi bi-bank2"></i></div>' +
+      '</div>' +
+      '<div class="erp-kpi-value">' + UI.fn(totalBankBal) + ' <small style="font-size:0.8rem;font-weight:500">ریال</small></div>' +
+      '<div class="erp-kpi-sub">' +
+        '<span>' + UI.fn(banks.length) + ' حساب بانکی و صندوق</span>' +
+        '<span class="erp-kpi-link-hint">دفتر بانک ←</span>' +
+      '</div>' +
+    '</div>';
+
+    // ۸. ارزش موجودی انبار
+    var invValNote = (prodsWithoutBuyPrice > 0) ?
+      'ارزش برآوردی (' + UI.fn(prodsWithVerifiedPrice) + ' کالا با قیمت موثق)' :
+      'ارزش کالاهای دارای موجودی';
+
+    h += '<div class="erp-kpi-card" onclick="ROUTES.warehouse()" title="' + invValNote + '">' +
+      '<div class="erp-kpi-head">' +
+        '<span class="erp-kpi-title">ارزش موجودی انبار</span>' +
+        '<div class="erp-kpi-icon green"><i class="bi bi-boxes"></i></div>' +
+      '</div>' +
+      '<div class="erp-kpi-value">' + UI.fn(Math.round(estimatedInvValue)) + ' <small style="font-size:0.8rem;font-weight:500">ریال</small></div>' +
+      '<div class="erp-kpi-sub">' +
+        '<span>' + UI.fn(totalStockMeters) + ' متر در انبار' + (prodsWithoutBuyPrice > 0 ? ' <span style="color:var(--w)" title="' + prodsWithoutBuyPrice + ' قلم کالا فاقد قیمت خرید">⚠</span>' : '') + '</span>' +
+        '<span class="erp-kpi-link-hint">انبارداری ←</span>' +
+      '</div>' +
+    '</div>';
+
+    h += '</div>';
+
+    /* ── بخش ششم: هشدارهای هوشمند و نیازمند توجه (Attention Center) ── */
+    var alertItemsHtml = '';
+
+    if (dueAnalysis.overdue.length > 0) {
+      alertItemsHtml += '<div class="erp-alert-item" onclick="Chk.ll(\'overdue\')">' +
+        '<div class="erp-alert-lead">' +
+          '<span class="erp-alert-badge danger"><i class="bi bi-exclamation-octagon-fill"></i> فوری</span>' +
+          '<strong>' + UI.fn(dueAnalysis.overdue.length) + ' فقره چک سررسید گذشته:</strong> لطفاً جهت وصول یا پیگیری سریعاً اقدام فرمایید.' +
+        '</div>' +
+        '<span class="erp-kpi-link-hint">رسیدگی ←</span>' +
+      '</div>';
+    }
+
+    if (dueAnalysis.due7.length > 0) {
+      alertItemsHtml += '<div class="erp-alert-item" onclick="Chk.ll(\'due7\')">' +
+        '<div class="erp-alert-lead">' +
+          '<span class="erp-alert-badge warning"><i class="bi bi-calendar-event"></i> ۷ روز آینده</span>' +
+          '<strong>' + UI.fn(dueAnalysis.due7.length) + ' فقره چک با سررسید نزدیک:</strong> ' +
+          (dueAnalysis.totalIssuedAmt > 0 ? 'تأمین موجودی پرداختی: ' + UI.fn(dueAnalysis.totalIssuedAmt) + ' ریال' : '') +
+          (dueAnalysis.totalReceivedAmt > 0 ? ' · دریافتی آماده واگذاری: ' + UI.fn(dueAnalysis.totalReceivedAmt) + ' ریال' : '') +
+        '</div>' +
+        '<span class="erp-kpi-link-hint">مشاهده ←</span>' +
+      '</div>';
+    }
+
+    if (returnedChecks.length > 0) {
+      alertItemsHtml += '<div class="erp-alert-item" onclick="Chk.ll(\'returned\')">' +
+        '<div class="erp-alert-lead">' +
+          '<span class="erp-alert-badge danger"><i class="bi bi-arrow-return-left"></i> برگشتی</span>' +
+          '<strong>' + UI.fn(returnedChecks.length) + ' فقره چک برگشتی:</strong> نیازمند پیگیری حقوقی یا استرداد.' +
+        '</div>' +
+        '<span class="erp-kpi-link-hint">بررسی ←</span>' +
+      '</div>';
+    }
+
+    if (lowStockProducts.length > 0) {
+      alertItemsHtml += '<div class="erp-alert-item" onclick="ROUTES.warehouse()">' +
+        '<div class="erp-alert-lead">' +
+          '<span class="erp-alert-badge warning"><i class="bi bi-box-seam"></i> سفارش کالا</span>' +
+          '<strong>' + UI.fn(lowStockProducts.length) + ' قلم کالا به نقطه سفارش رسیده‌اند:</strong> (' +
+          lowStockProducts.slice(0, 3).map(function(p) { return esc(p.name); }).join('، ') +
+          (lowStockProducts.length > 3 ? ' و ...' : '') + ')' +
+        '</div>' +
+        '<span class="erp-kpi-link-hint">مشاهده انبار ←</span>' +
+      '</div>';
+    }
+
+    if (hasUnverified) {
+      alertItemsHtml += '<div class="erp-alert-item" onclick="ROUTES.profit()">' +
+        '<div class="erp-alert-lead">' +
+          '<span class="erp-alert-badge info"><i class="bi bi-receipt"></i> بهای تمام‌شده</span>' +
+          '<strong>' + UI.fn(unverifiedItemsCount) + ' قلم کالا در فروش‌های دوره فاقد بهای خرید معتبر هستند:</strong> برای ارزیابی دقیق‌تر سود، بهای خرید را در فاکتورها ثبت فرمایید.' +
+        '</div>' +
+        '<span class="erp-kpi-link-hint">گزارش سود ←</span>' +
+      '</div>';
+    }
+
+    if (plData.unclassifiedPayments > 0) {
+      alertItemsHtml += '<div class="erp-alert-item" onclick="ROUTES.payments()">' +
+        '<div class="erp-alert-lead">' +
+          '<span class="erp-alert-badge info"><i class="bi bi-tags"></i> سرفصل هزینه</span>' +
+          '<strong>مبلغ ' + UI.fn(plData.unclassifiedPayments) + ' ریال پرداخت فاقد سرفصل مشخص هزینه:</strong> در جدول P&L جدا شده و خودکار کسر نشده است.' +
+        '</div>' +
+        '<span class="erp-kpi-link-hint">تخصیص سرفصل ←</span>' +
+      '</div>';
+    }
+
     var isDefaultPass = false;
     try { isDefaultPass = await Auth.isDefaultAdminPass(); } catch (e) {}
     if (isDefaultPass && Perm.can('*')) {
-      h += '<div class="hint-box" style="margin-bottom:16px;background:rgba(239,68,68,.08);border-color:var(--d);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">' +
-        '<div><strong style="color:var(--d)"><i class="bi bi-shield-exclamation"></i> هشدار امنیتی مهم:</strong> ' +
-        'رمز عبور کاربر مدیر هنوز رمز پیش‌فرض (<code>admin123</code>) است! برای جلوگیری از دسترسی غیرمجاز آن را تغییر دهید.</div>' +
-        '<button class="btn bp bs" onclick="ROUTES.settings()"><i class="bi bi-key"></i> تغییر رمز عبور</button>' +
-        '</div>';
+      alertItemsHtml += '<div class="erp-alert-item" onclick="ROUTES.settings()">' +
+        '<div class="erp-alert-lead">' +
+          '<span class="erp-alert-badge danger"><i class="bi bi-shield-exclamation"></i> امنیت</span>' +
+          '<strong>رمز عبور مدیر هنوز پیش‌فرض (admin123) است:</strong> برای امنیت اطلاعات آن را تغییر دهید.' +
+        '</div>' +
+        '<span class="erp-kpi-link-hint">تنظیمات ←</span>' +
+      '</div>';
     }
 
-    /* بنر همگام‌سازی ابری */
-    var supaCfg = Sync.getConfig();
     if (!supaCfg.configured && Perm.can('*')) {
-      h += '<div class="hint-box" style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">' +
-        '<div><strong style="color:var(--p)"><i class="bi bi-clouds"></i> همگام‌سازی ابری با گوشی همراه:</strong> ' +
-        'برای اتصال دائم گوشی و کامپیوتر و انتقال آنی فاکتورها و چک‌ها، اتصال ابری را فعال کنید.</div>' +
-        '<button class="btn bo bs" onclick="ROUTES.settings()"><i class="bi bi-gear"></i> تنظیم اتصال ابری</button>' +
-        '</div>';
+      alertItemsHtml += '<div class="erp-alert-item" onclick="ROUTES.settings()">' +
+        '<div class="erp-alert-lead">' +
+          '<span class="erp-alert-badge info"><i class="bi bi-cloud-arrow-up"></i> همگام‌سازی</span>' +
+          '<strong>اتصال ابری فعال نیست:</strong> برای همگام‌سازی دائمی فاکتورها بین گوشی و رایانه، اتصال Supabase را تنظیم فرمایید.' +
+        '</div>' +
+        '<span class="erp-kpi-link-hint">پیکربندی ←</span>' +
+      '</div>';
     }
 
-    /* هدر داشبورد و سوییچ دوره زمانی */
-    h += '<div class="dash-hero" style="margin-bottom:18px">' +
-      '<div><h2>داشبورد جامع مدیریتی پارچه‌بان</h2><p>نمای متمرکز فاکتورها، وضعیت چک‌های صیادی، مانده حساب‌ها و سود عملیاتی</p></div>' +
-      '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
-      ['week', 'month', 'year', 'all'].map(function(p) {
-        return '<button class="btn ' + (me.period === p ? 'bp' : 'bo') + ' bs" onclick="Dash.setP(\'' + p + '\')">' + pl[p] + '</button>';
-      }).join('') +
-      '</div></div>';
+    if (alertItemsHtml) {
+      h += '<div class="erp-alerts-panel">' +
+        '<div class="erp-alerts-header">' +
+          '<div style="display:flex;align-items:center;gap:8px;font-weight:700">' +
+            '<i class="bi bi-bell-fill" style="color:var(--w)"></i>' +
+            '<span>مرکز توجه و هشدارهای مدیریتی</span>' +
+          '</div>' +
+          '<span style="font-size:0.75rem;color:var(--txs)">اقدامات نیازمند تصمیم‌گیری</span>' +
+        '</div>' +
+        '<div class="erp-alerts-list">' + alertItemsHtml + '</div>' +
+      '</div>';
+    }
 
-    /* ══ کارت‌های شاخص کلیدی (KPIs) — همگی با کلیک به بخش مربوطه وارد می‌شوند ══ */
-    h += '<div class="sg" style="grid-template-columns:repeat(auto-fit,minmax(195px,1fr));margin-bottom:22px">';
-
-    /* سود و زیان -> صفحه P&L (با کسر دقیق کمیسیون واسطه‌ها) */
-    var hasUnverified = plData.unverifiedItemsCount > 0;
-    var profitVal = profitAfterBroker;
-    h += '<div class="sc" style="cursor:pointer" onclick="ROUTES.profit()" title="سود فروش (با کسر کمیسیون): ' + UI.fn(Math.round(profitVal)) + (brokerComms > 0 ? ' (کمیسیون واسطه‌ها: ' + UI.fn(Math.round(brokerComms)) + ' ریال)' : '') + ' | سود ناخالص: ' + UI.fn(Math.round(grossProfit)) + ' | سود خالص عملیاتی: ' + UI.fn(Math.round(netProfit)) + (hasUnverified ? ' (' + plData.unverifiedItemsCount + ' قلم فاقد قیمت خرید)' : '') + '">' +
-      '<div class="si ' + (profitVal >= 0 ? 'g' : 'r') + '"><i class="bi bi-graph-up-arrow"></i></div>' +
-      '<div class="sti"><h3>' + UI.fn(Math.round(profitVal)) + '</h3>' +
-      '<p>' + (brokerComms > 0 ? 'سود فروش (پس از کمیسیون)' : 'سود فروش') + ' (' + pl[this.period] + ')' + (hasUnverified ? ' <span style="color:var(--w);font-size:11px" title="' + plData.unverifiedItemsCount + ' قلم کالا در فروش با بهای نامشخص">⚠</span>' : '') + ' ←</p></div></div>';
-
-    /* فروش -> فاکتورهای فروش */
-    h += '<div class="sc" style="cursor:pointer" onclick="ROUTES.sales()" title="مشاهده فهرست فاکتورهای فروش">' +
-      '<div class="si g"><i class="bi bi-receipt-cutoff"></i></div>' +
-      '<div class="sti"><h3>' + UI.fn(tSal) + '</h3><p>فروش (' + UI.fn(salCount) + ' فاکتور) ←</p></div></div>';
-
-    /* خرید -> فاکتورهای خرید */
-    h += '<div class="sc" style="cursor:pointer" onclick="ROUTES.purchase()" title="مشاهده فهرست فاکتورهای خرید">' +
-      '<div class="si o"><i class="bi bi-cart-fill"></i></div>' +
-      '<div class="sti"><h3>' + UI.fn(tPur) + '</h3><p>خرید (' + UI.fn(purCount) + ' فاکتور) ←</p></div></div>';
-
-    /* موجودی نقد و بانک -> بانک‌ها */
-    h += '<div class="sc" style="cursor:pointer" onclick="ROUTES.banks()" title="مشاهده حساب‌های بانکی و صندوق">' +
-      '<div class="si b"><i class="bi bi-bank2"></i></div>' +
-      '<div class="sti"><h3>' + UI.fn(bankTotal) + '</h3><p>مانده نقد و بانک‌ها ←</p></div></div>';
-
-    /* طلب از مشتریان -> بدهکاران */
-    h += '<div class="sc" style="cursor:pointer" onclick="ROUTES.debtors()" title="مشاهده گزارش بدهکاران">' +
-      '<div class="si b"><i class="bi bi-arrow-down-left-circle-fill"></i></div>' +
-      '<div class="sti"><h3 style="color:var(--p)">' + UI.fn(totalDebtors) + '</h3><p>طلب از مشتریان ←</p></div></div>';
-
-    /* بدهی به تأمین‌کنندگان -> بستانکاران */
-    h += '<div class="sc" style="cursor:pointer" onclick="ROUTES.creditors()" title="مشاهده گزارش بستانکاران">' +
-      '<div class="si r"><i class="bi bi-arrow-up-right-circle-fill"></i></div>' +
-      '<div class="sti"><h3 style="color:var(--d)">' + UI.fn(totalCreditors) + '</h3><p>بدهی به تأمین‌کنندگان ←</p></div></div>';
-
-    h += '</div>';
-
-    /* ══ بخش ۱: یادآور هوشمند سررسید چک‌های صیادی ══ */
-    h += '<div class="cd" style="margin-bottom:24px;border:1.5px solid ' + (dueAnalysis.overdue.length ? 'var(--d)' : dueAnalysis.count > 0 ? 'var(--w)' : 'var(--bd)') + '">';
-    h += '<div class="cd-h" style="background:' + (dueAnalysis.count > 0 ? 'rgba(217,119,6,.06)' : 'transparent') + '">' +
-      '<div style="display:flex;align-items:center;gap:10px">' +
-      '<i class="bi bi-bell-fill" style="color:' + (dueAnalysis.overdue.length ? 'var(--d)' : dueAnalysis.count > 0 ? 'var(--w)' : 'var(--ok)') + ';font-size:1.15rem"></i>' +
-      '<span style="font-weight:700">یادآور هوشمند سررسید چک‌های صیادی</span>' +
-      (dueAnalysis.count > 0 ? '<span class="tg ' + (dueAnalysis.overdue.length ? 'tg-r' : 'tg-o') + '">' + dueAnalysis.count + ' چک نیازمند توجه</span>' : '<span class="tg tg-g">وضعیت عادی</span>') +
+    /* ── بخش دوم: نمودارهای تحلیلی عملکرد مالی ── */
+    h += '<div class="g2" style="margin-top:4px">' +
+      '<div class="cd">' +
+        '<div class="cd-h" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">' +
+          '<div style="display:flex;align-items:center;gap:8px;font-weight:700">' +
+            '<i class="bi bi-bar-chart-line-fill" style="color:var(--p)"></i>' +
+            '<span>روند عملکرد فروش و سودآوری</span>' +
+          '</div>' +
+          '<div class="erp-period-group">' +
+            '<button class="erp-period-btn' + (this.chartView === 'combined' ? ' active' : '') + '" onclick="Dash.setChartView(\'combined\')">فروش و سود</button>' +
+            '<button class="erp-period-btn' + (this.chartView === 'salesPur' ? ' active' : '') + '" onclick="Dash.setChartView(\'salesPur\')">فروش و خرید</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="cd-b" style="height:280px;position:relative">' +
+          '<canvas id="dashPerfChart"></canvas>' +
+        '</div>' +
       '</div>' +
-      '<button class="btn bo bs" onclick="ROUTES.checks()" title="ورود به بخش کلی مدیریت چک‌ها" style="cursor:pointer"><i class="bi bi-arrow-left"></i> ورود به مدیریت چک‌ها</button>' +
+      '<div class="cd">' +
+        '<div class="cd-h" style="display:flex;align-items:center;justify-content:space-between">' +
+          '<div style="display:flex;align-items:center;gap:8px;font-weight:700">' +
+            '<i class="bi bi-pie-chart-fill" style="color:var(--ok)"></i>' +
+            '<span>سهم مشتریان برتر در فروش</span>' +
+          '</div>' +
+          '<span style="font-size:0.75rem;color:var(--txs)">تمرکز درآمدی</span>' +
+        '</div>' +
+        '<div class="cd-b" style="height:280px;position:relative">' +
+          '<canvas id="dashCustChart"></canvas>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+
+    /* ── بخش سوم: تحلیل فروش و جدول ۱۰ مشتری برتر ── */
+    var creditSales = Math.max(0, netSales - cashPaidOnSales);
+    var cashPct = netSales > 0 ? Math.round((cashPaidOnSales / netSales) * 100) : 0;
+    var creditPct = 100 - cashPct;
+
+    h += '<div class="cd">' +
+      '<div class="cd-h" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">' +
+        '<div style="display:flex;align-items:center;gap:8px;font-weight:700">' +
+          '<i class="bi bi-people-fill" style="color:var(--p)"></i>' +
+          '<span>تحلیل مشتریان و ۱۰ خریدار برتر دوره</span>' +
+        '</div>' +
+        '<div style="display:flex;gap:12px;font-size:0.8rem;color:var(--txs)">' +
+          '<span>فروش نقدی فاکتورها: <strong>' + UI.fn(cashPaidOnSales) + ' (' + cashPct + '٪)</strong></span>' +
+          '<span>فروش نسیه/مانده: <strong>' + UI.fn(creditSales) + ' (' + creditPct + '٪)</strong></span>' +
+        '</div>' +
       '</div>';
 
-    if (dueAnalysis.count > 0) {
-      /* جدول چک‌های دارای سررسید نزدیک یا گذشته */
-      var urgentRows = '';
-      dueAnalysis.allUrgent.forEach(function(c, i) {
-        var isR = c.type === 'received';
-        var badge = Chk.dueBadgeHTML(c.dueDate, c.status);
-        var partyText = esc(cMap[c.contactId] || '—');
-        var trToId = (typeof Chk !== 'undefined' && typeof Chk.getTransferRecipientId === 'function') ? Chk.getTransferRecipientId(c) : (c.transferToId || c.previousTransferToId);
-        if (trToId && c.status !== 'returned_to_me' && c.status !== 'returned_to_customer') {
-          partyText += '<br><span class="tg tg-p" style="font-size:10px;padding:1px 5px"><i class="bi bi-arrow-left"></i> واگذار به ' + esc(cMap[trToId] || '—') + '</span>';
-        } else if (c.status === 'returned_to_me') {
-          var pName = cMap[c.transferToId || c.previousTransferToId];
-          if (pName) partyText += '<br><span class="tg tg-o" style="font-size:10px;padding:1px 5px"><i class="bi bi-arrow-return-left"></i> عودت از ' + esc(pName) + '</span>';
-        }
+    if (top10Customers.length > 0) {
+      var custRows = '';
+      top10Customers.forEach(function(c, i) {
+        var cBal = dashBalMap[c.contactId] || 0;
+        var bStr = cBal > 0 ? ('<span style="color:var(--p);font-weight:700">' + UI.fn(cBal) + ' بدهکار</span>') :
+          (cBal < 0 ? ('<span style="color:var(--d);font-weight:700">' + UI.fn(Math.abs(cBal)) + ' بستانکار</span>') :
+          '<span style="color:var(--txs)">تسویه</span>');
 
-        urgentRows += '<tr class="clk" onclick="Chk.form(\'' + c.type + '\',' + c.id + ')" title="کلیک برای مشاهده و ویرایش چک">' +
+        custRows += '<tr class="clk" onclick="Led.show(' + c.contactId + ')" title="کلیک برای مشاهده دفتر معین">' +
           '<td>' + (i + 1) + '</td>' +
-          '<td><span class="tg ' + (isR ? 'tg-g' : 'tg-r') + '">' + (isR ? 'دریافتی' : 'پرداختی') + '</span></td>' +
-          '<td><strong>' + esc(c.checkNumber) + '</strong></td>' +
-          '<td>' + partyText + '</td>' +
-          '<td>' + esc(c.bank || '—') + '</td>' +
-          '<td>' + esc(c.dueDate || '—') + badge + '</td>' +
-          '<td style="font-weight:700;text-align:left">' + UI.fn(c.amount) + '</td>' +
-          '<td>' + (typeof Chk !== 'undefined' && typeof Chk.statusBadgeHTML === 'function' ? Chk.statusBadgeHTML(c) : ('<span class="tg ' + Chk.stg(c.status) + '">' + Chk.sl(c.status) + '</span>')) + '</td>' +
-          '<td style="white-space:nowrap" onclick="event.stopPropagation()">' +
-          '<button class="bi2" onclick="Chk.cs(' + c.id + ')" title="تغییر وضعیت چک"><i class="bi bi-arrow-repeat"></i></button> ' +
-          '<button class="bi2" onclick="Chk.form(\'' + c.type + '\',' + c.id + ')" title="ویرایش"><i class="bi bi-pencil"></i></button>' +
+          '<td><strong>' + esc(c.name) + '</strong></td>' +
+          '<td style="text-align:center">' + UI.fn(c.invoiceCount) + '</td>' +
+          '<td style="text-align:left;font-weight:700;font-variant-numeric:tabular-nums">' + UI.fn(c.totalSales) + '</td>' +
+          '<td style="text-align:left;font-variant-numeric:tabular-nums">' + UI.fn(c.paidAmount) + '</td>' +
+          '<td style="text-align:left">' + bStr + '</td>' +
+          '<td style="text-align:center">' +
+            '<button class="bi2" title="دفتر معین"><i class="bi bi-journal-text"></i></button>' +
           '</td>' +
-          '</tr>';
+        '</tr>';
       });
 
-      h += '<div class="cd-b" style="padding-bottom:12px;background:var(--bg);border-bottom:1px solid var(--bd);display:flex;gap:14px;flex-wrap:wrap;align-items:center;justify-content:space-between">' +
-        '<div style="display:flex;gap:10px;flex-wrap:wrap;font-size:.84rem">' +
-        (dueAnalysis.overdue.length ? '<div style="padding:6px 12px;background:var(--dl);color:var(--d);border-radius:8px"><strong>' + dueAnalysis.overdue.length + ' چک سررسید گذشته:</strong> لطفاً فوراً پیگیری فرمایید</div>' : '') +
-        (dueAnalysis.totalIssuedAmt > 0 ? '<div style="padding:6px 12px;background:var(--dl);color:var(--d);border-radius:8px"><strong>موجودی موردنیاز چک‌های پرداختی:</strong> ' + UI.fn(dueAnalysis.totalIssuedAmt) + ' ریال</div>' : '') +
-        (dueAnalysis.totalReceivedAmt > 0 ? '<div style="padding:6px 12px;background:var(--okl);color:var(--ok);border-radius:8px"><strong>مبلغ چک‌های دریافتی آماده وصول:</strong> ' + UI.fn(dueAnalysis.totalReceivedAmt) + ' ریال</div>' : '') +
+      h += '<div class="tw"><table><thead><tr>' +
+        '<th>#</th><th>نام مشتری</th><th style="text-align:center">تعداد فاکتور</th>' +
+        '<th style="text-align:left">مجموع خرید (ریال)</th><th style="text-align:left">پرداختی فاکتورها</th>' +
+        '<th style="text-align:left">مانده حساب فعلی</th><th style="text-align:center">دفتر</th>' +
+        '</tr></thead><tbody>' + custRows + '</tbody></table></div>';
+    } else {
+      h += '<div class="em"><i class="bi bi-people"></i><p>در بازه زمانی انتخابی، فاکتور فروشی ثبت نشده است</p></div>';
+    }
+    h += '</div>';
+
+    /* ── بخش چهارم: تحلیل سود کالاها (Product Profitability Table) ── */
+    h += '<div class="cd">' +
+      '<div class="cd-h" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">' +
+        '<div style="display:flex;align-items:center;gap:8px;font-weight:700">' +
+          '<i class="bi bi-tags-fill" style="color:var(--ok)"></i>' +
+          '<span>تحلیل سودآوری و درآمد کالاها</span>' +
         '</div>' +
-        '<div style="display:flex;gap:6px">' +
-        '<button class="btn bo bs" onclick="Chk.ll(\'due7\')"><i class="bi bi-calendar-check"></i> فیلتر ۷ روز آینده</button>' +
-        '</div></div>';
-
-      h += '<div class="tw"><table><thead><tr><th>#</th><th>نوع</th><th>شماره چک</th><th>طرف حساب</th><th>بانک صادرکننده</th><th>سررسید</th><th style="text-align:left">مبلغ (ریال)</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>' +
-        urgentRows + '</tbody></table></div>';
-    } else {
-      h += '<div style="padding:22px;text-align:center;display:flex;align-items:center;justify-content:center;gap:12px;color:var(--ok)">' +
-        '<i class="bi bi-check-circle-fill" style="font-size:1.8rem"></i>' +
-        '<div style="text-align:right">' +
-        '<strong style="font-size:.95rem;color:var(--tx)">هیچ چکی با سررسید نزدیک (۷ روز آینده) یا سررسید گذشته وجود ندارد.</strong>' +
-        '<div style="font-size:.8rem;color:var(--txs);margin-top:2px">تمامی تعهدات صیادی در وضعیت منظم قرار دارند.</div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+          '<input type="text" id="dashProdSearch" class="fc" style="width:160px;padding:4px 8px;font-size:0.78rem" placeholder="جستجوی کالا..." oninput="Dash.onProdFilter(this.value)">' +
+          '<div class="erp-period-group">' +
+            '<button class="erp-period-btn' + (this.prodSort === 'profit' ? ' active' : '') + '" onclick="Dash.setProdSort(\'profit\')">بیشترین سود</button>' +
+            '<button class="erp-period-btn' + (this.prodSort === 'sales' ? ' active' : '') + '" onclick="Dash.setProdSort(\'sales\')">بیشترین فروش</button>' +
+          '</div>' +
         '</div>' +
-        '<div style="margin-inline-start:auto;display:flex;gap:8px">' +
-        '<button class="btn bg bs" onclick="Chk.form(\'received\')"><i class="bi bi-plus-lg"></i> ثبت چک دریافتی</button>' +
-        '<button class="btn bdn bs" onclick="Chk.form(\'issued\')"><i class="bi bi-plus-lg"></i> ثبت چک پرداختی</button>' +
-        '</div></div>';
-    }
-    h += '</div>';
+      '</div>' +
+      '<div id="dashProdTableWrap">' + this._renderProdTableHtml(prodProfitList) + '</div>' +
+    '</div>';
 
-    /* ══ بخش ۲: مقایسه فاکتورهای اخیر (۵ فاکتور آخر خرید و ۵ فاکتور آخر فروش) ══ */
-    h += '<div class="g2" style="margin-bottom:24px">';
+    /* ── بخش پنجم: وضعیت مالی، مطالبات، بدهی‌ها و نقدینگی (۳ ستون) ── */
+    h += '<div class="erp-liquidity-grid">' +
+      /* ۱. مطالبات */
+      '<div class="cd">' +
+        '<div class="cd-h" style="display:flex;align-items:center;justify-content:space-between">' +
+          '<div style="display:flex;align-items:center;gap:6px;font-weight:700">' +
+            '<i class="bi bi-arrow-down-left-circle-fill" style="color:var(--p)"></i>' +
+            '<span>مطالبات از مشتریان</span>' +
+          '</div>' +
+          '<button class="btn bo bs" onclick="ROUTES.debtors()">لیست بدهکاران ←</button>' +
+        '</div>' +
+        '<div class="cd-b" style="padding:12px 14px;background:rgba(37,99,235,.03);border-bottom:1px solid var(--bd)">' +
+          '<div style="font-size:0.78rem;color:var(--txs)">مجموع مطالبات قطعی:</div>' +
+          '<div style="font-size:1.3rem;font-weight:800;color:var(--p);font-variant-numeric:tabular-nums">' +
+            UI.fn(totalDebtors) + ' <small style="font-size:0.75rem">ریال (' + UI.fn(debtorCount) + ' مشتری)</small>' +
+          '</div>' +
+        '</div>' +
+        '<div class="erp-mini-list">' +
+          (top5Debtors.length ? top5Debtors.map(function(d) {
+            return '<div class="erp-mini-item" onclick="Led.show(' + d.id + ')" title="مشاهده معین">' +
+              '<div><strong>' + esc(d.name) + '</strong><div style="font-size:0.72rem;color:var(--txs)">' + esc(d.phone || '—') + '</div></div>' +
+              '<strong style="color:var(--p);font-variant-numeric:tabular-nums">' + UI.fn(d.balance) + '</strong>' +
+            '</div>';
+          }).join('') : '<div class="em" style="padding:20px"><p>هیچ مشتری بدهکاری ثبت نشده است</p></div>') +
+        '</div>' +
+      '</div>' +
 
-    /* کارت ۵ فاکتور آخر فروش */
-    h += '<div class="cd">';
-    h += '<div class="cd-h">' +
-      '<div style="display:flex;align-items:center;gap:8px"><i class="bi bi-receipt" style="color:var(--ok)"></i><span>۵ فاکتور اخیر فروش</span></div>' +
-      '<button class="btn bo bs" onclick="ROUTES.sales()" title="ورود به فاکتورهای فروش" style="cursor:pointer">مشاهده همه فروش‌ها ←</button>' +
-      '</div>';
-    if (latest5Sales.length) {
-      var sRows = '';
-      latest5Sales.forEach(function(v, i) {
-        var isPaid = numOf(v.paidAmount) >= numOf(v.grandTotal);
-        var rem = numOf(v.grandTotal) - numOf(v.paidAmount);
-        sRows += '<tr class="clk" onclick="Inv.vw(' + v.id + ')" title="کلیک برای مشاهده و چاپ فاکتور">' +
-          '<td>' + (i + 1) + '</td>' +
-          '<td><strong style="color:var(--p)">' + esc(v.invoiceNumber || '—') + '</strong></td>' +
-          '<td>' + esc(cMap[v.contactId] || 'مشتری آزاد') + '</td>' +
-          '<td style="text-align:center">' + esc(v.date || '—') + '</td>' +
-          '<td style="font-weight:700;text-align:left">' + UI.fn(v.grandTotal) + '</td>' +
-          '<td style="text-align:center">' + (isPaid ? '<span class="tg tg-g">تسویه</span>' : '<span class="tg tg-o">مانده: ' + UI.fn(rem) + '</span>') + '</td>' +
-          '<td style="white-space:nowrap" onclick="event.stopPropagation()">' +
-          '<button class="bi2" onclick="Inv.vw(' + v.id + ')" title="پیش‌نمایش و چاپ"><i class="bi bi-printer"></i></button>' +
-          '</td></tr>';
-      });
-      h += '<div class="tw"><table><thead><tr><th>#</th><th>شماره</th><th>مشتری</th><th style="text-align:center">تاریخ</th><th style="text-align:left">مبلغ</th><th style="text-align:center">وضعیت</th><th></th></tr></thead><tbody>' + sRows + '</tbody></table></div>';
-    } else {
-      h += '<div class="em"><p>فاکتور فروشی ثبت نشده است</p><button class="btn bg bs" style="margin-top:10px" onclick="Inv.form(\'sale\')"><i class="bi bi-plus-lg"></i> ثبت اولین فاکتور فروش</button></div>';
-    }
-    h += '</div>';
+      /* ۲. بدهی به تأمین‌کنندگان */
+      '<div class="cd">' +
+        '<div class="cd-h" style="display:flex;align-items:center;justify-content:space-between">' +
+          '<div style="display:flex;align-items:center;gap:6px;font-weight:700">' +
+            '<i class="bi bi-arrow-up-right-circle-fill" style="color:var(--d)"></i>' +
+            '<span>بدهی به تأمین‌کنندگان</span>' +
+          '</div>' +
+          '<button class="btn bo bs" onclick="ROUTES.creditors()">لیست بستانکاران ←</button>' +
+        '</div>' +
+        '<div class="cd-b" style="padding:12px 14px;background:rgba(220,38,38,.03);border-bottom:1px solid var(--bd)">' +
+          '<div style="font-size:0.78rem;color:var(--txs)">مجموع بدهی‌های جاری:</div>' +
+          '<div style="font-size:1.3rem;font-weight:800;color:var(--d);font-variant-numeric:tabular-nums">' +
+            UI.fn(totalCreditors) + ' <small style="font-size:0.75rem">ریال (' + UI.fn(creditorCount) + ' تأمین‌کننده)</small>' +
+          '</div>' +
+        '</div>' +
+        '<div class="erp-mini-list">' +
+          (top5Creditors.length ? top5Creditors.map(function(c) {
+            return '<div class="erp-mini-item" onclick="Led.show(' + c.id + ')" title="مشاهده معین">' +
+              '<div><strong>' + esc(c.name) + '</strong><div style="font-size:0.72rem;color:var(--txs)">' + esc(c.phone || '—') + '</div></div>' +
+              '<strong style="color:var(--d);font-variant-numeric:tabular-nums">' + UI.fn(c.balance) + '</strong>' +
+            '</div>';
+          }).join('') : '<div class="em" style="padding:20px"><p>هیچ تأمین‌کننده بستانکاری ثبت نشده است</p></div>') +
+        '</div>' +
+      '</div>' +
 
-    /* کارت ۵ فاکتور آخر خرید */
-    h += '<div class="cd">';
-    h += '<div class="cd-h">' +
-      '<div style="display:flex;align-items:center;gap:8px"><i class="bi bi-cart-fill" style="color:var(--w)"></i><span>۵ فاکتور اخیر خرید</span></div>' +
-      '<button class="btn bo bs" onclick="ROUTES.purchase()" title="ورود به فاکتورهای خرید" style="cursor:pointer">مشاهده همه خریدها ←</button>' +
-      '</div>';
-    if (latest5Purchases.length) {
-      var pRows = '';
-      latest5Purchases.forEach(function(v, i) {
-        var isPaid = numOf(v.paidAmount) >= numOf(v.grandTotal);
-        var rem = numOf(v.grandTotal) - numOf(v.paidAmount);
-        pRows += '<tr class="clk" onclick="Inv.vw(' + v.id + ')" title="کلیک برای مشاهده و چاپ فاکتور">' +
-          '<td>' + (i + 1) + '</td>' +
-          '<td><strong style="color:var(--w)">' + esc(v.invoiceNumber || '—') + '</strong></td>' +
-          '<td>' + esc(cMap[v.contactId] || 'تأمین‌کننده') + '</td>' +
-          '<td style="text-align:center">' + esc(v.date || '—') + '</td>' +
-          '<td style="font-weight:700;text-align:left">' + UI.fn(v.grandTotal) + '</td>' +
-          '<td style="text-align:center">' + (isPaid ? '<span class="tg tg-g">تسویه</span>' : '<span class="tg tg-o">مانده: ' + UI.fn(rem) + '</span>') + '</td>' +
-          '<td style="white-space:nowrap" onclick="event.stopPropagation()">' +
-          '<button class="bi2" onclick="Inv.vw(' + v.id + ')" title="پیش‌نمایش و چاپ"><i class="bi bi-printer"></i></button>' +
-          '</td></tr>';
-      });
-      h += '<div class="tw"><table><thead><tr><th>#</th><th>شماره</th><th>تأمین‌کننده</th><th style="text-align:center">تاریخ</th><th style="text-align:left">مبلغ</th><th style="text-align:center">وضعیت</th><th></th></tr></thead><tbody>' + pRows + '</tbody></table></div>';
-    } else {
-      h += '<div class="em"><p>فاکتور خریدی ثبت نشده است</p><button class="btn bw bs" style="margin-top:10px" onclick="Inv.form(\'purchase\')"><i class="bi bi-plus-lg"></i> ثبت اولین فاکتور خرید</button></div>';
-    }
-    h += '</div>';
+      /* ۳. حساب‌های بانکی و نقدینگی */
+      '<div class="cd">' +
+        '<div class="cd-h" style="display:flex;align-items:center;justify-content:space-between">' +
+          '<div style="display:flex;align-items:center;gap:6px;font-weight:700">' +
+            '<i class="bi bi-bank2" style="color:var(--ok)"></i>' +
+            '<span>بانک و نقدینگی</span>' +
+          '</div>' +
+          '<button class="btn bo bs" onclick="ROUTES.banks()">مدیریت بانک‌ها ←</button>' +
+        '</div>' +
+        '<div class="cd-b" style="padding:12px 14px;background:rgba(22,163,74,.03);border-bottom:1px solid var(--bd)">' +
+          '<div style="font-size:0.78rem;color:var(--txs)">موجودی نقدی تجمیعی:</div>' +
+          '<div style="font-size:1.3rem;font-weight:800;color:var(--ok);font-variant-numeric:tabular-nums">' +
+            UI.fn(totalBankBal) + ' <small style="font-size:0.75rem">ریال</small>' +
+          '</div>' +
+          '<div style="margin-top:4px;font-size:0.74rem;color:var(--txs);display:flex;justify-content:space-between">' +
+            '<span>گردش دریافت دوره: +' + UI.fn(bankReceiptsPeriod) + '</span>' +
+            '<span>پرداخت: −' + UI.fn(bankPaymentsPeriod) + '</span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="erp-mini-list">' +
+          (bankBalances.length ? bankBalances.map(function(b) {
+            return '<div class="erp-mini-item" onclick="Bank.show(' + b.id + ')" title="مشاهده گردش حساب">' +
+              '<div><strong>' + esc(b.name) + '</strong><div style="font-size:0.72rem;color:var(--txs)">' + esc(b.bankName || b.accountNumber || '—') + '</div></div>' +
+              '<strong style="color:' + (b.balance >= 0 ? 'var(--ok)' : 'var(--d)') + ';font-variant-numeric:tabular-nums">' + UI.fn(b.balance) + '</strong>' +
+            '</div>';
+          }).join('') : '<div class="em" style="padding:20px"><p>حساب بانکی تعریف نشده است</p></div>') +
+        '</div>' +
+      '</div>' +
+    '</div>';
 
-    h += '</div>';
+    /* ── بخش هفتم: انبار و کالاهای نساجی ── */
+    h += '<div class="cd">' +
+      '<div class="cd-h" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">' +
+        '<div style="display:flex;align-items:center;gap:8px;font-weight:700">' +
+          '<i class="bi bi-box-seam-fill" style="color:var(--w)"></i>' +
+          '<span>دیدبان انبار و کالاهای نساجی</span>' +
+        '</div>' +
+        '<button class="btn bo bs" onclick="ROUTES.warehouse()">ورود به انبار و کاردکس کالاها ←</button>' +
+      '</div>' +
+      '<div class="cd-b" style="padding-bottom:8px">' +
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px">' +
+          '<div style="padding:10px;background:var(--bg);border-radius:8px;text-align:center">' +
+            '<div style="font-size:0.76rem;color:var(--txs)">کل کاتالوگ کالاها</div>' +
+            '<div style="font-size:1.15rem;font-weight:800;margin-top:2px">' + UI.fn(products.length) + '</div>' +
+          '</div>' +
+          '<div style="padding:10px;background:var(--bg);border-radius:8px;text-align:center">' +
+            '<div style="font-size:0.76rem;color:var(--txs)">کالاهای موجود</div>' +
+            '<div style="font-size:1.15rem;font-weight:800;color:var(--ok);margin-top:2px">' + UI.fn(inStockCount) + '</div>' +
+          '</div>' +
+          '<div style="padding:10px;background:var(--bg);border-radius:8px;text-align:center">' +
+            '<div style="font-size:0.76rem;color:var(--txs)">کالاهای ناموجود</div>' +
+            '<div style="font-size:1.15rem;font-weight:800;color:var(--d);margin-top:2px">' + UI.fn(outOfStockCount) + '</div>' +
+          '</div>' +
+          '<div style="padding:10px;background:var(--bg);border-radius:8px;text-align:center">' +
+            '<div style="font-size:0.76rem;color:var(--txs)">متراژ کل موجودی</div>' +
+            '<div style="font-size:1.15rem;font-weight:800;color:var(--p);margin-top:2px">' + UI.fn(totalStockMeters) + ' <small style="font-size:0.7rem">متر</small></div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="g2">' +
+          '<div>' +
+            '<div style="font-size:0.8rem;font-weight:700;margin-bottom:8px;color:var(--ok)">' +
+              '<i class="bi bi-lightning-charge-fill"></i> ۵ کالای پرفروش دوره (Top Movers)' +
+            '</div>' +
+            '<div class="erp-mini-list">' +
+              (topMovers.length ? topMovers.map(function(m) {
+                return '<div class="erp-mini-item" onclick="PLed.show(' + m.id + ')" title="کاردکس">' +
+                  '<span><strong>' + esc(m.name) + '</strong></span>' +
+                  '<span>' + UI.fn(m.qty) + ' متر (' + UI.fn(m.revenue) + ' ریال)</span>' +
+                '</div>';
+              }).join('') : '<div style="font-size:0.78rem;color:var(--txs);padding:10px">فروشی در این دوره ثبت نشده است</div>') +
+            '</div>' +
+          '</div>' +
+          '<div>' +
+            '<div style="font-size:0.8rem;font-weight:700;margin-bottom:8px;color:var(--w)">' +
+              '<i class="bi bi-hourglass-split"></i> کالاهای کم‌گردش یا راکد (Slow Movers)' +
+            '</div>' +
+            '<div class="erp-mini-list">' +
+              (slowMovers.length ? slowMovers.map(function(s) {
+                return '<div class="erp-mini-item" onclick="PLed.show(' + s.id + ')" title="کاردکس">' +
+                  '<span><strong>' + esc(s.name) + '</strong></span>' +
+                  '<span style="color:var(--txs)">موجودی انبار: ' + UI.fn(s.stock) + ' ' + esc(s.unit || 'متر') + '</span>' +
+                '</div>';
+              }).join('') : '<div style="font-size:0.78rem;color:var(--txs);padding:10px">کالای راکد ثبت نشده است</div>') +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
 
-    /* ══ بخش ۳: ۵ چک دریافتی آخر و ۵ چک پرداختی آخر ══ */
-    h += '<div class="g2" style="margin-bottom:24px">';
+    /* ── بخش هشتم: فعالیت‌ها و رویدادهای اخیر (Activity Stream) ── */
+    h += '<div class="cd">' +
+      '<div class="cd-h" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">' +
+        '<div style="display:flex;align-items:center;gap:8px;font-weight:700">' +
+          '<i class="bi bi-clock-history" style="color:var(--p)"></i>' +
+          '<span>آخرین فعالیت‌ها و اسناد ثبت‌شده برنامه</span>' +
+        '</div>' +
+        '<div class="erp-period-group">' +
+          '<button class="erp-period-btn' + (this.activityFilter === 'all' ? ' active' : '') + '" onclick="Dash.setActivityFilter(\'all\')">همه</button>' +
+          '<button class="erp-period-btn' + (this.activityFilter === 'sales' ? ' active' : '') + '" onclick="Dash.setActivityFilter(\'sales\')">فروش‌ها</button>' +
+          '<button class="erp-period-btn' + (this.activityFilter === 'purchase' ? ' active' : '') + '" onclick="Dash.setActivityFilter(\'purchase\')">خریدها</button>' +
+          '<button class="erp-period-btn' + (this.activityFilter === 'payments' ? ' active' : '') + '" onclick="Dash.setActivityFilter(\'payments\')">تراکنش‌ها</button>' +
+          '<button class="erp-period-btn' + (this.activityFilter === 'checks' ? ' active' : '') + '" onclick="Dash.setActivityFilter(\'checks\')">چک‌ها</button>' +
+        '</div>' +
+      '</div>' +
+      '<div id="dashActivityWrap">' + this._renderActivityTableHtml(recentActivities) + '</div>' +
+    '</div>';
 
-    /* کارت ۵ چک دریافتی آخر */
-    h += '<div class="cd">';
-    h += '<div class="cd-h">' +
-      '<div style="display:flex;align-items:center;gap:8px"><i class="bi bi-credit-card-2-front-fill" style="color:var(--ok)"></i><span>۵ چک دریافتی اخیر (از مشتریان)</span></div>' +
-      '<button class="btn bo bs" onclick="Chk.ll(\'received\')" title="ورود به چک‌های دریافتی" style="cursor:pointer">مشاهده همه دریافتی‌ها ←</button>' +
-      '</div>';
-    if (latest5ReceivedChecks.length) {
-      var crRows = '';
-      latest5ReceivedChecks.forEach(function(c, i) {
-        var badge = Chk.dueBadgeHTML(c.dueDate, c.status);
-        crRows += '<tr class="clk" onclick="Chk.form(\'received\',' + c.id + ')" title="کلیک برای ویرایش یا مشاهده چک">' +
-          '<td>' + (i + 1) + '</td>' +
-          '<td><strong>' + esc(c.checkNumber) + '</strong></td>' +
-          '<td>' + esc(cMap[c.contactId] || '—') + '</td>' +
-          '<td>' + esc(c.bank || '—') + '</td>' +
-          '<td>' + esc(c.dueDate || '—') + badge + '</td>' +
-          '<td style="font-weight:700;text-align:left">' + UI.fn(c.amount) + '</td>' +
-          '<td><span class="tg ' + Chk.stg(c.status) + '">' + Chk.sl(c.status) + '</span></td>' +
-          '<td style="white-space:nowrap" onclick="event.stopPropagation()">' +
-          '<button class="bi2" onclick="Chk.cs(' + c.id + ')" title="تغییر وضعیت"><i class="bi bi-arrow-repeat"></i></button>' +
-          '</td></tr>';
-      });
-      h += '<div class="tw"><table><thead><tr><th>#</th><th>شماره</th><th>مشتری</th><th>بانک</th><th>سررسید</th><th style="text-align:left">مبلغ</th><th>وضعیت</th><th></th></tr></thead><tbody>' + crRows + '</tbody></table></div>';
-    } else {
-      h += '<div class="em"><p>چک دریافتی ثبت نشده است</p><button class="btn bg bs" style="margin-top:10px" onclick="Chk.form(\'received\')"><i class="bi bi-plus-lg"></i> ثبت چک دریافتی</button></div>';
-    }
-    h += '</div>';
+    /* ── بخش نهم: میانبرهای کاربردی مدیر (Quick Actions Bar) ── */
+    h += '<div class="cd">' +
+      '<div class="cd-h" style="display:flex;align-items:center;justify-content:space-between">' +
+        '<div style="display:flex;align-items:center;gap:8px;font-weight:700">' +
+          '<i class="bi bi-grid-3x3-gap-fill" style="color:var(--p)"></i>' +
+          '<span>میانبرهای کاربردی مدیر پارچه‌بان</span>' +
+        '</div>' +
+        '<span style="font-size:0.75rem;color:var(--txs)">دسترسی سریع با یک کلیک</span>' +
+      '</div>' +
+      '<div class="cd-b">' +
+        '<div class="erp-quick-actions">' +
+          '<div class="erp-quick-btn" onclick="Inv.form(\'sale\')">' +
+            '<i class="bi bi-receipt" style="color:var(--ok)"></i>' +
+            '<span>ثبت فاکتور فروش</span>' +
+          '</div>' +
+          '<div class="erp-quick-btn" onclick="Inv.form(\'purchase\')">' +
+            '<i class="bi bi-cart-plus" style="color:var(--w)"></i>' +
+            '<span>ثبت فاکتور خرید</span>' +
+          '</div>' +
+          '<div class="erp-quick-btn" onclick="Pay.showF(\'receipt\')">' +
+            '<i class="bi bi-cash-coin" style="color:var(--ok)"></i>' +
+            '<span>ثبت دریافت وجه</span>' +
+          '</div>' +
+          '<div class="erp-quick-btn" onclick="Pay.showF(\'payment\')">' +
+            '<i class="bi bi-wallet-fill" style="color:var(--d)"></i>' +
+            '<span>ثبت پرداخت وجه</span>' +
+          '</div>' +
+          '<div class="erp-quick-btn" onclick="Bank.transfer()">' +
+            '<i class="bi bi-arrow-left-right" style="color:var(--p)"></i>' +
+            '<span>انتقال بین‌بانکی</span>' +
+          '</div>' +
+          '<div class="erp-quick-btn" onclick="Chk.form(\'received\')">' +
+            '<i class="bi bi-credit-card-2-front" style="color:var(--ok)"></i>' +
+            '<span>ثبت چک صیادی</span>' +
+          '</div>' +
+          '<div class="erp-quick-btn" onclick="Prod.form()">' +
+            '<i class="bi bi-box-seam" style="color:var(--p)"></i>' +
+            '<span>تعریف کالای جدید</span>' +
+          '</div>' +
+          '<div class="erp-quick-btn" onclick="ROUTES.profit()">' +
+            '<i class="bi bi-file-earmark-spreadsheet" style="color:var(--p)"></i>' +
+            '<span>صورت سود و زیان</span>' +
+          '</div>' +
+          '<div class="erp-quick-btn" onclick="ROUTES.warehouse()">' +
+            '<i class="bi bi-boxes" style="color:var(--w)"></i>' +
+            '<span>موجودی و کاردکس</span>' +
+          '</div>' +
+          '<div class="erp-quick-btn" onclick="Backup.exportAll()">' +
+            '<i class="bi bi-download" style="color:var(--ok)"></i>' +
+            '<span>پشتیبان‌گیری (JSON)</span>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
 
-    /* کارت ۵ چک پرداختی آخر */
-    h += '<div class="cd">';
-    h += '<div class="cd-h">' +
-      '<div style="display:flex;align-items:center;gap:8px"><i class="bi bi-credit-card-2-front-fill" style="color:var(--d)"></i><span>۵ چک پرداختی اخیر (به تأمین‌کنندگان)</span></div>' +
-      '<button class="btn bo bs" onclick="Chk.ll(\'issued\')" title="ورود به چک‌های پرداختی" style="cursor:pointer">مشاهده همه پرداختی‌ها ←</button>' +
-      '</div>';
-    if (latest5IssuedChecks.length) {
-      var ciRows = '';
-      latest5IssuedChecks.forEach(function(c, i) {
-        var badge = Chk.dueBadgeHTML(c.dueDate, c.status);
-        ciRows += '<tr class="clk" onclick="Chk.form(\'issued\',' + c.id + ')" title="کلیک برای ویرایش یا مشاهده چک">' +
-          '<td>' + (i + 1) + '</td>' +
-          '<td><strong>' + esc(c.checkNumber) + '</strong></td>' +
-          '<td>' + esc(cMap[c.contactId] || '—') + '</td>' +
-          '<td>' + esc(c.bank || '—') + '</td>' +
-          '<td>' + esc(c.dueDate || '—') + badge + '</td>' +
-          '<td style="font-weight:700;text-align:left">' + UI.fn(c.amount) + '</td>' +
-          '<td><span class="tg ' + Chk.stg(c.status) + '">' + Chk.sl(c.status) + '</span></td>' +
-          '<td style="white-space:nowrap" onclick="event.stopPropagation()">' +
-          '<button class="bi2" onclick="Chk.cs(' + c.id + ')" title="تغییر وضعیت"><i class="bi bi-arrow-repeat"></i></button>' +
-          '</td></tr>';
-      });
-      h += '<div class="tw"><table><thead><tr><th>#</th><th>شماره</th><th>تأمین‌کننده</th><th>بانک</th><th>سررسید</th><th style="text-align:left">مبلغ</th><th>وضعیت</th><th></th></tr></thead><tbody>' + ciRows + '</tbody></table></div>';
-    } else {
-      h += '<div class="em"><p>چک پرداختی ثبت نشده است</p><button class="btn bdn bs" style="margin-top:10px" onclick="Chk.form(\'issued\')"><i class="bi bi-plus-lg"></i> ثبت چک پرداختی</button></div>';
-    }
-    h += '</div>';
-
-    h += '</div>';
-
-    /* ══ بخش ۴: نمودارهای تحلیلی ══ */
-    h += '<div class="g2" style="margin-bottom:24px">';
-    h += '<div class="cd"><div class="cd-h"><i class="bi bi-bar-chart-fill" style="margin-inline-end:8px;color:var(--p)"></i>روند مقایسه‌ای فروش و خرید روزانه</div><div class="cd-b" style="height:260px"><canvas id="dashWC"></canvas></div></div>';
-    h += '<div class="cd"><div class="cd-h"><i class="bi bi-pie-chart-fill" style="margin-inline-end:8px;color:var(--ok)"></i>سهم مشتریان برتر در فروش</div><div class="cd-b" style="height:260px"><canvas id="dashCC"></canvas></div></div>';
-    h += '</div>';
-
-    /* ══ بخش ۵: پشتیبان‌گیری و PWA ══ */
-    h += '<div class="cd" style="margin-top:20px"><div class="cd-h"><div style="display:flex;align-items:center;gap:8px"><i class="bi bi-shield-lock" style="color:var(--ok)"></i><span>پشتیبان‌گیری امن و نصب برنامه</span></div></div>' +
-      '<div class="cd-b" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between">' +
-      '<div style="font-size:.84rem;color:var(--txs)">از داده‌های انبار، فاکتورها و چک‌ها فایل پشتیبان تهیه کنید یا برنامه را مستقیماً روی گوشی نصب فرمایید.</div>' +
-      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-      '<button class="btn bg bs" onclick="Backup.exportAll()"><i class="bi bi-download"></i> دانلود فایل پشتیبان (JSON)</button>' +
-      '<button class="btn bdn bs" onclick="Backup.importAll()"><i class="bi bi-upload"></i> بازیابی نسخه پشتیبان</button>' +
-      '<button class="btn bo bs" onclick="PWA.promptInstall()"><i class="bi bi-phone"></i> راهنما / نصب اپلیکیشن</button>' +
-      '</div></div></div>';
+    h += '</div>'; // پایان .erp-dash
 
     UI.content(h);
-    this.renderCharts(allInvs, cMap);
+    this.renderCharts(periodInvs, plData, cMap);
   },
-  renderCharts: function(allInvs, cMap) {
+
+  /* ══ رندر جدول سودآوری کالاها (با فیلتر و مرتب‌سازی زنده) ══ */
+  _renderProdTableHtml: function(list) {
+    var query = (this.prodQuery || '').trim().toLowerCase();
+    var filtered = (list || []).filter(function(it) {
+      if (!query) return true;
+      return (it.name || '').toLowerCase().indexOf(query) !== -1;
+    });
+
+    if (this.prodSort === 'sales') {
+      filtered.sort(function(a, b) { return b.revenue - a.revenue; });
+    } else {
+      filtered.sort(function(a, b) { return b.profit - a.profit; });
+    }
+
+    if (!filtered.length) {
+      return '<div class="em"><i class="bi bi-tags"></i><p>کالایی منطبق با جستجو یا فروش دوره یافت نشد</p></div>';
+    }
+
+    var r = '';
+    filtered.forEach(function(it, i) {
+      var badge = it.unverified ?
+        '<span style="color:var(--w);font-size:0.75rem" title="' + it.unverifiedCount + ' قلم فروش بدون قیمت خرید">⚠ بهای نامشخص</span>' :
+        '<span style="color:var(--ok);font-size:0.75rem"><i class="bi bi-check-circle-fill"></i> موثق</span>';
+
+      var pCol = it.profit >= 0 ? 'var(--ok)' : 'var(--d)';
+
+      r += '<tr class="clk" onclick="PLed.show(' + it.id + ')" title="مشاهده کاردکس و دفتر کالا">' +
+        '<td>' + (i + 1) + '</td>' +
+        '<td><strong>' + esc(it.name) + '</strong></td>' +
+        '<td style="text-align:center;font-variant-numeric:tabular-nums">' + UI.fn(it.qty) + '</td>' +
+        '<td style="text-align:left;font-variant-numeric:tabular-nums">' + UI.fn(it.avgSell) + '</td>' +
+        '<td style="text-align:left;font-variant-numeric:tabular-nums">' + UI.fn(Math.round(it.cogs)) + '</td>' +
+        '<td style="text-align:left;font-variant-numeric:tabular-nums;font-weight:700">' + UI.fn(Math.round(it.revenue)) + '</td>' +
+        '<td style="text-align:left;font-variant-numeric:tabular-nums;font-weight:700;color:' + pCol + '">' + UI.fn(Math.round(it.profit)) + '</td>' +
+        '<td style="text-align:center;font-variant-numeric:tabular-nums;color:' + pCol + '">' + it.margin.toFixed(1) + '٪</td>' +
+        '<td style="text-align:center">' + badge + '</td>' +
+        '<td style="text-align:center"><button class="bi2" title="دفتر کالا"><i class="bi bi-journal-text"></i></button></td>' +
+      '</tr>';
+    });
+
+    return '<div class="tw"><table><thead><tr>' +
+      '<th>#</th><th>نام کالا</th><th style="text-align:center">مقدار فروش</th>' +
+      '<th style="text-align:left">میانگین نرخ فروش</th><th style="text-align:left">بهای تمام‌شده (COGS)</th>' +
+      '<th style="text-align:left">درآمد فروش (ریال)</th><th style="text-align:left">سود ناخالص</th>' +
+      '<th style="text-align:center">حاشیه سود</th><th style="text-align:center">وضعیت داده</th><th></th>' +
+      '</tr></thead><tbody>' + r + '</tbody></table></div>';
+  },
+
+  setProdSort: function(s) {
+    this.prodSort = s;
+    if (this._cache) {
+      var wrap = document.getElementById('dashProdTableWrap');
+      if (wrap) wrap.innerHTML = this._renderProdTableHtml(this._cache.prodProfitList);
+    }
+  },
+
+  onProdFilter: function(q) {
+    this.prodQuery = q;
+    if (this._cache) {
+      var wrap = document.getElementById('dashProdTableWrap');
+      if (wrap) wrap.innerHTML = this._renderProdTableHtml(this._cache.prodProfitList);
+    }
+  },
+
+  /* ══ رندر جدول فعالیت‌های اخیر ══ */
+  _renderActivityTableHtml: function(list) {
+    var fl = this.activityFilter || 'all';
+    var filtered = (list || []).filter(function(item) {
+      if (fl === 'all') return true;
+      if (fl === 'sales') return item.kind === 'sale';
+      if (fl === 'purchase') return item.kind === 'purchase';
+      if (fl === 'payments') return item.kind === 'payment';
+      if (fl === 'checks') return item.kind === 'check';
+      return true;
+    });
+
+    if (!filtered.length) {
+      return '<div class="em"><i class="bi bi-clock-history"></i><p>رویدادی در این دسته‌بندی یافت نشد</p></div>';
+    }
+
+    var r = '';
+    filtered.slice(0, 10).forEach(function(item, i) {
+      var typeBadgeClass = (item.kind === 'sale' || item.typeLabel === 'دریافت وجه' || item.typeLabel === 'چک دریافتی') ? 'tg-g' : 'tg-r';
+      r += '<tr class="clk" onclick="' + item.action + '" title="مشاهده جزئیات">' +
+        '<td>' + (i + 1) + '</td>' +
+        '<td><span class="tg ' + typeBadgeClass + '">' + esc(item.typeLabel) + '</span></td>' +
+        '<td><strong>' + esc(item.num) + '</strong></td>' +
+        '<td>' + esc(item.person) + '</td>' +
+        '<td style="text-align:center">' + esc(item.date || '—') + '</td>' +
+        '<td style="text-align:left;font-weight:700;font-variant-numeric:tabular-nums">' + UI.fn(item.amount) + '</td>' +
+        '<td style="text-align:center">' + esc(item.status) + '</td>' +
+        '<td style="text-align:center"><button class="bi2" title="مشاهده"><i class="bi bi-eye"></i></button></td>' +
+      '</tr>';
+    });
+
+    return '<div class="tw"><table><thead><tr>' +
+      '<th>#</th><th>نوع رویداد</th><th>شماره / شرح</th><th>شخص مرتبط</th>' +
+      '<th style="text-align:center">تاریخ</th><th style="text-align:left">مبلغ (ریال)</th>' +
+      '<th style="text-align:center">وضعیت</th><th></th>' +
+      '</tr></thead><tbody>' + r + '</tbody></table></div>';
+  },
+
+  setActivityFilter: function(fl) {
+    this.activityFilter = fl;
+    if (this._cache) {
+      var wrap = document.getElementById('dashActivityWrap');
+      if (wrap) wrap.innerHTML = this._renderActivityTableHtml(this._cache.recentActivities);
+    }
+  },
+
+  setChartView: function(v) {
+    this.chartView = v;
+    if (this._cache) {
+      this.renderCharts(this._cache.periodInvs, this._cache.plData, this._cache.cMap);
+    }
+  },
+
+  /* ══ رندر تعاملی نمودارهای Chart.js با پشتیبانی RTL و تم تاریک ══ */
+  renderCharts: function(periodInvs, plData, cMap) {
     try {
       if (typeof Chart === 'undefined') return;
-      if (me._wc) {
-        try { me._wc.destroy(); } catch (e) {}
-        me._wc = null;
+
+      if (this._perfChart) {
+        try { this._perfChart.destroy(); } catch (e) {}
+        this._perfChart = null;
       }
-      if (me._cc) {
-        try { me._cc.destroy(); } catch (e) {}
-        me._cc = null;
+      if (this._custChart) {
+        try { this._custChart.destroy(); } catch (e) {}
+        this._custChart = null;
       }
-      var byDate = {};
-      allInvs.forEach(function(inv) {
-        if (inv.type === 'proforma') return;
-        var d = inv.date || '—';
-        if (!byDate[d]) byDate[d] = { pur: 0, sal: 0 };
-        if (inv.type === 'purchase') byDate[d].pur += numOf(inv.grandTotal);
-        else byDate[d].sal += numOf(inv.grandTotal);
-      });
-      var dates = Object.keys(byDate).sort().slice(-7);
-      var wCtx = document.getElementById('dashWC');
-      if (wCtx) {
-        if (!dates.length) {
-          wCtx.parentElement.innerHTML = '<div class="em" style="padding:48px 14px;text-align:center"><i class="bi bi-bar-chart" style="font-size:2.2rem;color:var(--txs);opacity:.45"></i><p style="margin-top:10px;font-size:.84rem;color:var(--txs)">هنوز فاکتور خرید یا فروشی در این دوره ثبت نشده است</p></div>';
+
+      var isDark = document.body.classList.contains('dark');
+      var fontFam = 'Vazirmatn, sans-serif';
+      var textMuted = isDark ? '#94a3b8' : '#64748b';
+      var gridBorder = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+
+      /* ── نمودار اول: روند عملکرد مالی (فروش، خرید، بهای تمام‌شده و سود) ── */
+      var pCtx = document.getElementById('dashPerfChart');
+      if (pCtx) {
+        // گروه‌بندی داده‌ها بر اساس روز یا ماه
+        var buckets = {};
+        var invs = periodInvs || [];
+
+        // اگر بازه زمانی بزرگ‌تر از ۴۵ روز باشد، بر اساس ماه تجمیع شود
+        var isMonthlyGrouping = (this.period === 'quarter' || this.period === 'year' || this.period === 'all');
+
+        invs.forEach(function(inv) {
+          if (!inv.date) return;
+          var key = isMonthlyGrouping ? inv.date.substring(0, 7) : inv.date;
+          if (!buckets[key]) {
+            buckets[key] = { sales: 0, purchases: 0, cogs: 0, profit: 0 };
+          }
+          if (inv.type === 'purchase') {
+            buckets[key].purchases += numOf(inv.grandTotal);
+          } else if (inv.type === 'sale') {
+            var sub = numOf(inv.subtotal);
+            var disc = numOf(inv.discount);
+            var ship = numOf(inv.shippingCost);
+            var rev = (sub - disc) + ship;
+            buckets[key].sales += rev;
+            // بهای تمام‌شده
+            (inv.items || []).forEach(function(it) {
+              var bp = numOf(it.buyPrice);
+              if (bp > 0) buckets[key].cogs += (bp * numOf(it.quantity));
+            });
+            buckets[key].profit = buckets[key].sales - buckets[key].cogs;
+          }
+        });
+
+        var sortedKeys = Object.keys(buckets).sort();
+        // حداکثر ۱۲ دوره نمایش داده شود
+        if (sortedKeys.length > 14) {
+          sortedKeys = sortedKeys.slice(-14);
+        }
+
+        if (!sortedKeys.length) {
+          pCtx.parentElement.innerHTML = '<div class="em" style="padding:48px 14px;text-align:center"><i class="bi bi-bar-chart" style="font-size:2.2rem;color:var(--txs);opacity:.45"></i><p style="margin-top:10px;font-size:.84rem;color:var(--txs)">فاکتور خرید یا فروشی در این دوره زمانی ثبت نشده است</p></div>';
         } else {
-          me._wc = new Chart(wCtx, {
-            type: 'bar',
+          var chartDatasets = [];
+
+          if (this.chartView === 'combined') {
+            chartDatasets = [
+              {
+                type: 'bar',
+                label: 'درآمد فروش',
+                data: sortedKeys.map(function(k) { return buckets[k].sales; }),
+                backgroundColor: 'rgba(37, 99, 235, 0.75)',
+                borderColor: '#2563eb',
+                borderWidth: 1,
+                borderRadius: 4
+              },
+              {
+                type: 'bar',
+                label: 'بهای تمام‌شده (COGS)',
+                data: sortedKeys.map(function(k) { return buckets[k].cogs; }),
+                backgroundColor: 'rgba(217, 119, 6, 0.75)',
+                borderColor: '#d97706',
+                borderWidth: 1,
+                borderRadius: 4
+              },
+              {
+                type: 'line',
+                label: 'سود ناخالص',
+                data: sortedKeys.map(function(k) { return buckets[k].profit; }),
+                borderColor: '#16a34a',
+                backgroundColor: 'rgba(22, 163, 74, 0.15)',
+                borderWidth: 2.5,
+                tension: 0.3,
+                fill: false,
+                pointRadius: 4,
+                pointBackgroundColor: '#16a34a'
+              }
+            ];
+          } else {
+            chartDatasets = [
+              {
+                type: 'bar',
+                label: 'مجموع فروش',
+                data: sortedKeys.map(function(k) { return buckets[k].sales; }),
+                backgroundColor: 'rgba(22, 163, 74, 0.8)',
+                borderColor: '#16a34a',
+                borderWidth: 1,
+                borderRadius: 4
+              },
+              {
+                type: 'bar',
+                label: 'مجموع خرید',
+                data: sortedKeys.map(function(k) { return buckets[k].purchases; }),
+                backgroundColor: 'rgba(217, 119, 6, 0.8)',
+                borderColor: '#d97706',
+                borderWidth: 1,
+                borderRadius: 4
+              }
+            ];
+          }
+
+          this._perfChart = new Chart(pCtx, {
             data: {
-              labels: dates.map(function(d) {
-                var p = (d || '').split('/');
-                return p.length >= 3 ? (p[1] + '/' + p[2]) : d;
+              labels: sortedKeys.map(function(k) {
+                var parts = k.split('/');
+                if (parts.length === 3) return parts[1] + '/' + parts[2];
+                return k;
               }),
-              datasets: [{
-                label: 'خرید',
-                data: dates.map(function(d) { return byDate[d].pur; }),
-                backgroundColor: 'rgba(217,119,6,0.75)',
-                borderRadius: 4
-              }, {
-                label: 'فروش',
-                data: dates.map(function(d) { return byDate[d].sal; }),
-                backgroundColor: 'rgba(22,163,74,0.75)',
-                borderRadius: 4
-              }]
+              datasets: chartDatasets
             },
             options: {
               responsive: true,
               maintainAspectRatio: false,
+              interaction: {
+                mode: 'index',
+                intersect: false
+              },
               plugins: {
                 legend: {
                   position: 'bottom',
-                  labels: { font: { family: 'Vazirmatn' } }
+                  labels: {
+                    font: { family: fontFam, size: 11 },
+                    color: textMuted,
+                    usePointStyle: true,
+                    boxWidth: 8
+                  }
+                },
+                tooltip: {
+                  rtl: true,
+                  titleFont: { family: fontFam },
+                  bodyFont: { family: fontFam },
+                  callbacks: {
+                    label: function(ctx) {
+                      return ctx.dataset.label + ': ' + UI.fn(ctx.parsed.y) + ' ریال';
+                    }
+                  }
                 }
               },
               scales: {
                 y: {
+                  grid: { color: gridBorder },
                   ticks: {
-                    font: { family: 'Vazirmatn' },
+                    font: { family: fontFam, size: 10 },
+                    color: textMuted,
                     callback: function(v) {
-                      if (v >= 1000000) return (v / 1000000).toFixed(1) + 'M';
+                      if (v >= 1000000000) return (v / 1000000000).toFixed(1) + 'B';
+                      if (v >= 1000000) return (v / 1000000).toFixed(0) + 'M';
                       if (v >= 1000) return (v / 1000).toFixed(0) + 'K';
                       return v;
                     }
                   }
                 },
                 x: {
-                  ticks: { font: { family: 'Vazirmatn' } }
+                  grid: { display: false },
+                  ticks: {
+                    font: { family: fontFam, size: 10 },
+                    color: textMuted
+                  }
                 }
               }
             }
           });
         }
       }
-      var byCust = {};
-      allInvs.forEach(function(inv) {
-        if (inv.type !== 'sale') return;
-        var cid = inv.contactId || 'unknown';
-        if (!byCust[cid]) byCust[cid] = 0;
-        byCust[cid] += numOf(inv.grandTotal);
-      });
-      var cL = [], cD = [];
-      for (var k in byCust) {
-        cL.push(cMap[k] || 'مشتری آزاد');
-        cD.push(byCust[k]);
-      }
-      var cCtx = document.getElementById('dashCC');
+
+      /* ── نمودار دوم: سهم مشتریان برتر در فروش (Doughnut Chart) ── */
+      var cCtx = document.getElementById('dashCustChart');
       if (cCtx) {
-        if (!cL.length) {
-          cCtx.parentElement.innerHTML = '<div class="em" style="padding:48px 14px;text-align:center"><i class="bi bi-pie-chart" style="font-size:2.2rem;color:var(--txs);opacity:.45"></i><p style="margin-top:10px;font-size:.84rem;color:var(--txs)">هنوز فاکتور فروش مشتریان در این دوره ثبت نشده است</p></div>';
+        var topCusts = (this._cache && this._cache.top10Customers) ? this._cache.top10Customers : [];
+        if (!topCusts.length) {
+          cCtx.parentElement.innerHTML = '<div class="em" style="padding:48px 14px;text-align:center"><i class="bi bi-pie-chart" style="font-size:2.2rem;color:var(--txs);opacity:.45"></i><p style="margin-top:10px;font-size:.84rem;color:var(--txs)">فروش به مشتریان در این دوره ثبت نشده است</p></div>';
         } else {
-          me._cc = new Chart(cCtx, {
+          var labels = topCusts.slice(0, 6).map(function(c) { return c.name; });
+          var dataVals = topCusts.slice(0, 6).map(function(c) { return c.totalSales; });
+          var palette = ['#2563eb', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#be185d'];
+
+          this._custChart = new Chart(cCtx, {
             type: 'doughnut',
             data: {
-              labels: cL,
+              labels: labels,
               datasets: [{
-                data: cD,
-                backgroundColor: ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#be185d', '#4f46e5'].slice(0, cL.length),
+                data: dataVals,
+                backgroundColor: palette.slice(0, labels.length),
                 borderWidth: 2,
-                borderColor: getComputedStyle(document.body).getPropertyValue('--sf').trim() || '#fff'
+                borderColor: getComputedStyle(document.body).getPropertyValue('--sf').trim() || '#ffffff'
               }]
             },
             options: {
@@ -559,16 +1460,32 @@ var Dash = {
               plugins: {
                 legend: {
                   position: 'bottom',
-                  labels: { font: { family: 'Vazirmatn' } }
+                  labels: {
+                    font: { family: fontFam, size: 11 },
+                    color: textMuted,
+                    usePointStyle: true,
+                    boxWidth: 8
+                  }
+                },
+                tooltip: {
+                  rtl: true,
+                  titleFont: { family: fontFam },
+                  bodyFont: { family: fontFam },
+                  callbacks: {
+                    label: function(ctx) {
+                      var sum = dataVals.reduce(function(a, b) { return a + b; }, 0);
+                      var pct = sum > 0 ? ((ctx.parsed / sum) * 100).toFixed(1) : 0;
+                      return ctx.label + ': ' + UI.fn(ctx.parsed) + ' ریال (' + pct + '٪)';
+                    }
+                  }
                 }
               }
             }
           });
         }
       }
-    } catch (e) {
-      console.log('Chart:', e);
+    } catch (err) {
+      console.warn('Dashboard Chart.js render warning:', err);
     }
   }
 };
-
