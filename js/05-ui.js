@@ -30,6 +30,18 @@ var UI = {
       if (bd) bd.classList.remove('show');
     }
   },
+  toggleDrop: function(el, evt) {
+    if (evt) {
+      if (evt.preventDefault) evt.preventDefault();
+      if (evt.stopPropagation) evt.stopPropagation();
+    }
+    if (!el) return;
+    el.classList.toggle('open');
+    el._justToggled = true;
+    setTimeout(function() {
+      el._justToggled = false;
+    }, 250);
+  },
   closeSidebar: function() {
     UI.toggleSidebar(false);
   },

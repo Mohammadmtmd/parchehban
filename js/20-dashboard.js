@@ -112,28 +112,33 @@ var Dash = {
 
   /* ══ بارگذاری و تجمیع داده‌های جامع داشبورد ══ */
   load: async function() {
-    if (typeof Chk !== 'undefined' && Chk.autoPassDueChecks) {
-      await Chk.autoPassDueChecks();
+    try {
+      if (typeof Chk !== 'undefined' && typeof Chk.autoPassDueChecks === 'function') {
+        await Chk.autoPassDueChecks();
+      }
+    } catch (chkErr) {
+      console.warn('Chk.autoPassDueChecks non-fatal:', chkErr);
     }
 
-    var contacts = await DB.all('contacts');
-    var fiscalYears = await DB.all('fiscalYears');
+    var contacts = (await DB.all('contacts')) || [];
+    var fiscalYears = (await DB.all('fiscalYears')) || [];
     var currentYear = null;
     if (STATE.yearId != null) {
-      currentYear = await DB.get('fiscalYears', STATE.yearId);
+      try { currentYear = await DB.get('fiscalYears', STATE.yearId); } catch (e) {}
     }
     if (!currentYear && fiscalYears.length) {
-      currentYear = fiscalYears.find(function(y) { return y.isCurrent && !y.isClosed; }) || fiscalYears[fiscalYears.length - 1];
+      currentYear = fiscalYears.find(function(y) { return y && y.isCurrent && !y.isClosed; }) || fiscalYears[fiscalYears.length - 1];
     }
 
-    var allInvs = await FY.byYear('invoices');
+    var allInvs = (await FY.byYear('invoices')) || [];
 
     /* هوشمندی انتخاب سال مالی در صورت عدم وجود فاکتور در سال فعلی */
     if (!allInvs.length) {
-      var totalInvs = await DB.all('invoices');
+      var totalInvs = (await DB.all('invoices')) || [];
       if (totalInvs.length > 0) {
         var yearCounts = {};
         totalInvs.forEach(function(inv) {
+          if (!inv) return;
           var yk = inv.fiscalYearId != null ? intOf(inv.fiscalYearId) : 0;
           yearCounts[yk] = (yearCounts[yk] || 0) + 1;
         });
@@ -144,8 +149,8 @@ var Dash = {
           STATE.yearId = intOf(bestYear);
           localStorage.setItem('pb_year', STATE.yearId);
           await FY.refreshSel();
-          currentYear = await DB.get('fiscalYears', STATE.yearId);
-          allInvs = await FY.byYear('invoices');
+          try { currentYear = await DB.get('fiscalYears', STATE.yearId); } catch (e) {}
+          allInvs = (await FY.byYear('invoices')) || [];
         } else if (!allInvs.length) {
           allInvs = totalInvs;
         }
@@ -154,22 +159,24 @@ var Dash = {
 
     var cMap = {};
     contacts.forEach(function(c) {
-      cMap[c.id] = c.name;
+      if (c && c.id != null) cMap[c.id] = c.name;
     });
 
-    var banks = await DB.all('banks');
-    var dashPays = await FY.byYear('payments');
-    var dashChks = await FY.byYear('checks');
+    var banks = (await DB.all('banks')) || [];
+    var dashPays = (await FY.byYear('payments')) || [];
+    var dashChks = (await FY.byYear('checks')) || [];
     var dashBts = [];
-    try { dashBts = await DB.all('bankTransfers'); } catch (e) {}
+    try { dashBts = (await DB.all('bankTransfers')) || []; } catch (e) {}
 
-    var products = await DB.all('products');
-    var categories = await DB.all('categories');
+    var products = (await DB.all('products')) || [];
+    var categories = (await DB.all('categories')) || [];
     var catMap = {};
-    categories.forEach(function(ct) { catMap[ct.id] = ct.name; });
+    categories.forEach(function(ct) { if (ct && ct.id != null) catMap[ct.id] = ct.name; });
 
-    var stockMap = await Prod.stockMap();
-    var dashBalMap = await Con.allBalances();
+    var stockMap = {};
+    try { stockMap = (await Prod.stockMap()) || {}; } catch (e) { stockMap = {}; }
+    var dashBalMap = {};
+    try { dashBalMap = (await Con.allBalances()) || {}; } catch (e) { dashBalMap = {}; }
 
     /* ══ محاسبه مرزهای زمانی بازه انتخابی ══ */
     var today = Jalali.today();
@@ -207,7 +214,6 @@ var Dash = {
       endNum = pn(this.customEnd);
       rangeDescription = 'بازه دلخواه (' + (this.customStart || '—') + ' تا ' + (this.customEnd || '—') + ')';
     } else {
-      // 'all'
       startNum = 0;
       endNum = 0;
       rangeDescription = 'تمام دوران فعالیت';
@@ -226,6 +232,7 @@ var Dash = {
     var tSal = 0, salCount = 0;
     var cashPaidOnSales = 0;
     periodInvs.forEach(function(v) {
+      if (!v) return;
       if (v.type === 'purchase') {
         tPur += numOf(v.grandTotal);
         purCount++;
@@ -238,14 +245,14 @@ var Dash = {
 
     /* ══ محاسبه سود و زیان (P&L) از منبع حقیقت FinanceEngine ══ */
     var plData = FinanceEngine.calculatePeriodPL(allInvs, dashPays, startNum, endNum);
-    var netSales = plData.netSales;
-    var totalCOGS = plData.cogs;
-    var grossProfit = plData.grossProfit;
+    var netSales = plData.netSales || 0;
+    var totalCOGS = plData.cogs || 0;
+    var grossProfit = plData.grossProfit || 0;
     var brokerCommissions = plData.brokerCommissions || 0;
     var profitAfterBroker = grossProfit - brokerCommissions;
-    var netProfit = plData.netOperatingProfit;
-    var grossMarginPct = plData.grossMarginPct;
-    var netMarginPct = plData.netMarginPct;
+    var netProfit = plData.netOperatingProfit || 0;
+    var grossMarginPct = plData.grossMarginPct || 0;
+    var netMarginPct = plData.netMarginPct || 0;
     var unverifiedItemsCount = plData.unverifiedItemsCount || 0;
     var unverifiedRevenueTotal = plData.unverifiedRevenueTotal || 0;
     var hasUnverified = unverifiedItemsCount > 0;
@@ -257,9 +264,10 @@ var Dash = {
     var bankPaymentsPeriod = 0;
 
     banks.forEach(function(b) {
+      if (!b) return;
       var bal = numOf(b.openingBalance);
       dashPays.forEach(function(p) {
-        if (p.bankId === b.id) {
+        if (p && p.bankId === b.id) {
           var pAmt = numOf(p.amount);
           var pDNum = pn(p.date);
           var inPeriod = (startNum === 0 || pDNum >= startNum) && (endNum === 0 || pDNum <= endNum);
@@ -273,6 +281,7 @@ var Dash = {
         }
       });
       dashBts.forEach(function(bt) {
+        if (!bt) return;
         if (bt.fromBankId === b.id) bal -= numOf(bt.amount);
         if (bt.toBankId === b.id) bal += numOf(bt.amount);
       });
@@ -291,6 +300,7 @@ var Dash = {
     var totalCreditors = 0, creditorCount = 0, creditorList = [];
 
     contacts.forEach(function(co) {
+      if (!co) return;
       var cBal = dashBalMap[co.id] || 0;
       if (cBal > 0) {
         totalDebtors += cBal;
@@ -312,9 +322,9 @@ var Dash = {
     /* ══ ارزش‌گذاری شفاف موجودی انبار بر اساس آخرین فاکتورهای خرید موثق ══ */
     var latestBuyPrices = {};
     allInvs.forEach(function(inv) {
-      if (inv.type !== 'purchase') return;
+      if (!inv || inv.type !== 'purchase') return;
       (inv.items || []).forEach(function(it) {
-        if (it.productId && numOf(it.unitPrice) > 0) {
+        if (it && it.productId && numOf(it.unitPrice) > 0) {
           if (!latestBuyPrices[it.productId] || pn(inv.date) >= pn(latestBuyPrices[it.productId].date)) {
             latestBuyPrices[it.productId] = { price: numOf(it.unitPrice), date: inv.date };
           }
@@ -332,6 +342,7 @@ var Dash = {
     var prodsWithoutBuyPrice = 0;
 
     products.forEach(function(p) {
+      if (!p || p.id == null) return;
       var st = stockMap[p.id] || 0;
       if (st > 0) {
         totalStockMeters += st;
@@ -355,7 +366,7 @@ var Dash = {
     /* ══ تحلیل ۱۰ مشتری برتر دوره ══ */
     var custSalesMap = {};
     periodInvs.forEach(function(inv) {
-      if (inv.type !== 'sale') return;
+      if (!inv || inv.type !== 'sale') return;
       var cid = inv.contactId || 'unknown';
       if (!custSalesMap[cid]) {
         custSalesMap[cid] = {
@@ -382,6 +393,7 @@ var Dash = {
     var prodProfitList = [];
     for (var pk in plData.productBreakdown) {
       var pb = plData.productBreakdown[pk];
+      if (!pb) continue;
       var avgSell = pb.qty > 0 ? Math.round(pb.revenue / pb.qty) : 0;
       var pMargin = pb.revenue > 0 ? (pb.profit / pb.revenue) * 100 : 0;
       prodProfitList.push({
@@ -402,6 +414,7 @@ var Dash = {
     var topMovers = prodProfitList.slice().sort(function(a, b) { return b.qty - a.qty; }).slice(0, 5);
     var slowMovers = [];
     products.forEach(function(p) {
+      if (!p) return;
       var matched = prodProfitList.find(function(x) { return x.id === p.id; });
       if (!matched) {
         slowMovers.push({ id: p.id, name: p.name, stock: stockMap[p.id] || 0, unit: p.unit });
@@ -409,16 +422,20 @@ var Dash = {
     });
     slowMovers = slowMovers.slice(0, 5);
 
-    /* ══ تحلیل چک‌های صیادی و سررسید ══ */
-    var dueAnalysis = Chk.getDueAnalysis(dashChks);
-    var returnedChecks = dashChks.filter(function(c) {
-      return c.status === 'returned' || c.status === 'returned_to_me' || c.status === 'returned_to_customer';
+    /* ══ تحلیل چک‌های صیادی و سررسید با گارد امنیتی ══ */
+    var dueAnalysis = (typeof Chk !== 'undefined' && typeof Chk.getDueAnalysis === 'function') ?
+      Chk.getDueAnalysis(dashChks) :
+      { overdue: [], dueToday: [], within3: [], within7: [], allUrgent: [], totalIssuedAmt: 0, totalReceivedAmt: 0, count: 0 };
+
+    var overdueChecks = dueAnalysis.overdue || [];
+    var within7Checks = dueAnalysis.within7 || []; // دقت: فیلد داخل Chk.getDueAnalysis به نام within7 است
+    var returnedChecks = (dashChks || []).filter(function(c) {
+      return c && (c.status === 'returned' || c.status === 'returned_to_me' || c.status === 'returned_to_customer');
     });
 
     /* ══ آخرین فعالیت‌های تجاری برنامه ══ */
     var recentActivities = [];
-    // ۵ فاکتور فروش
-    allInvs.filter(function(x) { return x.type === 'sale'; }).slice(0, 5).forEach(function(inv) {
+    allInvs.filter(function(x) { return x && x.type === 'sale'; }).slice(0, 5).forEach(function(inv) {
       recentActivities.push({
         kind: 'sale',
         typeLabel: 'فاکتور فروش',
@@ -432,8 +449,8 @@ var Dash = {
         action: 'Inv.vw(' + inv.id + ')'
       });
     });
-    // ۵ فاکتور خرید
-    allInvs.filter(function(x) { return x.type === 'purchase'; }).slice(0, 5).forEach(function(inv) {
+
+    allInvs.filter(function(x) { return x && x.type === 'purchase'; }).slice(0, 5).forEach(function(inv) {
       recentActivities.push({
         kind: 'purchase',
         typeLabel: 'فاکتور خرید',
@@ -447,8 +464,9 @@ var Dash = {
         action: 'Inv.vw(' + inv.id + ')'
       });
     });
-    // ۵ تراکنش مالی
+
     dashPays.slice(0, 5).forEach(function(p) {
+      if (!p) return;
       recentActivities.push({
         kind: 'payment',
         typeLabel: p.type === 'receipt' ? 'دریافت وجه' : 'پرداخت وجه',
@@ -462,8 +480,9 @@ var Dash = {
         action: 'ROUTES.payments()'
       });
     });
-    // ۵ چک صیادی
+
     dashChks.slice(0, 5).forEach(function(c) {
+      if (!c) return;
       recentActivities.push({
         kind: 'check',
         typeLabel: c.type === 'received' ? 'چک دریافتی' : 'چک پرداختی',
@@ -472,12 +491,13 @@ var Dash = {
         person: cMap[c.contactId] || '—',
         date: c.dueDate || c.date,
         amount: numOf(c.amount),
-        status: Chk.sl(c.status),
+        status: Chk.sl ? Chk.sl(c.status) : (c.status || '—'),
         isPositive: c.type === 'received',
         action: 'Chk.form(\'' + c.type + '\',' + c.id + ')'
       });
     });
-    recentActivities.sort(function(a, b) { return (pn(b.date) - pn(a.date)) || (b.id - a.id); });
+
+    recentActivities.sort(function(a, b) { return (pn(b.date) - pn(a.date)) || ((b.id || 0) - (a.id || 0)); });
 
     /* ══ ذخیره وضعیت در حافظه کش برای فیلتر و تعامل آنی ══ */
     this.lastUpdated = new Date().toLocaleTimeString('fa-IR');
@@ -511,6 +531,8 @@ var Dash = {
       top10Customers: top10Customers,
       prodProfitList: prodProfitList,
       dueAnalysis: dueAnalysis,
+      overdueChecks: overdueChecks,
+      within7Checks: within7Checks,
       returnedChecks: returnedChecks,
       recentActivities: recentActivities,
       startNum: startNum,
@@ -716,21 +738,21 @@ var Dash = {
     /* ── بخش ششم: هشدارهای هوشمند و نیازمند توجه (Attention Center) ── */
     var alertItemsHtml = '';
 
-    if (dueAnalysis.overdue.length > 0) {
+    if (overdueChecks.length > 0) {
       alertItemsHtml += '<div class="erp-alert-item" onclick="Chk.ll(\'overdue\')">' +
         '<div class="erp-alert-lead">' +
           '<span class="erp-alert-badge danger"><i class="bi bi-exclamation-octagon-fill"></i> فوری</span>' +
-          '<strong>' + UI.fn(dueAnalysis.overdue.length) + ' فقره چک سررسید گذشته:</strong> لطفاً جهت وصول یا پیگیری سریعاً اقدام فرمایید.' +
+          '<strong>' + UI.fn(overdueChecks.length) + ' فقره چک سررسید گذشته:</strong> لطفاً جهت وصول یا پیگیری اقدام فرمایید.' +
         '</div>' +
         '<span class="erp-kpi-link-hint">رسیدگی ←</span>' +
       '</div>';
     }
 
-    if (dueAnalysis.due7.length > 0) {
+    if (within7Checks.length > 0) {
       alertItemsHtml += '<div class="erp-alert-item" onclick="Chk.ll(\'due7\')">' +
         '<div class="erp-alert-lead">' +
           '<span class="erp-alert-badge warning"><i class="bi bi-calendar-event"></i> ۷ روز آینده</span>' +
-          '<strong>' + UI.fn(dueAnalysis.due7.length) + ' فقره چک با سررسید نزدیک:</strong> ' +
+          '<strong>' + UI.fn(within7Checks.length) + ' فقره چک با سررسید نزدیک:</strong> ' +
           (dueAnalysis.totalIssuedAmt > 0 ? 'تأمین موجودی پرداختی: ' + UI.fn(dueAnalysis.totalIssuedAmt) + ' ریال' : '') +
           (dueAnalysis.totalReceivedAmt > 0 ? ' · دریافتی آماده واگذاری: ' + UI.fn(dueAnalysis.totalReceivedAmt) + ' ریال' : '') +
         '</div>' +
@@ -1136,6 +1158,7 @@ var Dash = {
   _renderProdTableHtml: function(list) {
     var query = (this.prodQuery || '').trim().toLowerCase();
     var filtered = (list || []).filter(function(it) {
+      if (!it) return false;
       if (!query) return true;
       return (it.name || '').toLowerCase().indexOf(query) !== -1;
     });
@@ -1200,6 +1223,7 @@ var Dash = {
   _renderActivityTableHtml: function(list) {
     var fl = this.activityFilter || 'all';
     var filtered = (list || []).filter(function(item) {
+      if (!item) return false;
       if (fl === 'all') return true;
       if (fl === 'sales') return item.kind === 'sale';
       if (fl === 'purchase') return item.kind === 'purchase';
@@ -1271,15 +1295,12 @@ var Dash = {
       /* ── نمودار اول: روند عملکرد مالی (فروش، خرید، بهای تمام‌شده و سود) ── */
       var pCtx = document.getElementById('dashPerfChart');
       if (pCtx) {
-        // گروه‌بندی داده‌ها بر اساس روز یا ماه
         var buckets = {};
         var invs = periodInvs || [];
-
-        // اگر بازه زمانی بزرگ‌تر از ۴۵ روز باشد، بر اساس ماه تجمیع شود
         var isMonthlyGrouping = (this.period === 'quarter' || this.period === 'year' || this.period === 'all');
 
         invs.forEach(function(inv) {
-          if (!inv.date) return;
+          if (!inv || !inv.date) return;
           var key = isMonthlyGrouping ? inv.date.substring(0, 7) : inv.date;
           if (!buckets[key]) {
             buckets[key] = { sales: 0, purchases: 0, cogs: 0, profit: 0 };
@@ -1292,8 +1313,8 @@ var Dash = {
             var ship = numOf(inv.shippingCost);
             var rev = (sub - disc) + ship;
             buckets[key].sales += rev;
-            // بهای تمام‌شده
             (inv.items || []).forEach(function(it) {
+              if (!it) return;
               var bp = numOf(it.buyPrice);
               if (bp > 0) buckets[key].cogs += (bp * numOf(it.quantity));
             });
@@ -1302,7 +1323,6 @@ var Dash = {
         });
 
         var sortedKeys = Object.keys(buckets).sort();
-        // حداکثر ۱۲ دوره نمایش داده شود
         if (sortedKeys.length > 14) {
           sortedKeys = sortedKeys.slice(-14);
         }

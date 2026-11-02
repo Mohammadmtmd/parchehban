@@ -6,7 +6,9 @@ if (navEl) navEl.addEventListener('click', function(e) {
   if (drop) {
     e.preventDefault();
     e.stopPropagation();
-    drop.classList.toggle('open');
+    if (!drop._justToggled) {
+      drop.classList.toggle('open');
+    }
     return;
   }
 

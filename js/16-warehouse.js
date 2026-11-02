@@ -5,20 +5,21 @@ var Wh = {
     UI.nav('warehouse');
     UI.title('bi-archive-fill', 'انبار');
     UI.act('');
-    var ps = await DB.all('products'),
-      cs = await DB.all('categories'),
+    var ps = (await DB.all('products')) || [],
+      cs = (await DB.all('categories')) || [],
       cm = {};
     cs.forEach(function(c) {
-      cm[c.id] = c.name;
+      if (c && c.id) cm[c.id] = c.name;
     });
     /* اصلاح ناسازگاری: این صفحه قبلاً فقط فاکتورهای سال مالی جاری را
        می‌شمرد، در حالی که ستون موجودی صفحه «کالا» همه سال‌ها را حساب
        می‌کرد و دو عدد متفاوت نشان داده می‌شد. موجودی انبار ماهیتاً
        تجمعی است، پس اینجا هم همه فاکتورها لحاظ می‌شوند.
        ستون‌های «کل خرید/فروش» هم به همین ترتیب تجمعی‌اند. */
-    var invs = await DB.all('invoices');
+    var invs = (await DB.all('invoices')) || [];
     var stk = {};
     ps.forEach(function(p) {
+      if (!p || !p.id) return;
       stk[p.id] = {
         name: p.name,
         cat: cm[p.categoryId] || '—',

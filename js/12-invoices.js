@@ -18,16 +18,16 @@ var Inv = {
   },
 
   ll: async function(type) {
-    var all = await FY.byYear('invoices');
+    var all = (await FY.byYear('invoices')) || [];
     var ls = all.filter(function(i) {
-      return i.type === type;
+      return i && i.type === type;
     }).sort(function(a, b) {
       return (b.id || 0) - (a.id || 0);
     });
-    var ct = await DB.all('contacts'),
+    var ct = (await DB.all('contacts')) || [],
       cm = {};
     ct.forEach(function(c) {
-      cm[c.id] = c.name;
+      if (c && c.id) cm[c.id] = c.name;
     });
     if (!ls.length) {
       UI.content('<div class="cd"><div class="em"><i class="bi bi-receipt"></i><p>فاکتوری نیست</p></div></div>');
