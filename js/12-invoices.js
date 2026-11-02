@@ -276,12 +276,17 @@ var Inv = {
     h += '<div class="inv-ti"><label>نهایی</label><div class="val g">' + UI.fn(gr) + '</div></div>';
     h += '<div class="inv-ti"><label>پرداختی</label><div class="val">' + UI.fn(pd) + '</div></div>';
     if (this._type === 'sale' || this._type === 'proforma') {
-      var profit = 0;
-      this.items.forEach(function(it) {
-        profit += (it.profit || 0);
+      var invProfitCalc = FinanceEngine.calculateInvoiceProfit({
+        subtotal: sub,
+        discount: dis,
+        shippingCost: sh,
+        items: this.items
       });
-      if (profit !== 0) h += '<div class="inv-ti"><label>سود</label><div class="val ' + (profit >= 0 ? 'g' : 'r') + '">' + UI.fn(profit) + '</div></div>';
-    };
+      var hasValidBuyPrices = this.items.some(function(it) { return (it.buyPrice || 0) > 0; });
+      if (hasValidBuyPrices) {
+        h += '<div class="inv-ti"><label>سود ناخالص</label><div class="val ' + (invProfitCalc.grossProfit >= 0 ? 'g' : 'r') + '">' + UI.fn(Math.round(invProfitCalc.grossProfit)) + '</div></div>';
+      }
+    }
     h += '<div class="inv-ti"><label>مانده</label><div class="val ' + (rm > 0 ? 'r' : 'g') + '">' + UI.fn(rm) + '</div></div>';
     el.innerHTML = h;
   },

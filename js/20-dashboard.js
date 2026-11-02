@@ -74,34 +74,22 @@ var Dash = {
       }
     });
 
-    /* بهای تمام‌شده و سود دوره */
-    var avgBuy = {};
-    allInvs.forEach(function(inv) {
-      if (inv.type !== 'purchase') return;
-      (inv.items || []).forEach(function(it) {
-        if (!avgBuy[it.productId]) avgBuy[it.productId] = { cost: 0, qty: 0 };
-        avgBuy[it.productId].cost += numOf(it.total);
-        avgBuy[it.productId].qty += numOf(it.quantity);
-      });
-    });
-
-    var profit = 0;
-    periodInvs.forEach(function(inv) {
-      if (inv.type !== 'sale') return;
-      (inv.items || []).forEach(function(it) {
-        var ab = avgBuy[it.productId];
-        var avg = ab && ab.qty > 0 ? ab.cost / ab.qty : 0;
-        profit += (numOf(it.unitPrice) - avg) * numOf(it.quantity);
-      });
-      if (inv.brokerCommission) profit -= numOf(inv.brokerCommission);
-    });
-
-    /* مانده بانک‌ها */
+    /* مانده بانک‌ها و دریافت/پرداخت‌ها */
     var banks = await DB.all('banks'),
       dashPays = await FY.byYear('payments'),
       dashChks = await FY.byYear('checks'),
       dashBts = [];
     try { dashBts = await DB.all('bankTransfers'); } catch (e) {}
+
+    /* بهای تمام‌شده و سود دوره بر اساس موتور یکپارچه مالی (FinanceEngine) */
+    var plData = FinanceEngine.calculatePeriodPL(
+      allInvs,
+      dashPays,
+      (Dash.period === 'all' ? 0 : startNum),
+      0
+    );
+    var grossProfit = plData.grossProfit;
+    var netProfit = plData.netOperatingProfit;
 
     var bankTotal = 0;
     banks.forEach(function(b) {
@@ -220,9 +208,11 @@ var Dash = {
     h += '<div class="sg" style="grid-template-columns:repeat(auto-fit,minmax(195px,1fr));margin-bottom:22px">';
 
     /* سود و زیان -> صفحه P&L */
-    h += '<div class="sc" style="cursor:pointer" onclick="ROUTES.profit()" title="مشاهده گزارش دقیق صورت سود و زیان (P&L)">' +
-      '<div class="si ' + (profit >= 0 ? 'g' : 'r') + '"><i class="bi bi-graph-up-arrow"></i></div>' +
-      '<div class="sti"><h3>' + UI.fn(Math.round(profit)) + '</h3><p>سود ناخالص (' + pl[this.period] + ') ←</p></div></div>';
+    var hasUnverified = plData.unverifiedItemsCount > 0;
+    h += '<div class="sc" style="cursor:pointer" onclick="ROUTES.profit()" title="سود ناخالص: ' + UI.fn(Math.round(grossProfit)) + ' | سود خالص عملیاتی: ' + UI.fn(Math.round(netProfit)) + (hasUnverified ? ' (' + plData.unverifiedItemsCount + ' قلم فاقد قیمت خرید)' : '') + '">' +
+      '<div class="si ' + (grossProfit >= 0 ? 'g' : 'r') + '"><i class="bi bi-graph-up-arrow"></i></div>' +
+      '<div class="sti"><h3>' + UI.fn(Math.round(grossProfit)) + '</h3>' +
+      '<p>سود ناخالص (' + pl[this.period] + ')' + (hasUnverified ? ' <span style="color:var(--w);font-size:11px" title="' + plData.unverifiedItemsCount + ' قلم کالا در فروش با بهای نامشخص">⚠</span>' : '') + ' ←</p></div></div>';
 
     /* فروش -> فاکتورهای فروش */
     h += '<div class="sc" style="cursor:pointer" onclick="ROUTES.sales()" title="مشاهده فهرست فاکتورهای فروش">' +

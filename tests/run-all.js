@@ -10,6 +10,7 @@ const { execFileSync } = require('child_process');
 const path = require('path');
 
 var logic = [
+  ['finance.js', 'موتور مالی و بهای تمام‌شده ۱۰ سناریو'],
   ['full.js', 'تست جامع منطق'],
   ['oversell.js', 'جلوگیری از فروش بیش از موجودی'],
   ['run.js', 'مانده‌ها و گردش حساب'],

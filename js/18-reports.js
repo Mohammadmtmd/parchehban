@@ -6,7 +6,7 @@ var Rep = {
     UI.nav('reports');
     UI.title('bi-bar-chart-line-fill', 'گزارشات');
     UI.act('');
-    UI.content('<div class="tab-bar"><button class="tab-btn active" onclick="Rep.tab(this,\'summary\')">خلاصه</button><button class="tab-btn" onclick="Rep.tab(this,\'purchases\')">خرید</button><button class="tab-btn" onclick="Rep.tab(this,\'sales\')">فروش</button><button class="tab-btn" onclick="Rep.tab(this,\'stock\')">موجودی</button><button class="tab-btn" onclick="Rep.tab(this,\'profit\')">سود و زیان</button><button class="tab-btn" onclick="Rep.tab(this,\'debtors\')">بدهکاران</button><button class="tab-btn" onclick="Rep.tab(this,\'creditors\')">بستانکاران</button></div><div id="rC"></div>');
+    UI.content('<div class="tab-bar"><button class="tab-btn active" onclick="Rep.tab(this,\'summary\')">خلاصه</button><button class="tab-btn" onclick="Rep.tab(this,\'purchases\')">خرید</button><button class="tab-btn" onclick="Rep.tab(this,\'sales\')">فروش</button><button class="tab-btn" onclick="Rep.tab(this,\'stock\')">موجودی</button><button class="tab-btn" onclick="Rep.tab(this,\'profit\')">سود و زیان</button><button class="tab-btn" onclick="Rep.tab(this,\'debtors\')">بدهکاران</button><button class="tab-btn" onclick="Rep.tab(this,\'creditors\')">بستانکاران</button><button class="tab-btn" onclick="Rep.tab(this,\'diagnostics\')"><i class="bi bi-shield-check"></i> آزمونگر تشخیصی</button></div><div id="rC"></div>');
     this._c = 'summary';
     await this.summary();
     this._btns();
@@ -38,7 +38,8 @@ var Rep = {
     stock: 'گزارش موجودی',
     profit: 'سود و زیان',
     debtors: 'بدهکاران',
-    creditors: 'بستانکاران'
+    creditors: 'بستانکاران',
+    diagnostics: 'آزمونگر تشخیصی ۱۰ سناریوی مالی'
   },
 
   _btns: function() {
@@ -246,102 +247,24 @@ var Rep = {
       startNum = getPeriodStart(p);
     }
 
-    /* محاسبه میانگین وزنی قیمت خرید برای هر کالا */
-    var avgBuy = {};
-    invs.forEach(function(inv) {
-      if (inv.type !== 'purchase') return;
-      (inv.items || []).forEach(function(it) {
-        if (!avgBuy[it.productId]) avgBuy[it.productId] = { cost: 0, qty: 0 };
-        avgBuy[it.productId].cost += numOf(it.total);
-        avgBuy[it.productId].qty += numOf(it.quantity);
-      });
-    });
+    /* محاسبه جامع سود و متغیرهای مالی از طریق موتور استاندارد FinanceEngine */
+    var plData = FinanceEngine.calculatePeriodPL(invs, pays, startNum, 0);
 
-    /* بررسی فاکتورهای فروش دوره */
-    var saleInvs = invs.filter(function(inv) {
-      return inv.type === 'sale' && (startNum === 0 || pn(inv.date) >= startNum);
-    });
-
-    var grossSales = 0;
-    var totalDiscounts = 0;
-    var totalShipping = 0;
-    var totalCOGS = 0; // بهای تمام‌شده کالای فروش‌رفته
-    var brokerCommissions = 0;
-    var productBreakdown = {};
-    var invoiceBreakdown = [];
-
-    saleInvs.forEach(function(inv) {
-      var invTotal = numOf(inv.grandTotal);
-      var invSub = numOf(inv.subtotal);
-      var invDis = numOf(inv.discount);
-      var invShip = numOf(inv.shippingCost);
-      var invBroker = numOf(inv.brokerCommission);
-
-      grossSales += invSub;
-      totalDiscounts += invDis;
-      totalShipping += invShip;
-      brokerCommissions += invBroker;
-
-      var invCOGS = 0;
-
-      (inv.items || []).forEach(function(it) {
-        var pid = it.productId;
-        var ab = avgBuy[pid];
-        var unitCost = (ab && ab.qty > 0) ? (ab.cost / ab.qty) : (pMap[pid] ? numOf(pMap[pid].buyPrice) : 0);
-        var itemQty = numOf(it.quantity);
-        var itemTotal = numOf(it.total);
-        var itemCost = unitCost * itemQty;
-        var itemProfit = itemTotal - itemCost;
-
-        invCOGS += itemCost;
-
-        if (!productBreakdown[pid]) {
-          productBreakdown[pid] = {
-            id: pid,
-            name: it.productName || (pMap[pid] ? pMap[pid].name : 'نامشخص'),
-            qty: 0,
-            revenue: 0,
-            cogs: 0,
-            profit: 0
-          };
-        }
-        productBreakdown[pid].qty += itemQty;
-        productBreakdown[pid].revenue += itemTotal;
-        productBreakdown[pid].cogs += itemCost;
-        productBreakdown[pid].profit += itemProfit;
-      });
-
-      totalCOGS += invCOGS;
-      var invProfit = invTotal - invCOGS - invBroker;
-      var invMargin = invTotal > 0 ? (invProfit / invTotal) * 100 : 0;
-
-      invoiceBreakdown.push({
-        id: inv.id,
-        number: inv.invoiceNumber || '—',
-        contactName: cMap[inv.contactId] || 'مشتری آزاد',
-        date: inv.date || '—',
-        grandTotal: invTotal,
-        cogs: invCOGS,
-        profit: invProfit,
-        margin: invMargin
-      });
-    });
-
-    /* هزینه‌های متفرقه عملیاتی (پرداخت‌های غیر فاکتوری دوره) */
-    var generalExpenses = 0;
-    pays.forEach(function(pay) {
-      if (pay.type === 'payment' && !pay.sourceInvoiceId && !pay.sourceCheckId) {
-        if (startNum === 0 || pn(pay.date) >= startNum) {
-          generalExpenses += numOf(pay.amount);
-        }
-      }
-    });
-
-    var netSales = grossSales - totalDiscounts + totalShipping;
-    var grossProfit = netSales - totalCOGS;
-    var grossMarginPct = netSales > 0 ? (grossProfit / netSales) * 100 : 0;
-    var netProfit = grossProfit - brokerCommissions - generalExpenses;
-    var netMarginPct = netSales > 0 ? (netProfit / netSales) * 100 : 0;
+    var grossSales = plData.grossSales;
+    var totalDiscounts = plData.totalDiscounts;
+    var totalShipping = plData.totalShipping;
+    var netSales = plData.netSales;
+    var totalCOGS = plData.cogs;
+    var grossProfit = plData.grossProfit;
+    var grossMarginPct = plData.grossMarginPct;
+    var brokerCommissions = plData.brokerCommissions;
+    var classifiedOpEx = plData.classifiedOpEx;
+    var unclassifiedPayments = plData.unclassifiedPayments;
+    var netProfit = plData.netOperatingProfit;
+    var netMarginPct = plData.netMarginPct;
+    var productBreakdown = plData.productBreakdown;
+    var invoiceBreakdown = plData.invoiceBreakdown;
+    var saleInvsCount = plData.invoiceCount;
 
     /* ساخت رابط کاربری حرفه‌ای صورت سود و زیان (P&L) */
     var pLabels = { month: 'ماه جاری', quarter: '۳ ماهه جاری', year: 'سال مالی جاری', all: 'تمام دوران' };
@@ -353,14 +276,24 @@ var Rep = {
       h += '<button class="btn ' + act + ' bs" onclick="Rep.profit(\'' + pk + '\')">' + pLabels[pk] + '</button>';
     });
     h += '</div>';
-    h += '<div style="font-size:.82rem;color:var(--txs)"><i class="bi bi-clock-history"></i> دوره بررسی: <strong>' + pLabels[p] + '</strong> (' + UI.fn(saleInvs.length) + ' فاکتور فروش)</div>';
+    h += '<div style="font-size:.82rem;color:var(--txs)"><i class="bi bi-clock-history"></i> دوره بررسی: <strong>' + pLabels[p] + '</strong> (' + UI.fn(saleInvsCount) + ' فاکتور فروش)</div>';
     h += '</div>';
+
+    /* بنر هشدار اقلام فاقد قیمت خرید (تصمیم تأییدشده: تفکیک و هشدار شفاف) */
+    if (plData.unverifiedItemsCount > 0) {
+      h += '<div class="hint-box" style="margin-bottom:18px;background:rgba(217,119,6,.08);border:1.5px solid var(--w);padding:14px 18px;border-radius:10px;display:flex;align-items:center;gap:12px">' +
+        '<i class="bi bi-exclamation-triangle-fill" style="color:var(--w);font-size:1.35rem"></i>' +
+        '<div style="font-size:.85rem;line-height:1.7">' +
+        '<strong>هشدار بهای تمام‌شده:</strong> در این دوره، تعداد <strong>' + UI.fn(plData.unverifiedItemsCount) + ' قلم کالا</strong> در فاکتورهای فروش بدون قیمت خرید معتبر (یا صفر) ثبت شده‌اند (مجموع فروش این اقلام: ' + UI.fn(plData.unverifiedRevenueTotal) + ' ریال). سود ناخالص بر پایه اقلام دارای بهای موثق محاسبه شده و بهای این اقلام صفر فرض نشده است.' +
+        '</div>' +
+        '</div>';
+    }
 
     /* کارت‌های خلاصه آماری P&L */
     h += '<div class="sg" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr));margin-bottom:20px">';
     h += '<div class="sc"><div class="si g"><i class="bi bi-cash-stack"></i></div><div class="sti"><h3>' + UI.fn(netSales) + '</h3><p>درآمد خالص فروش</p></div></div>';
-    h += '<div class="sc"><div class="si o"><i class="bi bi-cart-check-fill"></i></div><div class="sti"><h3>' + UI.fn(Math.round(totalCOGS)) + '</h3><p>بهای تمام‌شده کالای فروش‌رفته (COGS)</p></div></div>';
-    h += '<div class="sc"><div class="si ' + (grossProfit >= 0 ? 'g' : 'r') + '"><i class="bi bi-graph-up-arrow"></i></div><div class="sti"><h3 style="color:' + (grossProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + UI.fn(Math.round(grossProfit)) + '</h3><p>سود ناخالص (' + grossMarginPct.toFixed(1) + '٪)</p></div></div>';
+    h += '<div class="sc"><div class="si o"><i class="bi bi-cart-check-fill"></i></div><div class="sti"><h3>' + UI.fn(Math.round(totalCOGS)) + '</h3><p>بهای تمام‌شده موثق (COGS)</p></div></div>';
+    h += '<div class="sc"><div class="si ' + (grossProfit >= 0 ? 'g' : 'r') + '"><i class="bi bi-graph-up-arrow"></i></div><div class="sti"><h3 style="color:' + (grossProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + UI.fn(Math.round(grossProfit)) + '</h3><p>سود ناخالص بازرگانی (' + grossMarginPct.toFixed(1) + '٪)</p></div></div>';
     h += '<div class="sc"><div class="si ' + (netProfit >= 0 ? 'b' : 'r') + '"><i class="bi bi-award-fill"></i></div><div class="sti"><h3 style="color:' + (netProfit >= 0 ? 'var(--p)' : 'var(--d)') + '">' + UI.fn(Math.round(netProfit)) + '</h3><p>سود خالص عملیاتی (' + netMarginPct.toFixed(1) + '٪)</p></div></div>';
     h += '</div>';
 
@@ -371,24 +304,37 @@ var Rep = {
 
     h += '<tr style="font-weight:700;background:rgba(37,99,235,.04)"><td>درآمد عملیاتی ناخالص فروش</td><td style="text-align:left">' + UI.fn(grossSales) + '</td><td></td><td style="text-align:center">۱۰۰٪</td></tr>';
     if (totalDiscounts > 0) {
-      h += '<tr style="color:var(--d)"><td style="padding-inline-start:28px">کسر می‌شود: تخفیفات اعطایی فروش</td><td style="text-align:left">(' + UI.fn(totalDiscounts) + ')</td><td></td><td style="text-align:center">−' + (netSales > 0 ? ((totalDiscounts / grossSales) * 100).toFixed(1) : 0) + '٪</td></tr>';
+      h += '<tr style="color:var(--d)"><td style="padding-inline-start:28px">کسر می‌شود: تخفیفات اعطایی فاکتورها (تسهیم‌شده)</td><td style="text-align:left">(' + UI.fn(totalDiscounts) + ')</td><td></td><td style="text-align:center">−' + (netSales > 0 ? ((totalDiscounts / grossSales) * 100).toFixed(1) : 0) + '٪</td></tr>';
     }
     if (totalShipping > 0) {
-      h += '<tr><td style="padding-inline-start:28px">اضافه می‌شود: هزینه حمل فاکتورها</td><td style="text-align:left">' + UI.fn(totalShipping) + '</td><td></td><td style="text-align:center">+' + (netSales > 0 ? ((totalShipping / grossSales) * 100).toFixed(1) : 0) + '٪</td></tr>';
+      h += '<tr><td style="padding-inline-start:28px">اضافه می‌شود: درآمد خدمات حمل فاکتورهای فروش</td><td style="text-align:left">' + UI.fn(totalShipping) + '</td><td></td><td style="text-align:center">+' + (netSales > 0 ? ((totalShipping / grossSales) * 100).toFixed(1) : 0) + '٪</td></tr>';
     }
     h += '<tr style="font-weight:800;background:var(--bg)"><td>= درآمد خالص فروش (Net Sales)</td><td></td><td style="text-align:left;font-weight:800;color:var(--p)">' + UI.fn(netSales) + '</td><td style="text-align:center;font-weight:700">۱۰۰٪</td></tr>';
 
-    h += '<tr style="color:var(--w)"><td style="padding-inline-start:28px">کسر می‌شود: بهای تمام‌شده کالای فروش‌رفته (COGS)</td><td style="text-align:left">(' + UI.fn(Math.round(totalCOGS)) + ')</td><td></td><td style="text-align:center">−' + (netSales > 0 ? ((totalCOGS / netSales) * 100).toFixed(1) : 0) + '٪</td></tr>';
-    h += '<tr style="font-weight:800;background:rgba(22,163,74,.08)"><td>= سود ناخالص عملیاتی (Gross Profit)</td><td></td><td style="text-align:left;font-weight:800;color:' + (grossProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + UI.fn(Math.round(grossProfit)) + '</td><td style="text-align:center;font-weight:800;color:' + (grossProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + grossMarginPct.toFixed(1) + '٪</td></tr>';
+    h += '<tr style="color:var(--w)"><td style="padding-inline-start:28px">کسر می‌شود: بهای تمام‌شده کالای فروش‌رفته (بر پایه buyPrice صریح)</td><td style="text-align:left">(' + UI.fn(Math.round(totalCOGS)) + ')</td><td></td><td style="text-align:center">−' + (netSales > 0 ? ((totalCOGS / netSales) * 100).toFixed(1) : 0) + '٪</td></tr>';
+    h += '<tr style="font-weight:800;background:rgba(22,163,74,.08)"><td>= سود ناخالص عملیاتی بازرگانی (Gross Profit)</td><td></td><td style="text-align:left;font-weight:800;color:' + (grossProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + UI.fn(Math.round(grossProfit)) + '</td><td style="text-align:center;font-weight:800;color:' + (grossProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + grossMarginPct.toFixed(1) + '٪</td></tr>';
 
     if (brokerCommissions > 0) {
-      h += '<tr style="color:var(--d)"><td style="padding-inline-start:28px">کسر می‌شود: کارمزد و حق‌العمل واسطه‌ها</td><td style="text-align:left">(' + UI.fn(brokerCommissions) + ')</td><td></td><td style="text-align:center">−' + (netSales > 0 ? ((brokerCommissions / netSales) * 100).toFixed(1) : 0) + '٪</td></tr>';
-    }
-    if (generalExpenses > 0) {
-      h += '<tr style="color:var(--d)"><td style="padding-inline-start:28px">کسر می‌شود: سایر هزینه‌های جاری و متفرقه</td><td style="text-align:left">(' + UI.fn(generalExpenses) + ')</td><td></td><td style="text-align:center">−' + (netSales > 0 ? ((generalExpenses / netSales) * 100).toFixed(1) : 0) + '٪</td></tr>';
+      h += '<tr style="color:var(--d)"><td style="padding-inline-start:28px">کسر می‌شود: کارمزد و پورسانت واسطه‌های فروش</td><td style="text-align:left">(' + UI.fn(brokerCommissions) + ')</td><td></td><td style="text-align:center">−' + (netSales > 0 ? ((brokerCommissions / netSales) * 100).toFixed(1) : 0) + '٪</td></tr>';
     }
 
-    h += '<tr style="font-weight:800;font-size:.95rem;background:' + (netProfit >= 0 ? 'var(--okl)' : 'var(--dl)') + '"><td style="color:' + (netProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">= سود خالص نهایی دوره (Net Profit)</td><td></td><td style="text-align:left;font-weight:800;color:' + (netProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + UI.fn(Math.round(netProfit)) + '</td><td style="text-align:center;font-weight:800;color:' + (netProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + netMarginPct.toFixed(1) + '٪</td></tr>';
+    if (classifiedOpEx > 0) {
+      h += '<tr style="color:var(--d)"><td style="padding-inline-start:28px">کسر می‌شود: هزینه‌های جاری عملیاتی (تفکیک‌شده)</td><td style="text-align:left">(' + UI.fn(classifiedOpEx) + ')</td><td></td><td style="text-align:center">−' + (netSales > 0 ? ((classifiedOpEx / netSales) * 100).toFixed(1) : 0) + '٪</td></tr>';
+      // ریز سرفصل‌های هزینه
+      var expCats = Object.keys(plData.expensesByCategory || {});
+      expCats.forEach(function(ck) {
+        var cAmt = plData.expensesByCategory[ck];
+        h += '<tr style="font-size:12px;color:var(--txs)"><td style="padding-inline-start:48px">• سرفصل: ' + esc(ck) + '</td><td style="text-align:left">' + UI.fn(cAmt) + '</td><td></td><td></td></tr>';
+      });
+    }
+
+    h += '<tr style="font-weight:800;font-size:.95rem;background:' + (netProfit >= 0 ? 'var(--okl)' : 'var(--dl)') + '"><td style="color:' + (netProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">= سود خالص عملیاتی نهایی دوره (Net Profit)</td><td></td><td style="text-align:left;font-weight:800;color:' + (netProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + UI.fn(Math.round(netProfit)) + '</td><td style="text-align:center;font-weight:800;color:' + (netProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + netMarginPct.toFixed(1) + '٪</td></tr>';
+
+    // سطر تحلیلی پرداخت‌های بدون سرفصل مشخص (مطابق تصمیم تأییدشده کاربر: تفکیک و عدم کسر خودکار)
+    if (unclassifiedPayments > 0) {
+      h += '<tr style="background:rgba(217,119,6,.06);color:var(--w);font-weight:600"><td><i class="bi bi-question-circle" style="margin-inline-end:6px"></i> پرداخت‌های خروجی نیازمند تعیین سرفصل (کسر نشده از سود)</td><td style="text-align:left">[' + UI.fn(unclassifiedPayments) + ']</td><td></td><td style="text-align:center"><span class="tg tg-o">نیازمند بررسی</span></td></tr>';
+    }
+
     h += '</tbody></table></div></div>';
 
     /* جدول سود به تفکیک کالاها */
@@ -398,11 +344,13 @@ var Rep = {
       var margin = it.revenue > 0 ? (it.profit / it.revenue) * 100 : 0;
       var avgBuyPrice = it.qty > 0 ? Math.round(it.cogs / it.qty) : 0;
       var avgSellPrice = it.qty > 0 ? Math.round(it.revenue / it.qty) : 0;
+      var unvBadge = it.unverifiedCount > 0 ? ' <span class="tg tg-o" style="font-size:10px" title="تعداد ' + it.unverifiedCount + ' ردیف فاقد قیمت خرید">بهای نامشخص</span>' : '';
+
       prodRows += '<tr>' +
         '<td>' + (idx + 1) + '</td>' +
-        '<td><strong>' + esc(it.name) + '</strong></td>' +
+        '<td><strong>' + esc(it.name) + '</strong>' + unvBadge + '</td>' +
         '<td style="text-align:center">' + UI.fn(it.qty) + '</td>' +
-        '<td style="text-align:left">' + UI.fn(avgBuyPrice) + '</td>' +
+        '<td style="text-align:left">' + (avgBuyPrice > 0 ? UI.fn(avgBuyPrice) : '<span style="color:var(--w)">نامشخص</span>') + '</td>' +
         '<td style="text-align:left">' + UI.fn(avgSellPrice) + '</td>' +
         '<td style="text-align:left">' + UI.fn(Math.round(it.cogs)) + '</td>' +
         '<td style="text-align:left">' + UI.fn(it.revenue) + '</td>' +
@@ -412,43 +360,88 @@ var Rep = {
     });
 
     h += '<div class="cd" style="margin-bottom:22px">';
-    h += '<div class="cd-h"><span><i class="bi bi-tags-fill" style="margin-inline-end:6px;color:var(--ok)"></i>سود ناخالص به تفکیک کالاها</span><span class="mut" style="font-size:11px">' + prodList.length + ' قلم کالا</span></div>';
+    h += '<div class="cd-h"><span><i class="bi bi-tags-fill" style="margin-inline-end:6px;color:var(--ok)"></i>سود ناخالص به تفکیک کالاها (با بهای اختصاصی اقلام)</span><span class="mut" style="font-size:11px">' + prodList.length + ' قلم کالا</span></div>';
     h += '<div class="tw"><table><thead><tr><th>#</th><th>نام کالا</th><th style="text-align:center">تعداد فروش</th><th style="text-align:left">میانگین خرید</th><th style="text-align:left">میانگین فروش</th><th style="text-align:left">بهای تمام‌شده کل</th><th style="text-align:left">درآمد فروش</th><th style="text-align:left">سود ریالی</th><th style="text-align:center">حاشیه سود</th></tr></thead><tbody>';
     h += (prodRows || '<tr><td colspan="9" style="text-align:center">فروشی در این دوره ثبت نشده است</td></tr>');
     h += '</tbody></table></div></div>';
 
     /* جدول سود به تفکیک فاکتورهای فروش */
     var invRows = '';
-    invoiceBreakdown.sort(function(a, b) { return (b.id || 0) - (a.id || 0); });
-    invoiceBreakdown.slice(0, 25).forEach(function(inv, idx) {
-      invRows += '<tr class="clk" onclick="Inv.vw(' + inv.id + ')">' +
+    invoiceBreakdown.sort(function(a, b) { return (b.invoiceId || 0) - (a.invoiceId || 0); });
+    invoiceBreakdown.slice(0, 30).forEach(function(inv, idx) {
+      var contactTitle = cMap[inv.contactId] || 'مشتری آزاد';
+      var badgeUnv = inv.hasUnverifiedItems ? ' <span class="tg tg-o" style="font-size:10px" title="شامل قلم فاقد قیمت خرید">⚠ بررسی</span>' : '';
+
+      invRows += '<tr class="clk" onclick="Inv.vw(' + inv.invoiceId + ')">' +
         '<td>' + (idx + 1) + '</td>' +
-        '<td><strong style="color:var(--p)">' + esc(inv.number) + '</strong></td>' +
-        '<td>' + esc(inv.contactName) + '</td>' +
+        '<td><strong style="color:var(--p)">' + esc(inv.invoiceNumber) + '</strong>' + badgeUnv + '</td>' +
+        '<td>' + esc(contactTitle) + '</td>' +
         '<td style="text-align:center">' + esc(inv.date) + '</td>' +
         '<td style="text-align:left">' + UI.fn(inv.grandTotal) + '</td>' +
         '<td style="text-align:left">' + UI.fn(Math.round(inv.cogs)) + '</td>' +
-        '<td style="text-align:left;font-weight:700;color:' + (inv.profit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + UI.fn(Math.round(inv.profit)) + '</td>' +
-        '<td style="text-align:center"><span class="tg ' + (inv.margin >= 15 ? 'tg-g' : inv.margin > 0 ? 'tg-o' : 'tg-r') + '">' + inv.margin.toFixed(1) + '٪</span></td>' +
+        '<td style="text-align:left;font-weight:700;color:' + (inv.grossProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + UI.fn(Math.round(inv.grossProfit)) + '</td>' +
+        '<td style="text-align:center"><span class="tg ' + (inv.marginPct >= 15 ? 'tg-g' : inv.marginPct > 0 ? 'tg-o' : 'tg-r') + '">' + inv.marginPct.toFixed(1) + '٪</span></td>' +
         '</tr>';
     });
 
     h += '<div class="cd">';
     h += '<div class="cd-h"><span><i class="bi bi-receipt" style="margin-inline-end:6px;color:var(--p)"></i>سود به تفکیک فاکتورهای فروش (کلیک برای مشاهده)</span><span class="mut" style="font-size:11px">' + invoiceBreakdown.length + ' فاکتور</span></div>';
-    h += '<div class="tw"><table><thead><tr><th>#</th><th>شماره فاکتور</th><th>مشتری</th><th style="text-align:center">تاریخ</th><th style="text-align:left">مبلغ فاکتور</th><th style="text-align:left">بهای تمام‌شده</th><th style="text-align:left">سود فاکتور</th><th style="text-align:center">حاشیه سود</th></tr></thead><tbody>';
+    h += '<div class="tw"><table><thead><tr><th>#</th><th>شماره فاکتور</th><th>مشتری</th><th style="text-align:center">تاریخ</th><th style="text-align:left">مبلغ فاکتور</th><th style="text-align:left">بهای تمام‌شده</th><th style="text-align:left">سود ناخالص</th><th style="text-align:center">حاشیه سود</th></tr></thead><tbody>';
     h += (invRows || '<tr><td colspan="8" style="text-align:center">فاکتوری در این دوره ثبت نشده است</td></tr>');
     h += '</tbody></table></div></div>';
 
     setHTML('rC', h);
   },
+
+  /* آزمونگر تشخیصی ۱۰ سناریوی محاسبات مالی (کاملاً ایزوله در رم بدون دیتابیس) */
+  diagnostics: async function() {
+    var suite = FinanceEngine.runDiagnosticSuite();
+    var h = '<div style="margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">';
+    h += '<div><h3 style="margin:0;font-size:1.15rem;font-weight:800"><i class="bi bi-shield-check" style="color:var(--ok);margin-inline-end:8px"></i>آزمونگر تشخیصی محاسبات مالی (Diagnostic Suite)</h3><p style="margin:4px 0 0;font-size:.84rem;color:var(--txs)">اعتبارسنجی زنده ۱۰ سناریوی حسابداری بر پایه داده‌های ساختگی و ایزوله در حافظه رم (بدون کوچکترین دستکاری در پایگاه داده واقعی)</p></div>';
+    h += '<div style="display:flex;align-items:center;gap:10px">';
+    h += '<span class="tg ' + (suite.allPassed ? 'tg-g' : 'tg-r') + '" style="font-size:.9rem;padding:6px 14px;font-weight:700">' + (suite.allPassed ? '✓ ' + suite.passed + ' از ۱۰ سناریو کاملاً موفق' : suite.failed + ' سناریو ناموفق') + '</span>';
+    h += '<button class="btn bp bs" onclick="Rep.diagnostics()"><i class="bi bi-arrow-repeat"></i> اجرای مجدد آزمون‌ها</button>';
+    h += '</div></div>';
+
+    h += '<div style="display:grid;grid-template-columns:1fr;gap:14px;margin-bottom:24px">';
+    suite.results.forEach(function(r) {
+      var ok = r.passed;
+      h += '<div class="cd" style="padding:16px 20px;border-inline-start:4px solid ' + (ok ? 'var(--ok)' : 'var(--d)') + '">';
+      h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
+      h += '<strong style="font-size:.95rem;color:' + (ok ? 'var(--tx)' : 'var(--d)') + '">' + esc(r.title) + '</strong>';
+      h += '<span class="tg ' + (ok ? 'tg-g' : 'tg-r') + '">' + (ok ? 'موفقیت‌آمیز (Passed)' : 'خطا (Failed)') + '</span>';
+      h += '</div>';
+      h += '<p style="margin:0 0 10px;font-size:.85rem;color:var(--txs);line-height:1.6">' + esc(r.description) + '</p>';
+      h += '<div style="display:flex;flex-wrap:wrap;gap:18px;font-size:.82rem;background:var(--bg);padding:10px 14px;border-radius:8px">';
+      h += '<div><span style="color:var(--txs)">مقدار مورد انتظار:</span> <strong style="color:var(--p)">' + esc(r.expected) + '</strong></div>';
+      h += '<div><span style="color:var(--txs)">مقدار محاسبه‌شده:</span> <strong style="color:' + (ok ? 'var(--ok)' : 'var(--d)') + '">' + esc(r.actual) + '</strong></div>';
+      h += '</div>';
+      h += '</div>';
+    });
+    h += '</div>';
+
+    setHTML('rC', h);
+  },
+
   /* ورود مستقل به صفحه صورت سود و زیان (P&L) از منو یا داشبورد */
   renderProfit: async function(period) {
     currentPage = 'profit';
     UI.nav('profit');
     UI.title('bi-graph-up-arrow', 'گزارش دقیق صورت سود و زیان (P&L)');
     this._c = 'profit';
-    UI.content('<div class="tab-bar"><button class="tab-btn" onclick="ROUTES.reports()">← بازگشت به گزارشات</button><button class="tab-btn active">صورت سود و زیان جامع</button></div><div id="rC"></div>');
+    UI.content('<div class="tab-bar"><button class="tab-btn" onclick="ROUTES.reports()">← بازگشت به گزارشات</button><button class="tab-btn active">صورت سود و زیان جامع</button><button class="tab-btn" onclick="Rep.renderDiagnostics()"><i class="bi bi-shield-check"></i> آزمونگر تشخیصی محاسبات</button></div><div id="rC"></div>');
     await this.profit(period || 'year');
+    this._btns();
+  },
+
+  /* ورود مستقیم به صفحه آزمونگر تشخیصی */
+  renderDiagnostics: async function() {
+    currentPage = 'reports';
+    UI.nav('reports');
+    UI.title('bi-shield-check', 'آزمونگر تشخیصی محاسبات مالی');
+    this._c = 'diagnostics';
+    UI.content('<div class="tab-bar"><button class="tab-btn" onclick="ROUTES.profit()">← بازگشت به صورت سود و زیان</button><button class="tab-btn active"><i class="bi bi-shield-check"></i> آزمونگر تشخیصی ۱۰ سناریو</button></div><div id="rC"></div>');
+    await this.diagnostics();
     this._btns();
   },
   renderDebtors: async function() {

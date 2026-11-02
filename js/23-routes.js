@@ -71,6 +71,9 @@ var ROUTES = {
   profit: function() {
     return Rep.renderProfit();
   },
+  diagnostics: function() {
+    return Rep.renderDiagnostics();
+  },
   debtors: function() {
     return Rep.renderDebtors();
   },
