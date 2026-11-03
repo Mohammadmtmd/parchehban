@@ -301,7 +301,7 @@ var Rep = {
 
     /* صورت حساب رسمی سود و زیان (P&L Statement) */
     h += '<div class="cd" style="margin-bottom:22px">';
-    h += '<div class="cd-h"><div style="display:flex;align-items:center;gap:8px"><i class="bi bi-file-earmark-spreadsheet-fill" style="color:var(--p)"></i><span>صورت سود و زیان دوره‌ای (Income Statement)</span></div><span class="tg tg-b">' + pLabels[p] + '</span></div>';
+    h += '<div class="cd-h"><div style="display:flex;align-items:center;gap:8px"><i class="bi bi-file-earmark-spreadsheet-fill" style="color:var(--p)"></i><span>صورت سود و زیان دوره‌ای (Income Statement)</span></div><div style="display:flex;gap:6px"><span class="tg ' + (plData.isComplete ? 'tg-g' : 'tg-o') + '">' + plData.statusLabel + '</span><span class="tg tg-b">' + pLabels[p] + '</span></div></div>';
     h += '<div class="tw"><table><thead><tr><th style="text-align:right">شرح حساب</th><th style="width:160px;text-align:left">مبلغ جزئی (ریال)</th><th style="width:180px;text-align:left">مبلغ نهایی (ریال)</th><th style="width:90px;text-align:center">درصد از فروش</th></tr></thead><tbody>';
 
     h += '<tr style="font-weight:700;background:rgba(37,99,235,.04)"><td>درآمد عملیاتی ناخالص فروش</td><td style="text-align:left">' + UI.fn(grossSales) + '</td><td></td><td style="text-align:center">۱۰۰٪</td></tr>';
@@ -311,10 +311,16 @@ var Rep = {
     if (totalShipping > 0) {
       h += '<tr><td style="padding-inline-start:28px">اضافه می‌شود: درآمد خدمات حمل فاکتورهای فروش</td><td style="text-align:left">' + UI.fn(totalShipping) + '</td><td></td><td style="text-align:center">+' + (netSales > 0 ? ((totalShipping / grossSales) * 100).toFixed(1) : 0) + '٪</td></tr>';
     }
-    h += '<tr style="font-weight:800;background:var(--bg)"><td>= درآمد خالص فروش (Net Sales)</td><td></td><td style="text-align:left;font-weight:800;color:var(--p)">' + UI.fn(netSales) + '</td><td style="text-align:center;font-weight:700">۱۰۰٪</td></tr>';
+    h += '<tr style="font-weight:800;background:var(--bg)"><td>= درآمد خالص کل فروش (Net Sales)</td><td></td><td style="text-align:left;font-weight:800;color:var(--p)">' + UI.fn(netSales) + '</td><td style="text-align:center;font-weight:700">۱۰۰٪</td></tr>';
 
-    h += '<tr style="color:var(--w)"><td style="padding-inline-start:28px">کسر می‌شود: بهای تمام‌شده کالای فروش‌رفته (بر پایه buyPrice صریح)</td><td style="text-align:left">(' + UI.fn(Math.round(totalCOGS)) + ')</td><td></td><td style="text-align:center">−' + (netSales > 0 ? ((totalCOGS / netSales) * 100).toFixed(1) : 0) + '٪</td></tr>';
-    h += '<tr style="font-weight:800;background:rgba(22,163,74,.08)"><td>= سود ناخالص عملیاتی بازرگانی (Gross Profit)</td><td></td><td style="text-align:left;font-weight:800;color:' + (grossProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + UI.fn(Math.round(grossProfit)) + '</td><td style="text-align:center;font-weight:800;color:' + (grossProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + grossMarginPct.toFixed(1) + '٪</td></tr>';
+    // تفکیک دقیق فروش بر پایه وضعیت بهای تمام‌شده
+    h += '<tr style="font-size:12.5px;color:var(--txs)"><td style="padding-inline-start:28px">• فروش اقلام دارای بهای تمام‌شده معتبر</td><td style="text-align:left">' + UI.fn(plData.salesWithValidBuyPrice) + '</td><td></td><td style="text-align:center">' + (netSales > 0 ? ((plData.salesWithValidBuyPrice / netSales) * 100).toFixed(1) : 0) + '٪</td></tr>';
+    if (plData.salesWithoutValidBuyPrice > 0) {
+      h += '<tr style="font-size:12.5px;color:var(--w);background:rgba(217,119,6,.04)"><td style="padding-inline-start:28px">• فروش اقلام فاقد بهای معتبر (سود نامشخص / نیازمند تکمیل اطلاعات)</td><td style="text-align:left">' + UI.fn(plData.salesWithoutValidBuyPrice) + '</td><td></td><td style="text-align:center">' + (netSales > 0 ? ((plData.salesWithoutValidBuyPrice / netSales) * 100).toFixed(1) : 0) + '٪</td></tr>';
+    }
+
+    h += '<tr style="color:var(--w)"><td style="padding-inline-start:28px">کسر می‌شود: بهای تمام‌شده کالای فروش‌رفته (بر پایه buyPrice صریح اقلام معتبر)</td><td style="text-align:left">(' + UI.fn(Math.round(totalCOGS)) + ')</td><td></td><td style="text-align:center">−' + (netSales > 0 ? ((totalCOGS / netSales) * 100).toFixed(1) : 0) + '٪</td></tr>';
+    h += '<tr style="font-weight:800;background:rgba(22,163,74,.08)"><td>= سود ناخالص عملیاتی بازرگانی (Gross Profit) <span class="tg ' + (plData.isComplete ? 'tg-g' : 'tg-o') + '" style="font-size:11px;margin-inline-start:8px">' + plData.statusLabel + '</span></td><td></td><td style="text-align:left;font-weight:800;color:' + (grossProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + UI.fn(Math.round(grossProfit)) + '</td><td style="text-align:center;font-weight:800;color:' + (grossProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + grossMarginPct.toFixed(1) + '٪</td></tr>';
 
     if (brokerCommissions > 0) {
       h += '<tr style="color:var(--d)"><td style="padding-inline-start:28px">کسر می‌شود: کارمزد و پورسانت واسطه‌های فروش</td><td style="text-align:left">(' + UI.fn(brokerCommissions) + ')</td><td></td><td style="text-align:center">−' + (netSales > 0 ? ((brokerCommissions / netSales) * 100).toFixed(1) : 0) + '٪</td></tr>';
@@ -398,32 +404,60 @@ var Rep = {
     setHTML('rC', h);
   },
 
-  /* آزمونگر تشخیصی ۱۰ سناریوی محاسبات مالی (کاملاً ایزوله در رم بدون دیتابیس) */
+  /* آزمونگر تشخیصی محاسبات مالی (کاملاً ایزوله در رم بدون دیتابیس) */
   diagnostics: async function() {
     var suite = FinanceEngine.runDiagnosticSuite();
+    var mandatorySuite = FinanceEngine.runMandatoryAuditSuite ? FinanceEngine.runMandatoryAuditSuite() : { passed: 0, total: 0, results: [] };
+    var totalPassed = suite.passed + mandatorySuite.passed;
+    var totalTests = suite.total + mandatorySuite.total;
+    var allPassed = (totalPassed === totalTests);
+
     var h = '<div style="margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">';
-    h += '<div><h3 style="margin:0;font-size:1.15rem;font-weight:800"><i class="bi bi-shield-check" style="color:var(--ok);margin-inline-end:8px"></i>آزمونگر تشخیصی محاسبات مالی (Diagnostic Suite)</h3><p style="margin:4px 0 0;font-size:.84rem;color:var(--txs)">اعتبارسنجی زنده ۱۰ سناریوی حسابداری بر پایه داده‌های ساختگی و ایزوله در حافظه رم (بدون کوچکترین دستکاری در پایگاه داده واقعی)</p></div>';
+    h += '<div><h3 style="margin:0;font-size:1.15rem;font-weight:800"><i class="bi bi-shield-check" style="color:var(--ok);margin-inline-end:8px"></i>آزمونگر تشخیصی محاسبات مالی و اعتبارسنجی سود</h3><p style="margin:4px 0 0;font-size:.84rem;color:var(--txs)">اعتبارسنجی زنده ۱۷ سناریوی حسابداری (۱۰ سناریوی پایه موتور مالی + ۷ آزمون تخصصی اصلاح سود اقلام فاقد بهای خرید) کاملاً ایزوله در رم</p></div>';
     h += '<div style="display:flex;align-items:center;gap:10px">';
-    h += '<span class="tg ' + (suite.allPassed ? 'tg-g' : 'tg-r') + '" style="font-size:.9rem;padding:6px 14px;font-weight:700">' + (suite.allPassed ? '✓ ' + suite.passed + ' از ۱۰ سناریو کاملاً موفق' : suite.failed + ' سناریو ناموفق') + '</span>';
+    h += '<span class="tg ' + (allPassed ? 'tg-g' : 'tg-r') + '" style="font-size:.9rem;padding:6px 14px;font-weight:700">' + (allPassed ? '✓ ' + totalPassed + ' از ' + totalTests + ' سناریو کاملاً موفق' : (totalTests - totalPassed) + ' سناریو ناموفق') + '</span>';
     h += '<button class="btn bp bs" onclick="Rep.diagnostics()"><i class="bi bi-arrow-repeat"></i> اجرای مجدد آزمون‌ها</button>';
     h += '</div></div>';
 
-    h += '<div style="display:grid;grid-template-columns:1fr;gap:14px;margin-bottom:24px">';
-    suite.results.forEach(function(r) {
+    // بخش ۱: ۷ آزمون الزامی و تخصصی اصلاح سود اقلام فاقد بهای خرید
+    h += '<div class="cd" style="margin-bottom:24px;border:1.5px solid var(--p)">';
+    h += '<div class="cd-h"><div style="display:flex;align-items:center;gap:8px"><i class="bi bi-patch-check-fill" style="color:var(--p)"></i><strong style="color:var(--p)">مجموعه ۷ آزمون الزامی: اصلاح محاسبه سود و اقلام فاقد قیمت خرید</strong></div><span class="tg ' + (mandatorySuite.allPassed ? 'tg-g' : 'tg-r') + '">' + mandatorySuite.passed + ' از ۷ موفق</span></div>';
+    h += '<div style="padding:16px 20px;display:grid;grid-template-columns:1fr;gap:12px">';
+    mandatorySuite.results.forEach(function(r) {
       var ok = r.passed;
-      h += '<div class="cd" style="padding:16px 20px;border-inline-start:4px solid ' + (ok ? 'var(--ok)' : 'var(--d)') + '">';
-      h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
-      h += '<strong style="font-size:.95rem;color:' + (ok ? 'var(--tx)' : 'var(--d)') + '">' + esc(r.title) + '</strong>';
-      h += '<span class="tg ' + (ok ? 'tg-g' : 'tg-r') + '">' + (ok ? 'موفقیت‌آمیز (Passed)' : 'خطا (Failed)') + '</span>';
+      h += '<div style="padding:14px 18px;border-radius:10px;background:var(--bg);border-inline-start:4px solid ' + (ok ? 'var(--ok)' : 'var(--d)') + '">';
+      h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">';
+      h += '<strong style="font-size:.92rem;color:' + (ok ? 'var(--tx)' : 'var(--d)') + '">' + esc(r.title) + '</strong>';
+      h += '<span class="tg ' + (ok ? 'tg-g' : 'tg-r') + '">' + (ok ? 'تأیید شد (Passed)' : 'خطا (Failed)') + '</span>';
       h += '</div>';
-      h += '<p style="margin:0 0 10px;font-size:.85rem;color:var(--txs);line-height:1.6">' + esc(r.description) + '</p>';
-      h += '<div style="display:flex;flex-wrap:wrap;gap:18px;font-size:.82rem;background:var(--bg);padding:10px 14px;border-radius:8px">';
-      h += '<div><span style="color:var(--txs)">مقدار مورد انتظار:</span> <strong style="color:var(--p)">' + esc(r.expected) + '</strong></div>';
-      h += '<div><span style="color:var(--txs)">مقدار محاسبه‌شده:</span> <strong style="color:' + (ok ? 'var(--ok)' : 'var(--d)') + '">' + esc(r.actual) + '</strong></div>';
+      h += '<p style="margin:0 0 8px;font-size:.83rem;color:var(--txs);line-height:1.6">' + esc(r.description) + '</p>';
+      h += '<div style="display:flex;flex-wrap:wrap;gap:16px;font-size:.8rem;background:rgba(0,0,0,.03);padding:8px 12px;border-radius:6px">';
+      h += '<div><span style="color:var(--txs)">مورد انتظار:</span> <strong style="color:var(--p)">' + esc(r.expected) + '</strong></div>';
+      h += '<div><span style="color:var(--txs)">محاسبه‌شده:</span> <strong style="color:' + (ok ? 'var(--ok)' : 'var(--d)') + '">' + esc(r.actual) + '</strong></div>';
       h += '</div>';
       h += '</div>';
     });
-    h += '</div>';
+    h += '</div></div>';
+
+    // بخش ۲: ۱۰ سناریوی پایه حسابداری
+    h += '<div class="cd" style="margin-bottom:24px">';
+    h += '<div class="cd-h"><div style="display:flex;align-items:center;gap:8px"><i class="bi bi-shield-check" style="color:var(--ok)"></i><strong>مجموعه ۱۰ سناریوی پایه حسابداری موتور مالی</strong></div><span class="tg ' + (suite.allPassed ? 'tg-g' : 'tg-r') + '">' + suite.passed + ' از ۱۰ موفق</span></div>';
+    h += '<div style="padding:16px 20px;display:grid;grid-template-columns:1fr;gap:12px">';
+    suite.results.forEach(function(r) {
+      var ok = r.passed;
+      h += '<div style="padding:14px 18px;border-radius:10px;background:var(--bg);border-inline-start:4px solid ' + (ok ? 'var(--ok)' : 'var(--d)') + '">';
+      h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">';
+      h += '<strong style="font-size:.92rem;color:' + (ok ? 'var(--tx)' : 'var(--d)') + '">' + esc(r.title) + '</strong>';
+      h += '<span class="tg ' + (ok ? 'tg-g' : 'tg-r') + '">' + (ok ? 'تأیید شد (Passed)' : 'خطا (Failed)') + '</span>';
+      h += '</div>';
+      h += '<p style="margin:0 0 8px;font-size:.83rem;color:var(--txs);line-height:1.6">' + esc(r.description) + '</p>';
+      h += '<div style="display:flex;flex-wrap:wrap;gap:16px;font-size:.8rem;background:rgba(0,0,0,.03);padding:8px 12px;border-radius:6px">';
+      h += '<div><span style="color:var(--txs)">مورد انتظار:</span> <strong style="color:var(--p)">' + esc(r.expected) + '</strong></div>';
+      h += '<div><span style="color:var(--txs)">محاسبه‌شده:</span> <strong style="color:' + (ok ? 'var(--ok)' : 'var(--d)') + '">' + esc(r.actual) + '</strong></div>';
+      h += '</div>';
+      h += '</div>';
+    });
+    h += '</div></div>';
 
     setHTML('rC', h);
   },

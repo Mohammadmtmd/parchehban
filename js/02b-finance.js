@@ -40,6 +40,17 @@ var FinanceEngine = (function() {
   }
 
   /**
+   * بررسی معتبر بودن بهای خرید (باید عددی مثبت و بزرگتر از صفر باشد)
+   * قیمت خرید نامشخص، صفر، منفی، خالی، null یا نامعتبر به هیچ وجه بهای معتبر نیست.
+   */
+  function isValidBuyPrice(val) {
+    if (val === null || val === undefined || val === '') return false;
+    if (typeof val === 'string' && val.trim() === '') return false;
+    var n = safeNum(val);
+    return typeof n === 'number' && !isNaN(n) && isFinite(n) && n > 0;
+  }
+
+  /**
    * محاسبه سود و بهای تمام‌شده یک قلم کالا در فاکتور فروش
    * @param {Object} item - قلم فاکتور
    * @param {number} invoiceSubtotal - جمع اقلام فاکتور قبل از تخفیف
@@ -61,13 +72,18 @@ var FinanceEngine = (function() {
     }
 
     var netRevenue = itemTotal - allocatedDiscount;
-    var buyPrice = safeNum(it.buyPrice);
-    var hasValidBuyPrice = buyPrice > 0;
+    var hasValidBuyPrice = isValidBuyPrice(it.buyPrice);
+    var buyPrice = hasValidBuyPrice ? safeNum(it.buyPrice) : null;
 
-    // بهای تمام‌شده: فقط در صورت ثبت صریح buyPrice معتبر
-    var cogs = hasValidBuyPrice ? Math.round(buyPrice * qty) : 0;
-    var grossProfit = netRevenue - cogs;
-    var marginPct = netRevenue > 0 ? (grossProfit / netRevenue) * 100 : 0;
+    // بهای تمام‌شده و سود ناخالص:
+    // اگر قیمت خرید معتبر باشد: COGS = buyPrice × qty و Gross Profit = netRevenue - COGS
+    // اگر قیمت خرید نامعتبر یا نامشخص باشد: بهای تمام‌شده نامشخص (null) است نه صفر، و سود قطعی نامشخص است
+    var cogs = hasValidBuyPrice ? Math.round(buyPrice * qty) : null;
+    var verifiedCOGS = hasValidBuyPrice ? cogs : 0;
+
+    var grossProfit = hasValidBuyPrice ? (netRevenue - cogs) : null;
+    var verifiedGrossProfit = hasValidBuyPrice ? (netRevenue - cogs) : 0;
+    var marginPct = (hasValidBuyPrice && netRevenue > 0) ? ((grossProfit / netRevenue) * 100) : null;
 
     return {
       productId: it.productId,
@@ -75,18 +91,26 @@ var FinanceEngine = (function() {
       quantity: qty,
       unitPrice: unitPrice,
       buyPrice: buyPrice,
+      rawBuyPrice: it.buyPrice,
       hasValidBuyPrice: hasValidBuyPrice,
+      isVerified: hasValidBuyPrice,
       itemTotal: itemTotal,
       allocatedDiscount: allocatedDiscount,
       netRevenue: netRevenue,
-      cogs: cogs,
-      grossProfit: grossProfit,
-      marginPct: marginPct
+      cogs: cogs, // null در صورت نامعتبر بودن قیمت خرید
+      verifiedCOGS: verifiedCOGS,
+      grossProfit: grossProfit, // null در صورت نامعتبر بودن (هرگز netRevenue فرض نمی‌شود)
+      verifiedGrossProfit: verifiedGrossProfit,
+      marginPct: marginPct,
+      status: hasValidBuyPrice ? 'complete' : 'incomplete',
+      profitStatus: hasValidBuyPrice ? 'complete' : 'incomplete',
+      statusLabel: hasValidBuyPrice ? 'معتبر و قطعی' : 'ناقص / نیازمند تکمیل اطلاعات'
     };
   }
 
   /**
    * محاسبه جامع سود و متغیرهای مالی یک فاکتور فروش
+   * تفکیک کامل فروش کل، فروش اقلام معتبر، فروش اقلام نامعتبر، بهای تمام‌شده موثق و سود موثق
    * @param {Object} invoice - شیء کامل فاکتور
    */
   function calculateInvoiceProfit(invoice) {
@@ -99,9 +123,11 @@ var FinanceEngine = (function() {
 
     var items = inv.items || [];
     var calculatedItems = [];
-    var totalCOGS = 0;
+    var verifiedCOGS = 0;
     var unverifiedCount = 0;
     var unverifiedRevenue = 0;
+    var salesWithValidBuyPrice = 0;
+    var salesWithoutValidBuyPrice = 0;
 
     // در صورتی که subtotal در رکورد فاکتور خالی باشد، از جمع اقلام محاسبه می‌شود
     var computedSubtotal = subtotal;
@@ -114,18 +140,31 @@ var FinanceEngine = (function() {
     items.forEach(function(it) {
       var itemCalc = calculateItemProfit(it, computedSubtotal, discount);
       calculatedItems.push(itemCalc);
-      totalCOGS += itemCalc.cogs;
-      if (!itemCalc.hasValidBuyPrice) {
+
+      if (itemCalc.hasValidBuyPrice) {
+        verifiedCOGS += itemCalc.cogs;
+        salesWithValidBuyPrice += itemCalc.netRevenue;
+      } else {
         unverifiedCount++;
         unverifiedRevenue += itemCalc.netRevenue;
+        salesWithoutValidBuyPrice += itemCalc.netRevenue;
       }
     });
 
     // درآمد خدمات حمل به عنوان بخشی از درآمد کل فاکتور لحاظ می‌شود
+    // فروش کل بدون Double Counting: فروش اقلام معتبر + فروش اقلام بدون بهای خرید + حمل
     var netSales = (computedSubtotal - discount) + shippingCost;
-    var grossProfit = netSales - totalCOGS;
-    var profitAfterBroker = grossProfit - brokerCommission;
-    var marginPct = netSales > 0 ? (profitAfterBroker / netSales) * 100 : 0;
+
+    // سود ناخالص قابل تأیید:
+    // منحصراً سود اقلام دارای قیمت خرید معتبر + درآمد خدمات حمل
+    // اقلام فاقد قیمت خرید به هیچ وجه سود تلقی نمی‌شوند
+    var verifiedGrossProfit = (salesWithValidBuyPrice - verifiedCOGS) + shippingCost;
+    var profitAfterBroker = verifiedGrossProfit - brokerCommission;
+
+    var isComplete = (unverifiedCount === 0);
+    var marginPct = (salesWithValidBuyPrice + shippingCost) > 0
+      ? (profitAfterBroker / (salesWithValidBuyPrice + shippingCost)) * 100
+      : (netSales > 0 ? (profitAfterBroker / netSales) * 100 : 0);
 
     return {
       invoiceId: inv.id,
@@ -139,14 +178,35 @@ var FinanceEngine = (function() {
       shippingCost: shippingCost,
       brokerCommission: brokerCommission,
       grandTotal: grandTotal,
+      // ۱. فروش کل
+      totalSales: netSales,
       netSales: netSales,
-      cogs: totalCOGS,
-      grossProfit: grossProfit,
+      // ۲. فروش اقلام دارای بهای تمام‌شده معتبر
+      salesWithValidBuyPrice: salesWithValidBuyPrice,
+      // ۳. فروش اقلام فاقد بهای تمام‌شده معتبر
+      salesWithoutValidBuyPrice: salesWithoutValidBuyPrice,
+      // ۴. بهای تمام‌شده قابل تأیید
+      verifiedCOGS: verifiedCOGS,
+      cogs: verifiedCOGS,
+      // ۵. سود ناخالص قابل تأیید
+      verifiedGrossProfit: verifiedGrossProfit,
+      grossProfit: verifiedGrossProfit,
       profitAfterBroker: profitAfterBroker,
+      verifiedProfitAfterBroker: profitAfterBroker,
       marginPct: marginPct,
-      hasUnverifiedItems: unverifiedCount > 0,
+      // ۶. تعداد اقلام دارای قیمت خرید نامعتبر
+      invalidBuyPriceCount: unverifiedCount,
       unverifiedCount: unverifiedCount,
+      // ۷. مبلغ فروش اقلام دارای قیمت خرید نامعتبر
+      invalidBuyPriceAmount: unverifiedRevenue,
       unverifiedRevenue: unverifiedRevenue,
+      // وضعیت سود فاکتور
+      hasUnverifiedItems: unverifiedCount > 0,
+      isProfitVerified: isComplete,
+      isComplete: isComplete,
+      status: isComplete ? 'complete' : 'incomplete',
+      profitStatus: isComplete ? 'complete' : 'incomplete',
+      statusLabel: isComplete ? 'قطعی' : 'ناقص / نیازمند تکمیل اطلاعات',
       items: calculatedItems
     };
   }
@@ -254,10 +314,14 @@ var FinanceEngine = (function() {
     var grossSales = 0;
     var totalDiscounts = 0;
     var totalShipping = 0;
-    var totalCOGS = 0;
+    var totalVerifiedCOGS = 0;
+    var totalVerifiedGrossProfit = 0;
     var totalBrokerCommissions = 0;
     var unverifiedItemsCount = 0;
     var unverifiedRevenueTotal = 0;
+    var salesWithValidBuyPriceTotal = 0;
+    var salesWithoutValidBuyPriceTotal = 0;
+    var incompleteInvoicesCount = 0;
 
     var productBreakdown = {};
     var invoiceBreakdown = [];
@@ -278,10 +342,16 @@ var FinanceEngine = (function() {
       grossSales += calc.subtotal;
       totalDiscounts += calc.discount;
       totalShipping += calc.shippingCost;
-      totalCOGS += calc.cogs;
+      totalVerifiedCOGS += calc.verifiedCOGS;
+      totalVerifiedGrossProfit += calc.verifiedGrossProfit;
       totalBrokerCommissions += calc.brokerCommission;
       unverifiedItemsCount += calc.unverifiedCount;
       unverifiedRevenueTotal += calc.unverifiedRevenue;
+      salesWithValidBuyPriceTotal += calc.salesWithValidBuyPrice;
+      salesWithoutValidBuyPriceTotal += calc.salesWithoutValidBuyPrice;
+      if (calc.unverifiedCount > 0) {
+        incompleteInvoicesCount++;
+      }
 
       // تجمیع به تفکیک کالا
       calc.items.forEach(function(it) {
@@ -292,52 +362,101 @@ var FinanceEngine = (function() {
             name: it.productName,
             qty: 0,
             revenue: 0,
+            salesWithValidBuyPrice: 0,
+            salesWithoutValidBuyPrice: 0,
             cogs: 0,
+            verifiedCOGS: 0,
             profit: 0,
-            unverifiedCount: 0
+            verifiedGrossProfit: 0,
+            unverifiedCount: 0,
+            unverifiedRevenue: 0,
+            hasValidBuyPriceCount: 0,
+            status: 'complete',
+            statusLabel: 'قطعی'
           };
         }
-        productBreakdown[pid].qty += it.quantity;
-        productBreakdown[pid].revenue += it.netRevenue;
-        productBreakdown[pid].cogs += it.cogs;
-        productBreakdown[pid].profit += it.grossProfit;
-        if (!it.hasValidBuyPrice) {
-          productBreakdown[pid].unverifiedCount++;
+        var pb = productBreakdown[pid];
+        pb.qty += it.quantity;
+        pb.revenue += it.netRevenue;
+        if (it.hasValidBuyPrice) {
+          pb.salesWithValidBuyPrice += it.netRevenue;
+          pb.cogs += it.verifiedCOGS;
+          pb.verifiedCOGS += it.verifiedCOGS;
+          pb.profit += it.verifiedGrossProfit;
+          pb.verifiedGrossProfit += it.verifiedGrossProfit;
+          pb.hasValidBuyPriceCount++;
+        } else {
+          pb.salesWithoutValidBuyPrice += it.netRevenue;
+          pb.unverifiedCount++;
+          pb.unverifiedRevenue += it.netRevenue;
+          pb.status = 'incomplete';
+          pb.statusLabel = 'ناقص / نیازمند تکمیل اطلاعات';
         }
       });
     });
 
     var netSales = (grossSales - totalDiscounts) + totalShipping;
-    var grossProfit = netSales - totalCOGS;
-    var grossMarginPct = netSales > 0 ? (grossProfit / netSales) * 100 : 0;
+    var isPeriodComplete = (unverifiedItemsCount === 0);
+    var periodStatus = isPeriodComplete ? 'complete' : 'incomplete';
+    var periodStatusLabel = isPeriodComplete ? 'قطعی' : 'ناقص / نیازمند تکمیل اطلاعات';
+
+    // سود ناخالص موثق
+    var grossProfit = totalVerifiedGrossProfit;
+    var grossMarginPct = (salesWithValidBuyPriceTotal + totalShipping) > 0
+      ? (grossProfit / (salesWithValidBuyPriceTotal + totalShipping)) * 100
+      : (netSales > 0 ? (grossProfit / netSales) * 100 : 0);
 
     // استخراج هزینه‌های عملیاتی دوره
     var expenseData = filterOperatingExpenses(payments, sNum, eNum);
     var classifiedOpEx = expenseData.classifiedOpEx;
     var unclassifiedPayments = expenseData.unclassifiedPayments;
 
-    // سود خالص عملیاتی نهایی
+    // سود خالص عملیاتی نهایی بر پایه سود موثق و قابل تأیید
     var netOperatingProfit = grossProfit - totalBrokerCommissions - classifiedOpEx;
     var netMarginPct = netSales > 0 ? (netOperatingProfit / netSales) * 100 : 0;
 
     return {
       period: { startNum: sNum, endNum: eNum },
       invoiceCount: saleInvs.length,
+      incompleteInvoicesCount: incompleteInvoicesCount,
       grossSales: grossSales,
       totalDiscounts: totalDiscounts,
       totalShipping: totalShipping,
+      // ۱. فروش کل
+      totalSales: netSales,
       netSales: netSales,
-      cogs: totalCOGS,
+      // ۲. فروش اقلام دارای بهای تمام‌شده معتبر
+      salesWithValidBuyPrice: salesWithValidBuyPriceTotal,
+      // ۳. فروش اقلام فاقد بهای تمام‌شده معتبر
+      salesWithoutValidBuyPrice: salesWithoutValidBuyPriceTotal,
+      // ۴. بهای تمام‌شده قابل تأیید
+      verifiedCOGS: totalVerifiedCOGS,
+      cogs: totalVerifiedCOGS,
+      // ۵. سود ناخالص قابل تأیید
+      verifiedGrossProfit: grossProfit,
       grossProfit: grossProfit,
       grossMarginPct: grossMarginPct,
+      // ۶. کمیسیون واسطه‌ها و هزینه‌های عملیاتی
       brokerCommissions: totalBrokerCommissions,
+      profitAfterBroker: grossProfit - totalBrokerCommissions,
       classifiedOpEx: classifiedOpEx,
       unclassifiedPayments: unclassifiedPayments,
       expensesByCategory: expenseData.byCategory,
+      // ۷. سود خالص عملیاتی نهایی
       netOperatingProfit: netOperatingProfit,
       netMarginPct: netMarginPct,
+      // وضعیت دوره و اقلام دارای قیمت خرید نامعتبر
+      invalidBuyPriceCount: unverifiedItemsCount,
       unverifiedItemsCount: unverifiedItemsCount,
+      invalidBuyPriceAmount: unverifiedRevenueTotal,
       unverifiedRevenueTotal: unverifiedRevenueTotal,
+      hasUnverifiedItems: unverifiedItemsCount > 0,
+      isProfitVerified: isPeriodComplete,
+      isComplete: isPeriodComplete,
+      status: periodStatus,
+      profitStatus: periodStatus,
+      statusLabel: periodStatusLabel,
+      // جزئیات
       productBreakdown: productBreakdown,
       invoiceBreakdown: invoiceBreakdown,
       expenseDetails: expenseData
@@ -519,13 +638,18 @@ var FinanceEngine = (function() {
         items: [{ productId: 40, productName: 'پارچه تترون', quantity: 10, unitPrice: 5000, buyPrice: 0 }]
       };
       var res = calculateInvoiceProfit(inv);
-      var pass = (res.hasUnverifiedItems === true) && (res.cogs === 0) && (res.unverifiedRevenue === 50000);
+      var pass = (res.hasUnverifiedItems === true) &&
+                 (res.cogs === 0) &&
+                 (res.verifiedGrossProfit === 0) &&
+                 (res.unverifiedRevenue === 50000) &&
+                 (res.status === 'incomplete') &&
+                 (res.items[0].grossProfit === null);
       results.push({
         id: 7,
-        title: 'سناریو ۷: تشخیص و برچسب‌گذاری اقلام فاقد قیمت خرید',
-        description: 'اقلام با buyPrice صفر باید به عنوان بهای نامشخص برچسب‌گذاری و تفکیک شوند.',
-        expected: 'دارای قلم نامشخص: بله | بهای تمام‌شده: ۰ | فروش نامشخص: ۵۰،۰۰۰',
-        actual: 'دارای قلم نامشخص: ' + (res.hasUnverifiedItems ? 'بله' : 'خیر') + ' | بهای تمام‌شده: ' + res.cogs.toLocaleString('fa-IR'),
+        title: 'سناریو ۷: تشخیص و تفکیک اقلام فاقد قیمت خرید و عدم احتساب فروش به عنوان سود',
+        description: 'اقلام با buyPrice صفر به عنوان بهای نامشخص ثبت شده و سود آن‌ها به هیچ وجه به عنوان سود قطعی شناسایی نمی‌شود.',
+        expected: 'دارای قلم نامشخص: بله | سود ناخالص موثق: ۰ | وضعیت: ناقص',
+        actual: 'دارای قلم نامشخص: ' + (res.hasUnverifiedItems ? 'بله' : 'خیر') + ' | سود موثق: ' + res.verifiedGrossProfit.toLocaleString('fa-IR') + ' | وضعیت: ' + res.statusLabel,
         passed: pass
       });
     })();
@@ -627,13 +751,224 @@ var FinanceEngine = (function() {
     };
   }
 
+  /**
+   * مجموعه ۷ آزمون تخصصی و الزامی اصلاح محاسبات سود اقلام فاقد قیمت خرید معتبر
+   * کاملاً ایزوله با داده‌های ساختگی در رم
+   */
+  function runMandatoryAuditSuite() {
+    var results = [];
+
+    // ۱. قلم با قیمت خرید معتبر (قیمت خرید ۵۰، فروش ۸۰، تعداد ۱۰ => سود ۳۰۰)
+    (function audit1() {
+      var it = { productId: 101, productName: 'تست ۱', quantity: 10, unitPrice: 80, buyPrice: 50 };
+      var res = calculateItemProfit(it, 800, 0);
+      var pass = (res.hasValidBuyPrice === true) &&
+                 (res.cogs === 500) &&
+                 (res.grossProfit === 300) &&
+                 (res.verifiedGrossProfit === 300) &&
+                 (res.isVerified === true);
+      results.push({
+        id: 1,
+        title: 'آزمون ۱: قلم با قیمت خرید معتبر',
+        description: 'خرید ۵۰، فروش ۸۰، تعداد ۱۰ باید بهای تمام‌شده ۵۰۰ و سود قطعی ۳۰۰ بدهد.',
+        expected: 'بهای تمام‌شده: ۵۰۰ | سود قطعی: ۳۰۰ | وضعیت: معتبر',
+        actual: 'بهای تمام‌شده: ' + (res.cogs !== null ? res.cogs : 'نامشخص') + ' | سود: ' + (res.grossProfit !== null ? res.grossProfit : 'نامشخص'),
+        passed: pass
+      });
+    })();
+
+    // ۲. قلم با قیمت خرید صفر (سود نباید ۸۰ به ازای هر واحد باشد، بلکه وضعیت نامشخص)
+    (function audit2() {
+      var it = { productId: 102, productName: 'تست ۲', quantity: 10, unitPrice: 80, buyPrice: 0 };
+      var res = calculateItemProfit(it, 800, 0);
+      var pass = (res.hasValidBuyPrice === false) &&
+                 (res.grossProfit === null) &&
+                 (res.cogs === null) &&
+                 (res.verifiedGrossProfit === 0) &&
+                 (res.isVerified === false);
+      results.push({
+        id: 2,
+        title: 'آزمون ۲: قلم با قیمت خرید صفر (عدم احتساب به عنوان سود)',
+        description: 'قیمت خرید ۰ به معنی خرید رایگان نیست؛ سود نباید ۸۰ به ازای هر واحد (مجموع ۸۰۰) باشد.',
+        expected: 'بهای تمام‌شده: نامشخص | سود قطعی: نامشخص (نه ۸۰۰) | وضعیت: نامشخص',
+        actual: 'بهای تمام‌شده: ' + (res.cogs !== null ? res.cogs : 'نامشخص') + ' | سود: ' + (res.grossProfit !== null ? res.grossProfit : 'نامشخص (null)'),
+        passed: pass
+      });
+    })();
+
+    // ۳. قلم با قیمت خرید خالی یا null
+    (function audit3() {
+      var itNull = { productId: 103, productName: 'تست ۳-الف', quantity: 5, unitPrice: 100, buyPrice: null };
+      var itEmpty = { productId: 104, productName: 'تست ۳-ب', quantity: 5, unitPrice: 100, buyPrice: '' };
+      var itUndef = { productId: 105, productName: 'تست ۳-ج', quantity: 5, unitPrice: 100, buyPrice: undefined };
+
+      var rNull = calculateItemProfit(itNull, 500, 0);
+      var rEmpty = calculateItemProfit(itEmpty, 500, 0);
+      var rUndef = calculateItemProfit(itUndef, 500, 0);
+
+      var pass = (!rNull.hasValidBuyPrice && rNull.cogs === null && rNull.grossProfit === null) &&
+                 (!rEmpty.hasValidBuyPrice && rEmpty.cogs === null && rEmpty.grossProfit === null) &&
+                 (!rUndef.hasValidBuyPrice && rUndef.cogs === null && rUndef.grossProfit === null);
+      results.push({
+        id: 3,
+        title: 'آزمون ۳: قلم با قیمت خرید خالی، null یا نامعتبر',
+        description: 'مقادیر خالی، null و undefined باید به درستی شناسایی شده و بهای تمام‌شده و سود آن‌ها نامشخص باشد.',
+        expected: 'هر ۳ حالت: hasValidBuyPrice=false, cogs=null, grossProfit=null',
+        actual: 'null: ' + (!rNull.hasValidBuyPrice ? 'نامشخص' : 'معتبر') + ' | empty: ' + (!rEmpty.hasValidBuyPrice ? 'نامشخص' : 'معتبر') + ' | undefined: ' + (!rUndef.hasValidBuyPrice ? 'نامشخص' : 'معتبر'),
+        passed: pass
+      });
+    })();
+
+    // ۴. فاکتور با ۲ قلم: یکی با قیمت خرید معتبر و یکی نامشخص (سود قلم اول محاسبه شود، وضعیت فاکتور ناقص باشد)
+    (function audit4() {
+      var inv = {
+        id: 106,
+        type: 'sale',
+        subtotal: 1300,
+        discount: 0,
+        shippingCost: 0,
+        brokerCommission: 0,
+        items: [
+          { productId: 1, productName: 'کالای معتبر', quantity: 10, unitPrice: 80, buyPrice: 50 }, // سود ۳۰۰
+          { productId: 2, productName: 'کالای نامشخص', quantity: 5, unitPrice: 100, buyPrice: null }  // فروش ۵۰۰، سود نامشخص
+        ]
+      };
+      var res = calculateInvoiceProfit(inv);
+      var pass = (res.items[0].grossProfit === 300) &&
+                 (res.items[1].grossProfit === null) &&
+                 (res.salesWithValidBuyPrice === 800) &&
+                 (res.salesWithoutValidBuyPrice === 500) &&
+                 (res.verifiedCOGS === 500) &&
+                 (res.verifiedGrossProfit === 300) &&
+                 (res.status === 'incomplete') &&
+                 (res.isProfitVerified === false) &&
+                 (res.invalidBuyPriceCount === 1) &&
+                 (res.invalidBuyPriceAmount === 500);
+      results.push({
+        id: 4,
+        title: 'آزمون ۴: فاکتور ۲ قلمی (یکی معتبر و یکی نامشخص)',
+        description: 'سود قلم اول (۳۰۰) محاسبه شده، قلم دوم سود فرضی نمی‌گیرد و کل وضعیت فاکتور ناقص گزارش می‌شود.',
+        expected: 'سود قلم اول: ۳۰۰ | سود قلم دوم: نامشخص | سود موثق فاکتور: ۳۰۰ | وضعیت: ناقص',
+        actual: 'سود ۱: ' + res.items[0].grossProfit + ' | سود ۲: ' + res.items[1].grossProfit + ' | سود موثق: ' + res.verifiedGrossProfit + ' | وضعیت: ' + res.statusLabel,
+        passed: pass
+      });
+    })();
+
+    // ۵. فاکتور با تمام اقلام دارای قیمت خرید معتبر (سود قطعی)
+    (function audit5() {
+      var inv = {
+        id: 107,
+        type: 'sale',
+        subtotal: 2000,
+        discount: 0,
+        shippingCost: 0,
+        brokerCommission: 0,
+        items: [
+          { productId: 1, productName: 'کالا ۱', quantity: 10, unitPrice: 100, buyPrice: 70 }, // بهای ۷۰۰، سود ۳۰۰
+          { productId: 2, productName: 'کالا ۲', quantity: 5, unitPrice: 200, buyPrice: 150 }   // بهای ۷۵۰، سود ۲۵۰
+        ]
+      };
+      var res = calculateInvoiceProfit(inv);
+      var pass = (res.totalSales === 2000) &&
+                 (res.salesWithValidBuyPrice === 2000) &&
+                 (res.salesWithoutValidBuyPrice === 0) &&
+                 (res.verifiedCOGS === 1450) &&
+                 (res.verifiedGrossProfit === 550) &&
+                 (res.status === 'complete') &&
+                 (res.isProfitVerified === true) &&
+                 (res.invalidBuyPriceCount === 0);
+      results.push({
+        id: 5,
+        title: 'آزمون ۵: فاکتور با تمام اقلام دارای قیمت خرید معتبر',
+        description: 'فاکتوری که تمام اقلام آن دارای قیمت خرید هستند باید سود قطعی و وضعیت کامل داشته باشد.',
+        expected: 'فروش: ۲،۰۰۰ | بهای تمام‌شده: ۱،۴۵۰ | سود قطعی: ۵۵۰ | وضعیت: قطعی',
+        actual: 'فروش: ' + res.totalSales + ' | بهای تمام‌شده: ' + res.verifiedCOGS + ' | سود: ' + res.verifiedGrossProfit + ' | وضعیت: ' + res.statusLabel,
+        passed: pass
+      });
+    })();
+
+    // ۶. فاکتور دارای قلم با قیمت خرید بیشتر از قیمت فروش (سود منفی/زیان به‌درستی منعکس شود)
+    (function audit6() {
+      var inv = {
+        id: 108,
+        type: 'sale',
+        subtotal: 800,
+        discount: 0,
+        shippingCost: 0,
+        brokerCommission: 0,
+        items: [
+          { productId: 1, productName: 'کالای با زیان', quantity: 10, unitPrice: 80, buyPrice: 100 }
+        ]
+      };
+      var res = calculateInvoiceProfit(inv);
+      var pass = (res.items[0].grossProfit === -200) &&
+                 (res.verifiedCOGS === 1000) &&
+                 (res.verifiedGrossProfit === -200) &&
+                 (res.status === 'complete') &&
+                 (res.isProfitVerified === true);
+      results.push({
+        id: 6,
+        title: 'آزمون ۶: قلم با قیمت خرید بیشتر از قیمت فروش (شناسایی زیان)',
+        description: 'فروش زیر قیمت خرید باید سود منفی (زیان ۲۰۰-) را به عنوان سود قطعی منفی منعکس کند.',
+        expected: 'بهای تمام‌شده: ۱،۰۰۰ | سود: ۲۰۰- (زیان) | وضعیت: قطعی',
+        actual: 'بهای تمام‌شده: ' + res.verifiedCOGS + ' | سود: ' + res.verifiedGrossProfit + ' | وضعیت: ' + res.statusLabel,
+        passed: pass
+      });
+    })();
+
+    // ۷. تأیید عدم تکرار فروش (عدم Double Counting) اقلام فاقد قیمت خرید در درآمد کل
+    (function audit7() {
+      var inv = {
+        id: 109,
+        type: 'sale',
+        subtotal: 2000,
+        discount: 0,
+        shippingCost: 0,
+        brokerCommission: 0,
+        items: [
+          { productId: 1, productName: 'معتبر', quantity: 10, unitPrice: 100, buyPrice: 60 }, // فروش ۱۰۰۰
+          { productId: 2, productName: 'بدون قیمت ۰', quantity: 5, unitPrice: 80, buyPrice: 0 }, // فروش ۴۰۰
+          { productId: 3, productName: 'بدون قیمت null', quantity: 2, unitPrice: 300, buyPrice: null } // فروش ۶۰۰
+        ]
+      };
+      var res = calculateInvoiceProfit(inv);
+      var pass = (res.totalSales === 2000) &&
+                 (res.salesWithValidBuyPrice === 1000) &&
+                 (res.salesWithoutValidBuyPrice === 1000) &&
+                 ((res.salesWithValidBuyPrice + res.salesWithoutValidBuyPrice) === res.totalSales) &&
+                 (res.verifiedCOGS === 600) &&
+                 (res.verifiedGrossProfit === 400) &&
+                 (res.invalidBuyPriceCount === 2) &&
+                 (res.invalidBuyPriceAmount === 1000);
+      results.push({
+        id: 7,
+        title: 'آزمون ۷: تأیید عدم Double Counting اقلام فاقد قیمت خرید در درآمد کل',
+        description: 'اقلام بدون قیمت خرید دقیقاً یک‌بار در درآمد کل لحاظ شده و جمع تفکیک‌ها با کل فروش منطبق است.',
+        expected: 'فروش کل: ۲،۰۰۰ | معتبر: ۱،۰۰۰ | نامعتبر: ۱،۰۰۰ | مجموع تفکیک: ۲،۰۰۰',
+        actual: 'فروش کل: ' + res.totalSales + ' | معتبر: ' + res.salesWithValidBuyPrice + ' | نامعتبر: ' + res.salesWithoutValidBuyPrice,
+        passed: pass
+      });
+    })();
+
+    var passedCount = results.filter(function(r) { return r.passed; }).length;
+    return {
+      passed: passedCount,
+      failed: results.length - passedCount,
+      total: results.length,
+      allPassed: passedCount === results.length,
+      results: results
+    };
+  }
+
   // اکسپورت ماژول به دامنه سراسری پنجره
   return {
+    isValidBuyPrice: isValidBuyPrice,
     calculateItemProfit: calculateItemProfit,
     calculateInvoiceProfit: calculateInvoiceProfit,
     filterOperatingExpenses: filterOperatingExpenses,
     calculatePeriodPL: calculatePeriodPL,
-    runDiagnosticSuite: runDiagnosticSuite
+    runDiagnosticSuite: runDiagnosticSuite,
+    runMandatoryAuditSuite: runMandatoryAuditSuite
   };
 })();
 

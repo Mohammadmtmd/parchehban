@@ -228,11 +228,11 @@ var Inv = {
       if (shEl) shEl.value = it.shade || '';
     } else if (f === 'q') it.quantity = parseFloat(v) || 0;
     else if (f === 'u') it.unitPrice = numOf(v);
-    else if (f === 'bp') it.buyPrice = numOf(v);
+    else if (f === 'bp') it.buyPrice = (v !== '' && numOf(v) > 0) ? numOf(v) : null;
     else if (f === 'cat') it.catalog = v;
     else if (f === 'sh') it.shade = v;
     it.total = it.quantity * it.unitPrice;
-    it.profit = it.quantity * (it.unitPrice - (it.buyPrice || 0));
+    it.profit = (it.buyPrice && it.buyPrice > 0) ? (it.quantity * (it.unitPrice - it.buyPrice)) : null;
     var tc = document.getElementById('t' + i);
     if (tc) tc.textContent = UI.fn(it.total);
     this.calc();
@@ -296,10 +296,12 @@ var Inv = {
         brokerCommission: cm,
         items: this.items
       });
-      var hasValidBuyPrices = this.items.some(function(it) { return (it.buyPrice || 0) > 0; });
-      if (hasValidBuyPrices) {
+      if (invProfitCalc.salesWithValidBuyPrice > 0) {
         var finalProfit = invProfitCalc.profitAfterBroker;
-        h += '<div class="inv-ti"><label>سود فاکتور (با کسر کمیسیون)</label><div class="val ' + (finalProfit >= 0 ? 'g' : 'r') + '">' + UI.fn(Math.round(finalProfit)) + '</div></div>';
+        var badge = invProfitCalc.hasUnverifiedItems ? ' <span class="tg tg-o" style="font-size:10px" title="' + invProfitCalc.unverifiedCount + ' قلم فاقد قیمت خرید">ناقص</span>' : '';
+        h += '<div class="inv-ti"><label>سود فاکتور (با کسر کمیسیون)' + badge + '</label><div class="val ' + (finalProfit >= 0 ? 'g' : 'r') + '">' + UI.fn(Math.round(finalProfit)) + '</div></div>';
+      } else if (invProfitCalc.hasUnverifiedItems) {
+        h += '<div class="inv-ti"><label>سود فاکتور</label><div class="val" style="color:var(--w);font-size:11px">ناقص / نیازمند بهای خرید</div></div>';
       }
     }
     h += '<div class="inv-ti"><label>مانده</label><div class="val ' + (rm > 0 ? 'r' : 'g') + '">' + UI.fn(rm) + '</div></div>';
@@ -352,8 +354,8 @@ var Inv = {
         quantity: it.quantity,
         unitPrice: it.unitPrice,
         total: it.total,
-        buyPrice: type === 'purchase' ? it.unitPrice : (it.buyPrice || 0),
-        profit: type === 'purchase' ? 0 : it.quantity * (it.unitPrice - (it.buyPrice || 0))
+        buyPrice: type === 'purchase' ? it.unitPrice : ((it.buyPrice && it.buyPrice > 0) ? it.buyPrice : null),
+        profit: type === 'purchase' ? 0 : ((it.buyPrice && it.buyPrice > 0) ? it.quantity * (it.unitPrice - it.buyPrice) : null)
       };
     });
     var sub = 0;
