@@ -14,12 +14,14 @@ var Bank = {
        محاسبه می‌شد، در حالی که صفحه جزئیات، فاکتورها و انتقال بین بانکی
        را هم حساب می‌کرد؛ نتیجه: عدد لیست با عدد صورت‌حساب یکی نبود.
        حالا هر دو از یک تابع واحد (Bank.balance) استفاده می‌کنند. */
+    var allCalc = await Bank.allBalances();
+    var bMap = allCalc.bankMap || {};
     var r = '',
-      totalBal = 0;
+      totalBal = allCalc.totalBankBal || 0;
     for (var i = 0; i < bs.length; i++) {
       var b = bs[i];
-      var bal = await Bank.balance(b.id);
-      totalBal += bal;
+      var accInfo = bMap[b.id] || { balance: b.openingBalance || 0 };
+      var bal = accInfo.balance;
       var bc = bal >= 0 ? 'color:var(--ok)' : 'color:var(--d)';
       r += '<tr class="clk" onclick="Bank.show(' + b.id + ')">';
       r += '<td>' + (i + 1) + '</td>';
@@ -128,27 +130,54 @@ var Bank = {
     await this.render();
   },
 
-  balance: async function(bankId) {
-    var b = await DB.get('banks', bankId);
-    if (!b) return 0;
-    var bal = b.openingBalance || 0;
+  allBalances: async function() {
+    var bs = await DB.all('banks');
     var pays = await FY.byYear('payments');
     var bts = [];
     try {
       bts = await DB.all('bankTransfers');
     } catch (e) {}
-    /* مبلغ «پرداخت شده» فاکتورها اینجا جداگانه حساب نمی‌شود؛ هر فاکتور
-       یک سند دریافت/پرداخت واقعی می‌سازد که در حلقه pays پایین شمرده
-       می‌شود. قبلاً هر دو حساب می‌شدند و مانده بانک دو برابر می‌شد. */
+    if (typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.calculateBankBalances === 'function') {
+      return FinanceEngine.calculateBankBalances(bs, pays, bts);
+    }
+    var map = {}, total = 0, list = [];
+    bs.forEach(function(b) {
+      var bal = b.openingBalance || 0;
+      pays.forEach(function(p) {
+        if (p.bankId === b.id) {
+          if (p.type === 'receipt') bal += p.amount;
+          else bal -= p.amount;
+        }
+      });
+      bts.forEach(function(bt) {
+        if (bt.fromBankId === b.id) bal -= bt.amount;
+        if (bt.toBankId === b.id) bal += bt.amount;
+      });
+      map[b.id] = { id: b.id, name: b.name, balance: bal };
+      total += bal;
+      list.push({ id: b.id, name: b.name, balance: bal });
+    });
+    return { bankBalances: list, bankMap: map, totalBankBal: total, totalBankBalance: total };
+  },
+
+  balance: async function(bankId) {
+    var b = await DB.get('banks', bankId);
+    if (!b) return 0;
+    var pays = await FY.byYear('payments');
+    var bts = [];
+    try {
+      bts = await DB.all('bankTransfers');
+    } catch (e) {}
+    if (typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.calculateAccountBalance === 'function') {
+      return FinanceEngine.calculateAccountBalance(bankId, [b], pays, bts);
+    }
+    var bal = b.openingBalance || 0;
     pays.forEach(function(p) {
       if (p.bankId === bankId) {
         if (p.type === 'receipt') bal += p.amount;
         else bal -= p.amount;
       }
     });
-    /* حلقه چک حذف شد: چکِ وصول‌شده حالا یک سند دریافت/پرداخت واقعی
-       می‌سازد که در حلقه pays بالا شمرده می‌شود. اگر اینجا هم شمرده
-       می‌شد، مانده بانک دو برابر می‌شد. */
     bts.forEach(function(bt) {
       if (bt.fromBankId === bankId) bal -= bt.amount;
       if (bt.toBankId === bankId) bal += bt.amount;

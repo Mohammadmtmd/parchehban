@@ -257,43 +257,49 @@ var Dash = {
     var unverifiedRevenueTotal = plData.unverifiedRevenueTotal || 0;
     var hasUnverified = unverifiedItemsCount > 0;
 
-    /* ══ محاسبه دقیق مانده نقد و بانک‌ها مطابق استاندارد Bank.balance ══ */
-    var bankBalances = [];
-    var totalBankBal = 0;
-    var bankReceiptsPeriod = 0;
-    var bankPaymentsPeriod = 0;
+    /* ══ محاسبه دقیق مانده نقد و بانک‌ها از منبع واحد حقیقت (FinanceEngine.calculateBankBalances) ══ */
+    var bankCalc = (typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.calculateBankBalances === 'function')
+      ? FinanceEngine.calculateBankBalances(banks, dashPays, dashBts, { startNum: startNum, endNum: endNum })
+      : null;
 
-    banks.forEach(function(b) {
-      if (!b) return;
-      var bal = numOf(b.openingBalance);
-      dashPays.forEach(function(p) {
-        if (p && p.bankId === b.id) {
-          var pAmt = numOf(p.amount);
-          var pDNum = pn(p.date);
-          var inPeriod = (startNum === 0 || pDNum >= startNum) && (endNum === 0 || pDNum <= endNum);
-          if (p.type === 'receipt') {
-            bal += pAmt;
-            if (inPeriod) bankReceiptsPeriod += pAmt;
-          } else {
-            bal -= pAmt;
-            if (inPeriod) bankPaymentsPeriod += pAmt;
+    var bankBalances = bankCalc ? bankCalc.bankBalances : [];
+    var totalBankBal = bankCalc ? bankCalc.totalBankBal : 0;
+    var bankReceiptsPeriod = bankCalc ? bankCalc.bankReceiptsPeriod : 0;
+    var bankPaymentsPeriod = bankCalc ? bankCalc.bankPaymentsPeriod : 0;
+
+    if (!bankCalc) {
+      banks.forEach(function(b) {
+        if (!b) return;
+        var bal = numOf(b.openingBalance);
+        dashPays.forEach(function(p) {
+          if (p && p.bankId === b.id) {
+            var pAmt = numOf(p.amount);
+            var pDNum = pn(p.date);
+            var inPeriod = (startNum === 0 || pDNum >= startNum) && (endNum === 0 || pDNum <= endNum);
+            if (p.type === 'receipt') {
+              bal += pAmt;
+              if (inPeriod) bankReceiptsPeriod += pAmt;
+            } else {
+              bal -= pAmt;
+              if (inPeriod) bankPaymentsPeriod += pAmt;
+            }
           }
-        }
+        });
+        dashBts.forEach(function(bt) {
+          if (!bt) return;
+          if (bt.fromBankId === b.id) bal -= numOf(bt.amount);
+          if (bt.toBankId === b.id) bal += numOf(bt.amount);
+        });
+        bankBalances.push({
+          id: b.id,
+          name: b.name,
+          bankName: b.bankName || '',
+          accountNumber: b.accountNumber || '',
+          balance: bal
+        });
+        totalBankBal += bal;
       });
-      dashBts.forEach(function(bt) {
-        if (!bt) return;
-        if (bt.fromBankId === b.id) bal -= numOf(bt.amount);
-        if (bt.toBankId === b.id) bal += numOf(bt.amount);
-      });
-      bankBalances.push({
-        id: b.id,
-        name: b.name,
-        bankName: b.bankName || '',
-        accountNumber: b.accountNumber || '',
-        balance: bal
-      });
-      totalBankBal += bal;
-    });
+    }
 
     /* ══ تجمیع مطالبات (بدهکاران) و بدهی‌ها (بستانکاران) از Con.allBalances ══ */
     var totalDebtors = 0, debtorCount = 0, debtorList = [];

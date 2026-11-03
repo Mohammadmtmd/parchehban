@@ -162,21 +162,28 @@ var Rep = {
       }
       tSh += v.shippingCost || 0;
     });
-    var tR = 0,
-      tPm = 0;
+    var indepR = 0,
+      indepP = 0,
+      allR = 0,
+      allP = 0;
     pays.forEach(function(p) {
-      if (p.type === 'receipt') tR += p.amount || 0;
-      else tPm += p.amount || 0;
+      var amt = p.amount || 0;
+      if (p.type === 'receipt') {
+        allR += amt;
+        if (!p.sourceInvoiceId) indepR += amt;
+      } else {
+        allP += amt;
+        if (!p.sourceInvoiceId) indepP += amt;
+      }
     });
-    tPP += tPm;
-    tSP += tR;
-    var pr = tS - tP - tSh;
+    var totalPurchasesPaid = tPP + indepP;
+    var totalSalesReceived = tSP + indepR;
     var h = '<div class="sg">';
     h += '<div class="sc"><div class="si o"><i class="bi bi-cart-fill"></i></div><div class="sti"><h3>' + UI.fn(tP) + '</h3><p>کل خرید</p></div></div>';
     h += '<div class="sc"><div class="si g"><i class="bi bi-receipt-cutoff"></i></div><div class="sti"><h3>' + UI.fn(tS) + '</h3><p>کل فروش</p></div></div>';
-    h += '<div class="sc"><div class="si g"><i class="bi bi-arrow-down-circle"></i></div><div class="sti"><h3>' + UI.fn(tR) + '</h3><p>دریافت‌ها</p></div></div>';
-    h += '<div class="sc"><div class="si r"><i class="bi bi-arrow-up-circle"></i></div><div class="sti"><h3>' + UI.fn(tPm) + '</h3><p>پرداخت‌ها</p></div></div></div>';
-    h += '<div class="g2"><div class="cd"><div class="cd-h">وضعیت خرید</div><div class="cd-b"><p>کل خرید: ' + UI.fn(tP) + '</p><p>پرداخت فاکتور: ' + UI.fn(tPP - tPm) + '</p><p>پرداخت مستقل: ' + UI.fn(tPm) + '</p><p style="font-weight:700;color:var(--ok)">کل پرداختی: ' + UI.fn(tPP) + '</p><p style="color:var(--d);font-weight:700">مانده: ' + UI.fn(tP - tPP) + '</p></div></div><div class="cd"><div class="cd-h">وضعیت فروش</div><div class="cd-b"><p>کل فروش: ' + UI.fn(tS) + '</p><p>دریافت فاکتور: ' + UI.fn(tSP - tR) + '</p><p>دریافت مستقل: ' + UI.fn(tR) + '</p><p style="font-weight:700;color:var(--ok)">کل دریافتی: ' + UI.fn(tSP) + '</p><p style="color:var(--d);font-weight:700">مانده: ' + UI.fn(tS - tSP) + '</p></div></div></div>';
+    h += '<div class="sc"><div class="si g"><i class="bi bi-arrow-down-circle"></i></div><div class="sti"><h3>' + UI.fn(allR) + '</h3><p>دریافت‌ها</p></div></div>';
+    h += '<div class="sc"><div class="si r"><i class="bi bi-arrow-up-circle"></i></div><div class="sti"><h3>' + UI.fn(allP) + '</h3><p>پرداخت‌ها</p></div></div></div>';
+    h += '<div class="g2"><div class="cd"><div class="cd-h">وضعیت خرید</div><div class="cd-b"><p>کل خرید: ' + UI.fn(tP) + '</p><p>پرداخت فاکتور: ' + UI.fn(tPP) + '</p><p>پرداخت مستقل: ' + UI.fn(indepP) + '</p><p style="font-weight:700;color:var(--ok)">کل پرداختی: ' + UI.fn(totalPurchasesPaid) + '</p><p style="color:var(--d);font-weight:700">مانده: ' + UI.fn(tP - totalPurchasesPaid) + '</p></div></div><div class="cd"><div class="cd-h">وضعیت فروش</div><div class="cd-b"><p>کل فروش: ' + UI.fn(tS) + '</p><p>دریافت فاکتور: ' + UI.fn(tSP) + '</p><p>دریافت مستقل: ' + UI.fn(indepR) + '</p><p style="font-weight:700;color:var(--ok)">کل دریافتی: ' + UI.fn(totalSalesReceived) + '</p><p style="color:var(--d);font-weight:700">مانده: ' + UI.fn(tS - totalSalesReceived) + '</p></div></div></div>';
     setHTML('rC', h);
   },
   purchases: async function() {
@@ -204,15 +211,18 @@ var Rep = {
     });
     var stPay = 0;
     pays.forEach(function(p) {
+      /* حذف دوباره‌شماری: پرداخت‌های خودکار فاکتورها در tP لحاظ شده‌اند */
+      if (p.sourceInvoiceId) return;
       if (type === 'purchase' && p.type === 'payment') stPay += p.amount || 0;
       if (type === 'sale' && p.type === 'receipt') stPay += p.amount || 0;
     });
     var lb = type === 'sale' ? 'فروش' : 'خرید';
     var pl = type === 'sale' ? 'دریافت' : 'پرداخت';
+    var totalSettled = tP + stPay;
     var h = '<div class="sg">';
     h += '<div class="sc"><div class="si o"><i class="bi bi-cart-fill"></i></div><div class="sti"><h3>' + UI.fn(tG) + '</h3><p>کل ' + lb + '</p></div></div>';
-    h += '<div class="sc"><div class="si g"><i class="bi bi-check-circle"></i></div><div class="sti"><h3>' + UI.fn(tP + stPay) + '</h3><p>کل ' + pl + '</p></div></div>';
-    h += '<div class="sc"><div class="si r"><i class="bi bi-exclamation-circle"></i></div><div class="sti"><h3>' + UI.fn(tG - tP - stPay) + '</h3><p>مانده</p></div></div></div>';
+    h += '<div class="sc"><div class="si g"><i class="bi bi-check-circle"></i></div><div class="sti"><h3>' + UI.fn(totalSettled) + '</h3><p>کل ' + pl + '</p></div></div>';
+    h += '<div class="sc"><div class="si r"><i class="bi bi-exclamation-circle"></i></div><div class="sti"><h3>' + UI.fn(tG - totalSettled) + '</h3><p>مانده</p></div></div></div>';
     setHTML('rC', h);
   },
   stock: async function() {

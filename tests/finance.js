@@ -121,5 +121,19 @@ assert.strictEqual(phase2Suite.passed, 7, 'باید تمام ۷ آزمون مم�
 assert.strictEqual(phase2Suite.allPassed, true);
 
 console.log('✓ تمامی ۷ آزمون تکمیلی ممیزی مرحله دوم با موفقیت ۱۰۰٪ تأیید شدند.');
-console.log(`\n🎉 مجموع کل: ${suite.total + mandatorySuite.total + opExSuite.total + phase2Suite.total} سناریوی مالی و حسابداری پارچه‌بان با موفقیت ۱۰۰٪ پاس شدند.`);
+
+console.log('\n--- اجرای ۸ آزمون الزامی ممیزی و محاسبه مانده حساب‌های بانکی و نقدینگی ---');
+const bankSuite = FinanceEngine.runBankAuditSuite();
+console.log(`نتیجه کلی آزمون‌های مانده بانک: ${bankSuite.passed} از ${bankSuite.total} سناریو با موفقیت پاس شدند.`);
+
+bankSuite.results.forEach(r => {
+  console.log(`[${r.passed ? '✓' : '✗'}] ${r.title}`);
+  assert(r.passed, `تست ممیزی مانده بانک شکست خورد: ${r.title} - ${r.actual}`);
+});
+
+assert.strictEqual(bankSuite.passed, 8, 'باید تمام ۸ آزمون ممیزی مانده بانک پاس شوند');
+assert.strictEqual(bankSuite.allPassed, true);
+
+console.log('✓ تمامی ۸ آزمون تخصصی مانده بانک و نقدینگی با موفقیت ۱۰۰٪ تأیید شدند.');
+console.log(`\n🎉 مجموع کل: ${suite.total + mandatorySuite.total + opExSuite.total + phase2Suite.total + bankSuite.total} سناریوی مالی و حسابداری پارچه‌بان با موفقیت ۱۰۰٪ پاس شدند.`);
 
