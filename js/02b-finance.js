@@ -244,8 +244,9 @@ var FinanceEngine = (function() {
       // دریافت‌ها جریان درآمدی یا تسویه هستند، نه هزینه عملیاتی
       if (p.type === 'receipt') return;
 
-      // ۱. انتقال بین‌بانکی / صندوق
-      if (p.transferId || (p.note && String(p.note).indexOf('انتقال') !== -1)) {
+      // ۱. انتقال بین‌بانکی / حواله / صندوق
+      var pDesc = String(p.description || p.notes || p.note || '');
+      if (p.transferId || pDesc.indexOf('انتقال') !== -1 || pDesc.indexOf('حواله') !== -1) {
         transfers += amt;
         return;
       }
@@ -256,15 +257,25 @@ var FinanceEngine = (function() {
         return;
       }
 
-      // ۳. پرداخت متصل به فاکتور خرید (تسویه بستانکاران / تأمین‌کنندگان)
-      if (p.sourceInvoiceId) {
+      // ۳. پرداخت متصل به فاکتور خرید یا دارای سرفصل تسویه بستانکاران / تأمین‌کنندگان
+      var cat = (p.category || '').trim();
+      var isSupplierSettlementCat = (
+        cat === 'تأمین‌کننده' ||
+        cat === 'بستانکار' ||
+        cat === 'تسویه حساب' ||
+        cat === 'تسویه تأمین‌کننده' ||
+        cat === 'تسویه تأمین‌کننده / خرید' ||
+        cat === 'تسویه خرید' ||
+        cat === 'تسویه بدهی'
+      );
+
+      if (p.sourceInvoiceId || isSupplierSettlementCat) {
         supplierSettlements += amt;
         return;
       }
 
-      // ۴. بررسی سرفصل دسته‌بندی هزینه
-      var cat = (p.category || '').trim();
-      if (cat && cat !== 'تأمین‌کننده' && cat !== 'بستانکار' && cat !== 'تسویه حساب') {
+      // ۴. بررسی سرفصل دسته‌بندی هزینه عملیاتی
+      if (cat) {
         classifiedOpEx += amt;
         byCategory[cat] = (byCategory[cat] || 0) + amt;
         classifiedItems.push({
@@ -272,7 +283,7 @@ var FinanceEngine = (function() {
           date: p.date,
           amount: amt,
           category: cat,
-          note: p.note || ''
+          note: pDesc
         });
       } else {
         // پرداخت‌های بدون سرفصل مشخص (مطابق تصمیم تأییدشده کاربر: تفکیک و عدم کسر خودکار)
@@ -282,7 +293,7 @@ var FinanceEngine = (function() {
           date: p.date,
           amount: amt,
           category: 'نامشخص',
-          note: p.note || ''
+          note: pDesc
         });
       }
     });
@@ -442,6 +453,10 @@ var FinanceEngine = (function() {
       classifiedOpEx: classifiedOpEx,
       unclassifiedPayments: unclassifiedPayments,
       expensesByCategory: expenseData.byCategory,
+      supplierSettlements: expenseData.supplierSettlements,
+      transfers: expenseData.transfers,
+      checkSettlements: expenseData.checkSettlements,
+      expenseData: expenseData,
       // ۷. سود خالص عملیاتی نهایی
       netOperatingProfit: netOperatingProfit,
       netMarginPct: netMarginPct,
@@ -1001,6 +1016,196 @@ var FinanceEngine = (function() {
     };
   }
 
+  /**
+   * مجموعه آزمون‌های ۸‌گانه ثبت، تفکیک و دسته‌بندی هزینه‌های عملیاتی و صورت سود و زیان (کاملاً ایزوله در رم)
+   */
+  function runOperatingExpensesSuite() {
+    var results = [];
+
+    // ۱. ثبت و شناسایی هزینه اجاره
+    (function testOpEx1() {
+      var p = { id: 101, type: 'payment', amount: 5000000, category: 'اجاره', date: '1404/01/10', description: 'اجاره ماهانه کارگاه' };
+      var exp = filterOperatingExpenses([p]);
+      var pass = (exp.classifiedOpEx === 5000000 && exp.byCategory['اجاره'] === 5000000 && exp.classifiedItems.length === 1 && exp.unclassifiedPayments === 0);
+      results.push({
+        id: 1,
+        title: 'آزمون ۱: ثبت و شناسایی هزینه اجاره در سرفصل اختصاصی',
+        description: 'بررسی ثبت پرداخت با سرفصل «اجاره» و انعکاس در هزینه‌های عملیاتی طبقه‌بندی‌شده دوره.',
+        expected: 'classifiedOpEx: ۵،۰۰۰،۰۰۰ | byCategory[اجاره]: ۵،۰۰۰،۰۰۰ | بدون هزینه نامشخص',
+        actual: 'classifiedOpEx: ' + exp.classifiedOpEx + ' | byCategory[اجاره]: ' + (exp.byCategory['اجاره'] || 0) + ' | unclassified: ' + exp.unclassifiedPayments,
+        passed: pass
+      });
+    })();
+
+    // ۲. ثبت و شناسایی هزینه حقوق و دستمزد
+    (function testOpEx2() {
+      var p = { id: 102, type: 'payment', amount: 3000000, category: 'حقوق و دستمزد', date: '1404/01/25', description: 'حقوق فروردین پرسنل' };
+      var exp = filterOperatingExpenses([p]);
+      var pass = (exp.classifiedOpEx === 3000000 && exp.byCategory['حقوق و دستمزد'] === 3000000 && exp.unclassifiedPayments === 0);
+      results.push({
+        id: 2,
+        title: 'آزمون ۲: ثبت و شناسایی هزینه حقوق و دستمزد',
+        description: 'بررسی ثبت پرداخت با سرفصل «حقوق و دستمزد» و تفکیک در دسته‌بندی هزینه‌های دوره.',
+        expected: 'classifiedOpEx: ۳،۰۰۰،۰۰۰ | byCategory[حقوق و دستمزد]: ۳،۰۰۰،۰۰۰',
+        actual: 'classifiedOpEx: ' + exp.classifiedOpEx + ' | byCategory[حقوق و دستمزد]: ' + (exp.byCategory['حقوق و دستمزد'] || 0),
+        passed: pass
+      });
+    })();
+
+    // ۳. ثبت و شناسایی هزینه اداری و تجمیع چندگانه
+    (function testOpEx3() {
+      var p1 = { id: 101, type: 'payment', amount: 5000000, category: 'اجاره', date: '1404/01/10' };
+      var p2 = { id: 102, type: 'payment', amount: 3000000, category: 'حقوق و دستمزد', date: '1404/01/25' };
+      var p3 = { id: 103, type: 'payment', amount: 1000000, category: 'هزینه اداری', date: '1404/01/28', description: 'قبوض تلفن و اینترنت' };
+      var exp = filterOperatingExpenses([p1, p2, p3]);
+      var pass = (exp.classifiedOpEx === 9000000 &&
+                  exp.byCategory['هزینه اداری'] === 1000000 &&
+                  exp.byCategory['اجاره'] === 5000000 &&
+                  exp.byCategory['حقوق و دستمزد'] === 3000000);
+      results.push({
+        id: 3,
+        title: 'آزمون ۳: ثبت هزینه اداری و تجمیع سرفصل‌های متنوع عملیاتی',
+        description: 'بررسی هم‌افزایی هزینه‌های اداری، حقوق و اجاره و تجمیع صحیح هزینه‌های عملیاتی.',
+        expected: 'جمع هزینه‌های عملیاتی: ۹،۰۰۰،۰۰۰ (اجاره: ۵M، حقوق: ۳M، اداری: ۱M)',
+        actual: 'جمع هزینه‌ها: ' + exp.classifiedOpEx + ' | اداری: ' + (exp.byCategory['هزینه اداری'] || 0),
+        passed: pass
+      });
+    })();
+
+    // ۴. ثبت تسویه تأمین‌کننده و تفکیک قطعی از هزینه‌های عملیاتی
+    (function testOpEx4() {
+      var pInv = { id: 104, type: 'payment', amount: 15000000, sourceInvoiceId: 501, date: '1404/01/15' };
+      var pCat = { id: 105, type: 'payment', amount: 8000000, category: 'تسویه تأمین‌کننده / خرید', date: '1404/01/20' };
+      var exp = filterOperatingExpenses([pInv, pCat]);
+      var pass = (exp.classifiedOpEx === 0 && exp.supplierSettlements === 23000000 && exp.unclassifiedPayments === 0);
+      results.push({
+        id: 4,
+        title: 'آزمون ۴: ثبت تسویه بدهی تأمین‌کننده و عدم خلط با هزینه‌های عملیاتی',
+        description: 'بررسی عدم ورود پرداخت‌های متصل به فاکتور خرید یا سرفصل تسویه تأمین‌کننده به هزینه‌های عملیاتی.',
+        expected: 'supplierSettlements: ۲۳،۰۰۰،۰۰۰ | classifiedOpEx: ۰ (هیچ هزینه‌ای شناسایی نشود)',
+        actual: 'supplierSettlements: ' + exp.supplierSettlements + ' | classifiedOpEx: ' + exp.classifiedOpEx,
+        passed: pass
+      });
+    })();
+
+    // ۵. ثبت انتقال وجه بین حساب‌ها (حواله) و تفکیک از هزینه عملیاتی
+    (function testOpEx5() {
+      var pTr = { id: 106, type: 'payment', amount: 12000000, transferId: 99001, date: '1404/01/18', notes: 'حواله بانکی به حساب سپه' };
+      var exp = filterOperatingExpenses([pTr]);
+      var pass = (exp.transfers === 12000000 && exp.classifiedOpEx === 0 && exp.unclassifiedPayments === 0);
+      results.push({
+        id: 5,
+        title: 'آزمون ۵: ثبت انتقال بین‌حسابی (حواله) و تفکیک کامل از هزینه‌ها',
+        description: 'اطمینان از اینکه جابجایی وجه بین حساب‌های بانکی/صندوق به عنوان هزینه در نظر گرفته نمی‌شود.',
+        expected: 'transfers: ۱۲،۰۰۰،۰۰۰ | classifiedOpEx: ۰',
+        actual: 'transfers: ' + exp.transfers + ' | classifiedOpEx: ' + exp.classifiedOpEx,
+        passed: pass
+      });
+    })();
+
+    // ۶. ویرایش دسته‌بندی پرداخت و انتقال بین نامشخص و عملیاتی
+    (function testOpEx6() {
+      var p = { id: 107, type: 'payment', amount: 2500000, category: null, date: '1404/02/01' };
+      var before = filterOperatingExpenses([p]);
+      var passBefore = (before.unclassifiedPayments === 2500000 && before.classifiedOpEx === 0);
+
+      p.category = 'تعمیر و نگهداری';
+      var after = filterOperatingExpenses([p]);
+      var passAfter = (after.unclassifiedPayments === 0 && after.classifiedOpEx === 2500000 && after.byCategory['تعمیر و نگهداری'] === 2500000);
+
+      results.push({
+        id: 6,
+        title: 'آزمون ۶: ویرایش دسته‌بندی پرداخت و انتقال هوشمند بین نامشخص و عملیاتی',
+        description: 'بررسی گذار پرداخت از وضعیت نامشخص به سرفصل هزینه مشخص پس از ویرایش.',
+        expected: 'قبل: unclassified=۲.۵M, OpEx=۰ | بعد: unclassified=۰, OpEx=۲.۵M (تعمیر و نگهداری)',
+        actual: 'قبل: OpEx=' + before.classifiedOpEx + ', Unclass=' + before.unclassifiedPayments + ' | بعد: OpEx=' + after.classifiedOpEx + ', Unclass=' + after.unclassifiedPayments,
+        passed: passBefore && passAfter
+      });
+    })();
+
+    // ۷. نمایش و محاسبه صحیح در صورت سود و زیان (P&L)
+    (function testOpEx7() {
+      var saleInv = {
+        id: 201,
+        type: 'sale',
+        subtotal: 25000000,
+        discount: 0,
+        shippingCost: 0,
+        brokerCommission: 1000000,
+        items: [
+          { productId: 1, productName: 'پارچه مبلی', quantity: 100, unitPrice: 250000, buyPrice: 150000 }
+        ]
+      };
+      var p1 = { id: 301, type: 'payment', amount: 5000000, category: 'اجاره', date: '1404/01/10' };
+      var p2 = { id: 302, type: 'payment', amount: 3000000, category: 'حقوق و دستمزد', date: '1404/01/25' };
+
+      var pl = calculatePeriodPL([saleInv], [p1, p2], 0, 0);
+
+      var passGross = (pl.grossProfit === 10000000);
+      var passBroker = (pl.brokerCommissions === 1000000 && pl.profitAfterBroker === 9000000);
+      var passOpEx = (pl.classifiedOpEx === 8000000 && pl.expensesByCategory['اجاره'] === 5000000 && pl.expensesByCategory['حقوق و دستمزد'] === 3000000);
+      var passNet = (pl.netOperatingProfit === 1000000); // 10M - 1M - 8M = 1M
+
+      var pass = passGross && passBroker && passOpEx && passNet;
+      results.push({
+        id: 7,
+        title: 'آزمون ۷: محاسبه و انعکاس صحیح هزینه‌های عملیاتی در صورت سود و زیان (P&L)',
+        description: 'بررسی کسر دقیق کمیسیون واسطه و هزینه‌های عملیاتی از سود ناخالص جهت محاسبه سود خالص عملیاتی.',
+        expected: 'سود ناخالص: ۱۰M | کمیسیون: ۱M | سود پس از کمیسیون: ۹M | هزینه‌های عملیاتی: ۸M | سود خالص: ۱،۰۰۰،۰۰۰',
+        actual: 'سود ناخالص: ' + pl.grossProfit + ' | کمیسیون: ' + pl.brokerCommissions + ' | هزینه‌ها: ' + pl.classifiedOpEx + ' | سود خالص نهایی: ' + pl.netOperatingProfit,
+        passed: pass
+      });
+    })();
+
+    // ۸. اطمینان از عدم احتساب تسویه تأمین‌کننده، حواله و پرداخت نامشخص در سود خالص
+    (function testOpEx8() {
+      var saleInv = {
+        id: 201,
+        type: 'sale',
+        subtotal: 25000000,
+        discount: 0,
+        shippingCost: 0,
+        brokerCommission: 1000000,
+        items: [
+          { productId: 1, productName: 'پارچه مبلی', quantity: 100, unitPrice: 250000, buyPrice: 150000 }
+        ]
+      };
+      var p1 = { id: 301, type: 'payment', amount: 5000000, category: 'اجاره', date: '1404/01/10' };
+      var p2 = { id: 302, type: 'payment', amount: 3000000, category: 'حقوق و دستمزد', date: '1404/01/25' };
+      var pSup1 = { id: 303, type: 'payment', amount: 15000000, sourceInvoiceId: 99, date: '1404/01/12' };
+      var pSup2 = { id: 304, type: 'payment', amount: 8000000, category: 'تسویه تأمین‌کننده / خرید', date: '1404/01/16' };
+      var pTr = { id: 305, type: 'payment', amount: 12000000, transferId: 5544, date: '1404/01/18' };
+      var pUnclass = { id: 306, type: 'payment', amount: 4000000, category: null, date: '1404/01/22' };
+
+      var pl = calculatePeriodPL([saleInv], [p1, p2, pSup1, pSup2, pTr, pUnclass], 0, 0);
+
+      var passNetUntouched = (pl.netOperatingProfit === 1000000);
+      var passOpExUntouched = (pl.classifiedOpEx === 8000000);
+      var passSupSettlement = (pl.supplierSettlements === 23000000);
+      var passTransfers = (pl.transfers === 12000000);
+      var passUnclass = (pl.unclassifiedPayments === 4000000);
+
+      var pass = passNetUntouched && passOpExUntouched && passSupSettlement && passTransfers && passUnclass;
+      results.push({
+        id: 8,
+        title: 'آزمون ۸: مصونیت سود خالص از تسویه تأمین‌کننده، حواله و پرداخت‌های بدون سرفصل',
+        description: 'تأیید عدم کسر ۲۳M تسویه تأمین‌کننده، ۱۲M حواله و ۴M پرداخت نامشخص از سود دوره.',
+        expected: 'سود خالص دقیقاً ۱،۰۰۰،۰۰۰ باقی بماند | هزینه‌ها ۸M | تسویه تأمین‌کننده: ۲۳M | حواله: ۱۲M | نامشخص: ۴M',
+        actual: 'سود خالص: ' + pl.netOperatingProfit + ' | هزینه‌ها: ' + pl.classifiedOpEx + ' | تسویه: ' + pl.supplierSettlements + ' | حواله: ' + pl.transfers + ' | نامشخص: ' + pl.unclassifiedPayments,
+        passed: pass
+      });
+    })();
+
+    var passedCount = results.filter(function(r) { return r.passed; }).length;
+    return {
+      passed: passedCount,
+      failed: results.length - passedCount,
+      total: results.length,
+      allPassed: passedCount === results.length,
+      results: results
+    };
+  }
+
   // اکسپورت ماژول به دامنه سراسری پنجره
   return {
     isValidBuyPrice: isValidBuyPrice,
@@ -1009,7 +1214,8 @@ var FinanceEngine = (function() {
     filterOperatingExpenses: filterOperatingExpenses,
     calculatePeriodPL: calculatePeriodPL,
     runDiagnosticSuite: runDiagnosticSuite,
-    runMandatoryAuditSuite: runMandatoryAuditSuite
+    runMandatoryAuditSuite: runMandatoryAuditSuite,
+    runOperatingExpensesSuite: runOperatingExpensesSuite
   };
 })();
 

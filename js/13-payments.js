@@ -66,7 +66,10 @@ var Pay = {
           ' <button class="bi2 d" onclick="Pay.rm(' + p.id + ')"><i class="bi bi-trash3"></i></button>';
       }
       var srcTag = isAuto ? ' <span class="tg tg-b" title="' + (isAutoChk ? 'سند خودکار وصول چک' : 'سند خودکار فاکتور') + '">خودکار</span>' : '';
-      r += '<tr><td>' + (((pg.page - 1) * pg.per) + i + 1) + '</td><td><span class="tg ' + tt + '">' + tl + '</span>' + srcTag + '</td><td>' + p.date + '</td><td>' + esc(cm[p.contactId] || '—') + '</td><td style="font-weight:700">' + UI.fn(p.amount) + '</td><td>' + esc(p.description || p.notes || '—') + '</td><td style="white-space:nowrap">' + actions + '</td></tr>';
+      var catTag = (p.category && !p.transferId)
+        ? ' <span class="tg tg-p" style="font-size:10px;margin-inline-start:4px" title="سرفصل: ' + esc(p.category) + '">' + esc(p.category) + '</span>'
+        : '';
+      r += '<tr><td>' + (((pg.page - 1) * pg.per) + i + 1) + '</td><td><span class="tg ' + tt + '">' + tl + '</span>' + catTag + srcTag + '</td><td>' + p.date + '</td><td>' + esc(cm[p.contactId] || '—') + '</td><td style="font-weight:700">' + UI.fn(p.amount) + '</td><td>' + esc(p.description || p.notes || '—') + '</td><td style="white-space:nowrap">' + actions + '</td></tr>';
     }
     var ft = '<tfoot><tr style="background:var(--bg);font-weight:700">' +
       '<td colspan="4">جمع ' + UI.fn(ls.length) + ' تراکنش</td>' +
@@ -77,6 +80,18 @@ var Pay = {
       '<div class="em"><p>تراکنشی نیست</p></div>';
     UI.content('<div class="tab-bar"><button class="tab-btn' + (fl === 'all' ? ' active' : '') + '" onclick="Pay.ll(\'all\')">همه</button><button class="tab-btn' + (fl === 'receipt' ? ' active' : '') + '" onclick="Pay.ll(\'receipt\')">دریافت</button><button class="tab-btn' + (fl === 'payment' ? ' active' : '') + '" onclick="Pay.ll(\'payment\')">پرداخت</button><button class="tab-btn' + (fl === 'transfer' ? ' active' : '') + '" onclick="Pay.ll(\'transfer\')">حواله</button></div><div class="cd">' + tb + '</div>');
   },
+  EXPENSE_CATEGORIES: [
+    'حقوق و دستمزد',
+    'اجاره',
+    'هزینه اداری',
+    'هزینه حمل',
+    'هزینه بازاریابی و تبلیغات',
+    'تعمیر و نگهداری',
+    'کارمزد بانکی',
+    'هزینه‌های متفرقه',
+    'تسویه تأمین‌کننده / خرید',
+    'سایر هزینه‌ها'
+  ],
   showF: async function(type, id) {
     var p = id ? await DB.get('payments', id) : null;
     var isR = type === 'receipt';
@@ -100,14 +115,28 @@ var Pay = {
     });
     var accs = banks.map(function(b) { return { v: b.id, t: b.name }; });
 
-    var h = F.section("طرف حساب", isR ? 'bi-arrow-down-left' : 'bi-arrow-up-right') +
+    var catItems = this.EXPENSE_CATEGORIES.map(function(c) {
+      return { v: c, t: c };
+    });
+    if (p && p.category && this.EXPENSE_CATEGORIES.indexOf(p.category) === -1) {
+      catItems.push({ v: p.category, t: p.category });
+    }
+
+    var h = F.section(isR ? 'طرف حساب' : 'طرف حساب و سرفصل', isR ? 'bi-arrow-down-left' : 'bi-arrow-up-right') +
       F.select({
-        id: 'pCt', label: isR ? 'دریافت از' : 'پرداخت به', req: true,
+        id: 'pCt', label: isR ? 'دریافت از' : 'پرداخت به', req: isR,
         value: p ? p.contactId : '', items: people,
-        empty: '— انتخاب کنید —',
+        empty: isR ? '— انتخاب کنید —' : '— انتخاب شخص (اختیاری در مخارج عمومی) —',
         hint: people.length ? 'مانده فعلی هر شخص کنار نامش نوشته شده' :
           (isR ? 'هیچ مشتری‌ای ثبت نشده — از صفحه «اشخاص»' : 'هیچ تأمین‌کننده‌ای ثبت نشده — از صفحه «اشخاص»')
       }) +
+      (!isR ? F.select({
+        id: 'pCat', label: 'سرفصل هزینه / نوع پرداخت',
+        value: p ? (p.category || '') : '',
+        items: catItems,
+        empty: '— بدون سرفصل / تسویه عادی —',
+        hint: 'هزینه‌های عملیاتی انتخاب‌شده مستقیماً در صورت سود و زیان (P&L) تفکیک و لحاظ می‌شوند'
+      }) : '') +
 
       F.section('مبلغ و حساب', 'bi-cash-stack') +
       F.money({
@@ -129,7 +158,7 @@ var Pay = {
       F.text({
         id: 'pNt', label: 'شرح', note: 'اختیاری',
         value: p ? (p.description || p.notes || '') : '',
-        ph: isR ? 'مثلاً: تسویه فاکتور ۱۲۰۳' : 'مثلاً: علی‌الحساب خرید پارچه',
+        ph: isR ? 'مثلاً: تسویه فاکتور ۱۲۰۳' : 'مثلاً: علی‌الحساب خرید پارچه یا هزینه اجاره',
         hint: 'در دفتر حساب و گزارش‌ها همین متن دیده می‌شود'
       });
 
@@ -146,10 +175,18 @@ var Pay = {
     /* سطح دسترسی و سال مالی بسته */
     if (!Perm.require('edit', 'ثبت یا ویرایش سند')) return;
     if (!await FY.assertOpen()) return;
+    var p = id ? await DB.get('payments', id) : null;
     var cid = intOf(elVal('pCt')) || null;
     var am = elNum('pAm');
-    if (!cid) {
+    var catEl = document.getElementById('pCat');
+    var cat = catEl ? catEl.value.trim() : (p ? (p.category || '') : '');
+
+    if (type === 'receipt' && !cid) {
       UI.toast('شخص را انتخاب کنید', 'e');
+      return;
+    }
+    if (type === 'payment' && !cid && !cat) {
+      UI.toast('طرف حساب یا سرفصل هزینه را انتخاب کنید', 'e');
       return;
     }
     if (am <= 0) {
@@ -172,10 +209,11 @@ var Pay = {
       /* هر دو فیلد یک مقدار دارند چون نسخه‌های قدیمی داده از notes
          استفاده می‌کردند و کدهای دیگر هنوز آن را می‌خوانند */
       description: note,
-      notes: note
+      notes: note,
+      category: cat || null
     };
     if (id) {
-      var ex = await DB.get('payments', id);
+      var ex = p || await DB.get('payments', id);
       Object.assign(ex, d);
       await DB.put('payments', ex);
       UI.toast('ویرایش شد');

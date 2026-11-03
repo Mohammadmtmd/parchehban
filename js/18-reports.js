@@ -450,18 +450,39 @@ var Rep = {
   diagnostics: async function() {
     var suite = FinanceEngine.runDiagnosticSuite();
     var mandatorySuite = FinanceEngine.runMandatoryAuditSuite ? FinanceEngine.runMandatoryAuditSuite() : { passed: 0, total: 0, results: [] };
-    var totalPassed = suite.passed + mandatorySuite.passed;
-    var totalTests = suite.total + mandatorySuite.total;
+    var opExSuite = FinanceEngine.runOperatingExpensesSuite ? FinanceEngine.runOperatingExpensesSuite() : { passed: 0, total: 0, results: [] };
+    var totalPassed = suite.passed + mandatorySuite.passed + opExSuite.passed;
+    var totalTests = suite.total + mandatorySuite.total + opExSuite.total;
     var allPassed = (totalPassed === totalTests);
 
     var h = '<div style="margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">';
-    h += '<div><h3 style="margin:0;font-size:1.15rem;font-weight:800"><i class="bi bi-shield-check" style="color:var(--ok);margin-inline-end:8px"></i>آزمونگر تشخیصی محاسبات مالی و اعتبارسنجی سود</h3><p style="margin:4px 0 0;font-size:.84rem;color:var(--txs)">اعتبارسنجی زنده ' + totalTests + ' سناریوی حسابداری (۱۰ سناریوی پایه موتور مالی + ' + mandatorySuite.total + ' آزمون تخصصی ممیزی سود و صورت سود و زیان) کاملاً ایزوله در رم</p></div>';
+    h += '<div><h3 style="margin:0;font-size:1.15rem;font-weight:800"><i class="bi bi-shield-check" style="color:var(--ok);margin-inline-end:8px"></i>آزمونگر تشخیصی محاسبات مالی و اعتبارسنجی سود</h3><p style="margin:4px 0 0;font-size:.84rem;color:var(--txs)">اعتبارسنجی زنده ' + totalTests + ' سناریوی حسابداری (۱۰ سناریوی پایه + ' + mandatorySuite.total + ' آزمون ممیزی سود + ' + opExSuite.total + ' آزمون هزینه‌های عملیاتی) کاملاً ایزوله در رم</p></div>';
     h += '<div style="display:flex;align-items:center;gap:10px">';
     h += '<span class="tg ' + (allPassed ? 'tg-g' : 'tg-r') + '" style="font-size:.9rem;padding:6px 14px;font-weight:700">' + (allPassed ? '✓ ' + totalPassed + ' از ' + totalTests + ' سناریو کاملاً موفق' : (totalTests - totalPassed) + ' سناریو ناموفق') + '</span>';
     h += '<button class="btn bp bs" onclick="Rep.diagnostics()"><i class="bi bi-arrow-repeat"></i> اجرای مجدد آزمون‌ها</button>';
     h += '</div></div>';
 
-    // بخش ۱: آزمون‌های الزامی و تخصصی اصلاح سود و صورت P&L
+    // بخش ۱: آزمون‌های تخصصی ثبت و تفکیک هزینه‌های عملیاتی (OpEx)
+    h += '<div class="cd" style="margin-bottom:24px;border:1.5px solid var(--ok)">';
+    h += '<div class="cd-h"><div style="display:flex;align-items:center;gap:8px"><i class="bi bi-wallet2" style="color:var(--ok)"></i><strong style="color:var(--ok)">مجموعه ' + opExSuite.total + ' آزمون تخصصی: ثبت، تفکیک سرفصل‌های هزینه عملیاتی و عدم تداخل با تسویه و حواله</strong></div><span class="tg ' + (opExSuite.allPassed ? 'tg-g' : 'tg-r') + '">' + opExSuite.passed + ' از ' + opExSuite.total + ' موفق</span></div>';
+    h += '<div style="padding:16px 20px;display:grid;grid-template-columns:1fr;gap:12px">';
+    opExSuite.results.forEach(function(r) {
+      var ok = r.passed;
+      h += '<div style="padding:14px 18px;border-radius:10px;background:var(--bg);border-inline-start:4px solid ' + (ok ? 'var(--ok)' : 'var(--d)') + '">';
+      h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">';
+      h += '<strong style="font-size:.92rem;color:' + (ok ? 'var(--tx)' : 'var(--d)') + '">' + esc(r.title) + '</strong>';
+      h += '<span class="tg ' + (ok ? 'tg-g' : 'tg-r') + '">' + (ok ? 'تأیید شد (Passed)' : 'خطا (Failed)') + '</span>';
+      h += '</div>';
+      h += '<p style="margin:0 0 8px;font-size:.83rem;color:var(--txs);line-height:1.6">' + esc(r.description) + '</p>';
+      h += '<div style="display:flex;flex-wrap:wrap;gap:16px;font-size:.8rem;background:rgba(0,0,0,.03);padding:8px 12px;border-radius:6px">';
+      h += '<div><span style="color:var(--txs)">مورد انتظار:</span> <strong style="color:var(--p)">' + esc(r.expected) + '</strong></div>';
+      h += '<div><span style="color:var(--txs)">محاسبه‌شده:</span> <strong style="color:' + (ok ? 'var(--ok)' : 'var(--d)') + '">' + esc(r.actual) + '</strong></div>';
+      h += '</div>';
+      h += '</div>';
+    });
+    h += '</div></div>';
+
+    // بخش ۲: آزمون‌های الزامی و تخصصی اصلاح سود و صورت P&L
     h += '<div class="cd" style="margin-bottom:24px;border:1.5px solid var(--p)">';
     h += '<div class="cd-h"><div style="display:flex;align-items:center;gap:8px"><i class="bi bi-patch-check-fill" style="color:var(--p)"></i><strong style="color:var(--p)">مجموعه ' + mandatorySuite.total + ' آزمون الزامی: اصلاح محاسبه سود، اقلام نامشخص و صورت سود و زیان دوره‌ای</strong></div><span class="tg ' + (mandatorySuite.allPassed ? 'tg-g' : 'tg-r') + '">' + mandatorySuite.passed + ' از ' + mandatorySuite.total + ' موفق</span></div>';
     h += '<div style="padding:16px 20px;display:grid;grid-template-columns:1fr;gap:12px">';
@@ -481,7 +502,7 @@ var Rep = {
     });
     h += '</div></div>';
 
-    // بخش ۲: ۱۰ سناریوی پایه حسابداری
+    // بخش ۳: ۱۰ سناریوی پایه حسابداری
     h += '<div class="cd" style="margin-bottom:24px">';
     h += '<div class="cd-h"><div style="display:flex;align-items:center;gap:8px"><i class="bi bi-shield-check" style="color:var(--ok)"></i><strong>مجموعه ۱۰ سناریوی پایه حسابداری موتور مالی</strong></div><span class="tg ' + (suite.allPassed ? 'tg-g' : 'tg-r') + '">' + suite.passed + ' از ۱۰ موفق</span></div>';
     h += '<div style="padding:16px 20px;display:grid;grid-template-columns:1fr;gap:12px">';

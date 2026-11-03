@@ -94,3 +94,18 @@ console.log(`  - وضعیت دوره: ${periodPL.status} (${periodPL.statusLabel
 console.log(`  - هشدار سود: ${periodPL.profitWarning}`);
 console.log('✓ تمام آزمون‌های پایه، الزامی و آزمون مستقل calculatePeriodPL با موفقیت پاس شدند.');
 
+console.log('\n--- اجرای ۸ آزمون تخصصی ثبت و تفکیک هزینه‌های عملیاتی (OpEx) و صورت سود و زیان ---');
+const opExSuite = FinanceEngine.runOperatingExpensesSuite();
+console.log(`نتیجه کلی آزمون‌های هزینه‌های عملیاتی: ${opExSuite.passed} از ${opExSuite.total} سناریو با موفقیت پاس شدند.`);
+
+opExSuite.results.forEach(r => {
+  console.log(`[${r.passed ? '✓' : '✗'}] ${r.title}`);
+  assert(r.passed, `تست سناریو هزینه‌های عملیاتی شکست خورد: ${r.title} - ${r.actual}`);
+});
+
+assert.strictEqual(opExSuite.passed, 8, 'باید تمام ۸ آزمون هزینه‌های عملیاتی پاس شوند');
+assert.strictEqual(opExSuite.allPassed, true);
+
+console.log('✓ تمامی ۸ آزمون تخصصی ثبت و تفکیک هزینه‌های عملیاتی با موفقیت ۱۰۰٪ تأیید شدند.');
+console.log(`\n🎉 مجموع کل: ${suite.total + mandatorySuite.total + opExSuite.total} سناریوی مالی و حسابداری پارچه‌بان با موفقیت ۱۰۰٪ پاس شدند.`);
+
