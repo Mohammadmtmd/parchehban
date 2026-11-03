@@ -456,6 +456,9 @@ var FinanceEngine = (function() {
       status: periodStatus,
       profitStatus: periodStatus,
       statusLabel: periodStatusLabel,
+      verifiedGrossProfitTitle: isPeriodComplete ? 'سود ناخالص بازرگانی' : 'سود ناخالص قابل‌تأیید',
+      verifiedNetProfitTitle: isPeriodComplete ? 'سود خالص عملیاتی' : 'سود خالص قابل‌تأیید',
+      profitWarning: isPeriodComplete ? null : 'سود نهایی دوره قابل تعیین نیست',
       // جزئیات
       productBreakdown: productBreakdown,
       invoiceBreakdown: invoiceBreakdown,
@@ -946,6 +949,44 @@ var FinanceEngine = (function() {
         description: 'اقلام بدون قیمت خرید دقیقاً یک‌بار در درآمد کل لحاظ شده و جمع تفکیک‌ها با کل فروش منطبق است.',
         expected: 'فروش کل: ۲،۰۰۰ | معتبر: ۱،۰۰۰ | نامعتبر: ۱،۰۰۰ | مجموع تفکیک: ۲،۰۰۰',
         actual: 'فروش کل: ' + res.totalSales + ' | معتبر: ' + res.salesWithValidBuyPrice + ' | نامعتبر: ' + res.salesWithoutValidBuyPrice,
+        passed: pass
+      });
+    })();
+
+    // ۸. آزمون صورت سود و زیان دوره‌ای (calculatePeriodPL) با اقلام معتبر و فاقد بهای خرید
+    (function audit8() {
+      var inv = {
+        id: 110,
+        type: 'sale',
+        subtotal: 1400,
+        discount: 0,
+        shippingCost: 0,
+        brokerCommission: 0,
+        items: [
+          { productId: 1, productName: 'کالای معتبر', quantity: 10, unitPrice: 100, buyPrice: 60 },
+          { productId: 2, productName: 'کالای فاقد قیمت خرید', quantity: 5, unitPrice: 80, buyPrice: null }
+        ]
+      };
+      var pl = calculatePeriodPL([inv], [], 0, 0);
+
+      var conditionTotalSales = (pl.totalSales === 1400 && pl.netSales === 1400);
+      var conditionSalesSplit = (pl.salesWithValidBuyPrice === 1000 && pl.salesWithoutValidBuyPrice === 400 && (pl.salesWithValidBuyPrice + pl.salesWithoutValidBuyPrice === 1400));
+      var conditionVerifiedProfit = (pl.verifiedGrossProfit === 400 && pl.grossProfit === 400 && pl.verifiedCOGS === 600);
+      var conditionIncompleteStatus = (pl.status === 'incomplete' && pl.isProfitVerified === false && pl.isComplete === false && pl.hasUnverifiedItems === true);
+      var conditionNotDefinite = (pl.statusLabel !== 'قطعی' && pl.statusLabel.indexOf('ناقص') !== -1);
+
+      var pass = conditionTotalSales &&
+                 conditionSalesSplit &&
+                 conditionVerifiedProfit &&
+                 conditionIncompleteStatus &&
+                 conditionNotDefinite;
+
+      results.push({
+        id: 8,
+        title: 'آزمون ۸: ارزیابی صورت سود و زیان دوره (calculatePeriodPL) با اقلام معتبر و فاقد بهای خرید',
+        description: 'بررسی صحت درآمد کل، تفکیک فروش اقلام معتبر/نامعتبر، درستی سود قابل‌تأیید، وضعیت incomplete و عدم معرفی سود ناقص به عنوان سود قطعی.',
+        expected: 'فروش کل: ۱،۴۰۰ | معتبر: ۱،۰۰۰ | نامعتبر: ۴۰۰ | سود قابل‌تأیید: ۴۰۰ | وضعیت: incomplete (ناقص - غیرقطعی)',
+        actual: 'فروش: ' + pl.totalSales + ' (معتبر: ' + pl.salesWithValidBuyPrice + '، نامعتبر: ' + pl.salesWithoutValidBuyPrice + ') | سود قابل‌تأیید: ' + pl.verifiedGrossProfit + ' | وضعیت: ' + pl.status + ' (' + pl.statusLabel + ')',
         passed: pass
       });
     })();

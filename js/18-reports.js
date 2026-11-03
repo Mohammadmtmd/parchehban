@@ -68,6 +68,9 @@ var Rep = {
         if (!tds.length) continue;
         var r = [];
         for (var k = 0; k < tds.length; k++) r.push(txt(tds[k]));
+        while (r.length < head.length) {
+          r.push('');
+        }
         rows.push(r);
       }
       var foot = null;
@@ -111,9 +114,13 @@ var Rep = {
       return;
     }
     var rows = g.rows.slice();
+    if (this._c === 'profit' && this._lastPL && !this._lastPL.isComplete) {
+      rows.unshift(['هشدار مهم اعتبار سود:', 'سود نهایی دوره قابل تعیین نیست', 'سود نمایش‌داده‌شده صرفاً «سود قابل‌تأیید» بر پایه اقلام دارای بهای موثق است', 'وضعیت: ناقص']);
+    }
     if (g.foot) rows.push(g.foot);
     var t = this._titles[this._c] || 'گزارش';
-    EXP.csv(g.head, rows, 'parchehban-' + (this._c || 'report') + '-' + todayJ().replace(/\//g, '-') + '.csv');
+    var suffix = (this._c === 'profit' && this._lastPL && !this._lastPL.isComplete) ? '-unverified' : '';
+    EXP.csv(g.head, rows, 'parchehban-' + (this._c || 'report') + suffix + '-' + todayJ().replace(/\//g, '-') + '.csv');
     UI.toast('خروجی ' + t + ' آماده شد', 's');
   },
 
@@ -124,11 +131,17 @@ var Rep = {
       return;
     }
     var t = this._titles[this._c] || 'گزارش';
-    /* پارامتر چهارم EXP.pdf یک قطعه HTML است نه آرایه؛ پس
-       ردیف جمع را همانجا داخل جدول می‌فرستیم. */
+    var sum = null;
+    if (this._c === 'profit' && this._lastPL && !this._lastPL.isComplete) {
+      sum = '<div style="background:#fff3cd;border:1.5px solid #ffeeba;color:#856404;padding:12px 16px;border-radius:6px;margin-bottom:14px;font-size:12px;line-height:1.8">' +
+        '<strong>⚠ هشدار مهم مالی: سود نهایی دوره قابل تعیین نیست.</strong><br>' +
+        'در این دوره، تعداد <strong>' + (this._lastPL.unverifiedItemsCount || 0) + ' قلم کالا</strong> در فاکتورهای فروش فاقد بهای خرید معتبر هستند (مجموع فروش این اقلام: ' + UI.fn(this._lastPL.unverifiedRevenueTotal || 0) + ' ریال). مبالغ سود نمایش‌داده‌شده در این گزارش صرفاً <strong>«سود قابل‌تأیید»</strong> اقلام دارای بهای موثق است و نباید به عنوان سود قطعی کل دوره تلقی گردد.' +
+        '</div>';
+    }
+    var titleSuffix = (this._c === 'profit' && this._lastPL && !this._lastPL.isComplete) ? ' (سود قابل‌تأیید — وضعیت: ناقص)' : '';
     var rows = g.rows.slice();
     if (g.foot) rows.push(g.foot);
-    EXP.pdf(t + ' — ' + todayJ(), g.head, rows, null);
+    EXP.pdf(t + ' — ' + todayJ() + titleSuffix, g.head, rows, sum);
   },
   summary: async function() {
     var invs = await FY.byYear('invoices'),
@@ -249,6 +262,7 @@ var Rep = {
 
     /* محاسبه جامع سود و متغیرهای مالی از طریق موتور استاندارد FinanceEngine */
     var plData = FinanceEngine.calculatePeriodPL(invs, pays, startNum, 0);
+    this._lastPL = plData;
 
     var grossSales = plData.grossSales;
     var totalDiscounts = plData.totalDiscounts;
@@ -265,6 +279,7 @@ var Rep = {
     var productBreakdown = plData.productBreakdown;
     var invoiceBreakdown = plData.invoiceBreakdown;
     var saleInvsCount = plData.invoiceCount;
+    var isComplete = plData.isComplete;
 
     /* ساخت رابط کاربری حرفه‌ای صورت سود و زیان (P&L) */
     var pLabels = { month: 'ماه جاری', quarter: '۳ ماهه جاری', year: 'سال مالی جاری', all: 'تمام دوران' };
@@ -279,12 +294,13 @@ var Rep = {
     h += '<div style="font-size:.82rem;color:var(--txs)"><i class="bi bi-clock-history"></i> دوره بررسی: <strong>' + pLabels[p] + '</strong> (' + UI.fn(saleInvsCount) + ' فاکتور فروش)</div>';
     h += '</div>';
 
-    /* بنر هشدار اقلام فاقد قیمت خرید (تصمیم تأییدشده: تفکیک و هشدار شفاف) */
+    /* بنر هشدار اقلام فاقد قیمت خرید (الزام ممیزی: هشدار صریح سود نهایی دوره قابل تعیین نیست) */
     if (plData.unverifiedItemsCount > 0) {
       h += '<div class="hint-box" style="margin-bottom:18px;background:rgba(217,119,6,.08);border:1.5px solid var(--w);padding:14px 18px;border-radius:10px;display:flex;align-items:center;gap:12px">' +
-        '<i class="bi bi-exclamation-triangle-fill" style="color:var(--w);font-size:1.35rem"></i>' +
-        '<div style="font-size:.85rem;line-height:1.7">' +
-        '<strong>هشدار بهای تمام‌شده:</strong> در این دوره، تعداد <strong>' + UI.fn(plData.unverifiedItemsCount) + ' قلم کالا</strong> در فاکتورهای فروش بدون قیمت خرید معتبر (یا صفر) ثبت شده‌اند (مجموع فروش این اقلام: ' + UI.fn(plData.unverifiedRevenueTotal) + ' ریال). سود ناخالص بر پایه اقلام دارای بهای موثق محاسبه شده و بهای این اقلام صفر فرض نشده است.' +
+        '<i class="bi bi-exclamation-triangle-fill" style="color:var(--w);font-size:1.45rem;flex-shrink:0"></i>' +
+        '<div style="font-size:.86rem;line-height:1.75">' +
+        '<strong style="color:var(--w);font-size:.95rem">هشدار ممیزی سود: سود نهایی دوره قابل تعیین نیست.</strong><br>' +
+        'در این دوره، تعداد <strong>' + UI.fn(plData.unverifiedItemsCount) + ' قلم کالا</strong> در فاکتورهای فروش فاقد قیمت خرید معتبر (یا صفر) می‌باشند (مجموع فروش این اقلام: ' + UI.fn(plData.unverifiedRevenueTotal) + ' ریال). مبالغ سود نمایش‌داده‌شده در این گزارش صرفاً <strong>«سود قابل‌تأیید»</strong> بر پایه اقلام دارای بهای موثق است و نباید به عنوان سود قطعی کل دوره تلقی گردد.' +
         '</div>' +
         '</div>';
     }
@@ -292,17 +308,28 @@ var Rep = {
     /* کارت‌های خلاصه آماری P&L */
     var profitAfterBroker = grossProfit - brokerCommissions;
     var marginAfterBrokerPct = netSales > 0 ? (profitAfterBroker / netSales) * 100 : 0;
+    var card3Title = isComplete
+      ? (brokerCommissions > 0 ? 'سود فروش (پس از کمیسیون)' : 'سود ناخالص بازرگانی')
+      : (brokerCommissions > 0 ? 'سود قابل‌تأیید (پس از کمیسیون)' : 'سود ناخالص قابل‌تأیید');
+    var card4Title = isComplete ? 'سود خالص عملیاتی' : 'سود خالص قابل‌تأیید';
+
     h += '<div class="sg" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr));margin-bottom:20px">';
     h += '<div class="sc"><div class="si g"><i class="bi bi-cash-stack"></i></div><div class="sti"><h3>' + UI.fn(netSales) + '</h3><p>درآمد خالص فروش</p></div></div>';
     h += '<div class="sc"><div class="si o"><i class="bi bi-cart-check-fill"></i></div><div class="sti"><h3>' + UI.fn(Math.round(totalCOGS)) + '</h3><p>بهای تمام‌شده موثق (COGS)</p></div></div>';
-    h += '<div class="sc"><div class="si ' + (profitAfterBroker >= 0 ? 'g' : 'r') + '"><i class="bi bi-graph-up-arrow"></i></div><div class="sti"><h3 style="color:' + (profitAfterBroker >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + UI.fn(Math.round(profitAfterBroker)) + '</h3><p>' + (brokerCommissions > 0 ? 'سود فروش (پس از کمیسیون)' : 'سود ناخالص بازرگانی') + ' (' + marginAfterBrokerPct.toFixed(1) + '٪)</p></div></div>';
-    h += '<div class="sc"><div class="si ' + (netProfit >= 0 ? 'b' : 'r') + '"><i class="bi bi-award-fill"></i></div><div class="sti"><h3 style="color:' + (netProfit >= 0 ? 'var(--p)' : 'var(--d)') + '">' + UI.fn(Math.round(netProfit)) + '</h3><p>سود خالص عملیاتی (' + netMarginPct.toFixed(1) + '٪)</p></div></div>';
+    h += '<div class="sc"><div class="si ' + (profitAfterBroker >= 0 ? 'g' : 'r') + '"><i class="bi bi-graph-up-arrow"></i></div><div class="sti"><h3 style="color:' + (profitAfterBroker >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + UI.fn(Math.round(profitAfterBroker)) + '</h3><p>' + card3Title + ' (' + marginAfterBrokerPct.toFixed(1) + '٪)' + (!isComplete ? ' <span class="tg tg-o" style="font-size:10px">سود قابل‌تأیید</span>' : '') + '</p></div></div>';
+    h += '<div class="sc"><div class="si ' + (netProfit >= 0 ? 'b' : 'r') + '"><i class="bi bi-award-fill"></i></div><div class="sti"><h3 style="color:' + (netProfit >= 0 ? 'var(--p)' : 'var(--d)') + '">' + UI.fn(Math.round(netProfit)) + '</h3><p>' + card4Title + ' (' + netMarginPct.toFixed(1) + '٪)' + (!isComplete ? ' <span class="tg tg-o" style="font-size:10px">سود قابل‌تأیید</span>' : '') + '</p></div></div>';
     h += '</div>';
 
     /* صورت حساب رسمی سود و زیان (P&L Statement) */
     h += '<div class="cd" style="margin-bottom:22px">';
-    h += '<div class="cd-h"><div style="display:flex;align-items:center;gap:8px"><i class="bi bi-file-earmark-spreadsheet-fill" style="color:var(--p)"></i><span>صورت سود و زیان دوره‌ای (Income Statement)</span></div><div style="display:flex;gap:6px"><span class="tg ' + (plData.isComplete ? 'tg-g' : 'tg-o') + '">' + plData.statusLabel + '</span><span class="tg tg-b">' + pLabels[p] + '</span></div></div>';
+    h += '<div class="cd-h"><div style="display:flex;align-items:center;gap:8px"><i class="bi bi-file-earmark-spreadsheet-fill" style="color:var(--p)"></i><span>صورت سود و زیان دوره‌ای (Income Statement)</span></div><div style="display:flex;gap:6px">' +
+      (!isComplete ? '<span class="tg tg-o" style="font-weight:700">سود نهایی دوره قابل تعیین نیست</span>' : '') +
+      '<span class="tg ' + (plData.isComplete ? 'tg-g' : 'tg-o') + '">' + plData.statusLabel + '</span><span class="tg tg-b">' + pLabels[p] + '</span></div></div>';
     h += '<div class="tw"><table><thead><tr><th style="text-align:right">شرح حساب</th><th style="width:160px;text-align:left">مبلغ جزئی (ریال)</th><th style="width:180px;text-align:left">مبلغ نهایی (ریال)</th><th style="width:90px;text-align:center">درصد از فروش</th></tr></thead><tbody>';
+
+    if (!isComplete) {
+      h += '<tr style="background:rgba(217,119,6,.08);color:var(--w);font-weight:700"><td colspan="4"><i class="bi bi-exclamation-triangle-fill" style="margin-inline-end:6px"></i> توجه حسابداری: سود نهایی دوره قابل تعیین نیست. مبالغ اعلام‌شده در این صورت مالی صرفاً «سود قابل‌تأیید» اقلام دارای بهای خرید معتبر بوده و سود قطعی دوره نمی‌باشد.</td></tr>';
+    }
 
     h += '<tr style="font-weight:700;background:rgba(37,99,235,.04)"><td>درآمد عملیاتی ناخالص فروش</td><td style="text-align:left">' + UI.fn(grossSales) + '</td><td></td><td style="text-align:center">۱۰۰٪</td></tr>';
     if (totalDiscounts > 0) {
@@ -320,11 +347,20 @@ var Rep = {
     }
 
     h += '<tr style="color:var(--w)"><td style="padding-inline-start:28px">کسر می‌شود: بهای تمام‌شده کالای فروش‌رفته (بر پایه buyPrice صریح اقلام معتبر)</td><td style="text-align:left">(' + UI.fn(Math.round(totalCOGS)) + ')</td><td></td><td style="text-align:center">−' + (netSales > 0 ? ((totalCOGS / netSales) * 100).toFixed(1) : 0) + '٪</td></tr>';
-    h += '<tr style="font-weight:800;background:rgba(22,163,74,.08)"><td>= سود ناخالص عملیاتی بازرگانی (Gross Profit) <span class="tg ' + (plData.isComplete ? 'tg-g' : 'tg-o') + '" style="font-size:11px;margin-inline-start:8px">' + plData.statusLabel + '</span></td><td></td><td style="text-align:left;font-weight:800;color:' + (grossProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + UI.fn(Math.round(grossProfit)) + '</td><td style="text-align:center;font-weight:800;color:' + (grossProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + grossMarginPct.toFixed(1) + '٪</td></tr>';
+    var grossProfitLabel = isComplete
+      ? '= سود ناخالص عملیاتی بازرگانی (Gross Profit)'
+      : '= سود ناخالص قابل‌تأیید (سود نهایی دوره قابل تعیین نیست)';
+    var grossStatusTag = isComplete
+      ? '<span class="tg tg-g" style="font-size:11px;margin-inline-start:8px">قطعی</span>'
+      : '<span class="tg tg-o" style="font-size:11px;margin-inline-start:8px">سود قابل‌تأیید</span>';
+    h += '<tr style="font-weight:800;background:rgba(22,163,74,.08)"><td>' + grossProfitLabel + ' ' + grossStatusTag + '</td><td></td><td style="text-align:left;font-weight:800;color:' + (grossProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + UI.fn(Math.round(grossProfit)) + '</td><td style="text-align:center;font-weight:800;color:' + (grossProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + grossMarginPct.toFixed(1) + '٪</td></tr>';
 
     if (brokerCommissions > 0) {
       h += '<tr style="color:var(--d)"><td style="padding-inline-start:28px">کسر می‌شود: کارمزد و پورسانت واسطه‌های فروش</td><td style="text-align:left">(' + UI.fn(brokerCommissions) + ')</td><td></td><td style="text-align:center">−' + (netSales > 0 ? ((brokerCommissions / netSales) * 100).toFixed(1) : 0) + '٪</td></tr>';
-      h += '<tr style="font-weight:700;background:rgba(37,99,235,.05)"><td>= سود فروش پس از کسر کمیسیون واسطه‌ها</td><td></td><td style="text-align:left;font-weight:800;color:' + (profitAfterBroker >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + UI.fn(Math.round(profitAfterBroker)) + '</td><td style="text-align:center;font-weight:700">' + marginAfterBrokerPct.toFixed(1) + '٪</td></tr>';
+      var brokerProfitLabel = isComplete
+        ? '= سود فروش پس از کسر کمیسیون واسطه‌ها'
+        : '= سود قابل‌تأیید پس از کسر کمیسیون واسطه‌ها';
+      h += '<tr style="font-weight:700;background:rgba(37,99,235,.05)"><td>' + brokerProfitLabel + '</td><td></td><td style="text-align:left;font-weight:800;color:' + (profitAfterBroker >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + UI.fn(Math.round(profitAfterBroker)) + '</td><td style="text-align:center;font-weight:700">' + marginAfterBrokerPct.toFixed(1) + '٪</td></tr>';
     }
 
     if (classifiedOpEx > 0) {
@@ -337,7 +373,13 @@ var Rep = {
       });
     }
 
-    h += '<tr style="font-weight:800;font-size:.95rem;background:' + (netProfit >= 0 ? 'var(--okl)' : 'var(--dl)') + '"><td style="color:' + (netProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">= سود خالص عملیاتی نهایی دوره (Net Profit)</td><td></td><td style="text-align:left;font-weight:800;color:' + (netProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + UI.fn(Math.round(netProfit)) + '</td><td style="text-align:center;font-weight:800;color:' + (netProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + netMarginPct.toFixed(1) + '٪</td></tr>';
+    var netProfitLabel = isComplete
+      ? '= سود خالص عملیاتی نهایی دوره (Net Profit)'
+      : '= سود خالص قابل‌تأیید عملیاتی (سود نهایی دوره قابل تعیین نیست)';
+    var netStatusTag = isComplete
+      ? '<span class="tg tg-g" style="font-size:11px;margin-inline-start:6px">قطعی</span>'
+      : '<span class="tg tg-o" style="font-size:11px;margin-inline-start:6px">سود نهایی نامشخص</span>';
+    h += '<tr style="font-weight:800;font-size:.95rem;background:' + (netProfit >= 0 ? 'var(--okl)' : 'var(--dl)') + '"><td style="color:' + (netProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + netProfitLabel + ' ' + netStatusTag + '</td><td></td><td style="text-align:left;font-weight:800;color:' + (netProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + UI.fn(Math.round(netProfit)) + '</td><td style="text-align:center;font-weight:800;color:' + (netProfit >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + netMarginPct.toFixed(1) + '٪</td></tr>';
 
     // سطر تحلیلی پرداخت‌های بدون سرفصل مشخص (مطابق تصمیم تأییدشده کاربر: تفکیک و عدم کسر خودکار)
     if (unclassifiedPayments > 0) {
@@ -413,15 +455,15 @@ var Rep = {
     var allPassed = (totalPassed === totalTests);
 
     var h = '<div style="margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">';
-    h += '<div><h3 style="margin:0;font-size:1.15rem;font-weight:800"><i class="bi bi-shield-check" style="color:var(--ok);margin-inline-end:8px"></i>آزمونگر تشخیصی محاسبات مالی و اعتبارسنجی سود</h3><p style="margin:4px 0 0;font-size:.84rem;color:var(--txs)">اعتبارسنجی زنده ۱۷ سناریوی حسابداری (۱۰ سناریوی پایه موتور مالی + ۷ آزمون تخصصی اصلاح سود اقلام فاقد بهای خرید) کاملاً ایزوله در رم</p></div>';
+    h += '<div><h3 style="margin:0;font-size:1.15rem;font-weight:800"><i class="bi bi-shield-check" style="color:var(--ok);margin-inline-end:8px"></i>آزمونگر تشخیصی محاسبات مالی و اعتبارسنجی سود</h3><p style="margin:4px 0 0;font-size:.84rem;color:var(--txs)">اعتبارسنجی زنده ' + totalTests + ' سناریوی حسابداری (۱۰ سناریوی پایه موتور مالی + ' + mandatorySuite.total + ' آزمون تخصصی ممیزی سود و صورت سود و زیان) کاملاً ایزوله در رم</p></div>';
     h += '<div style="display:flex;align-items:center;gap:10px">';
     h += '<span class="tg ' + (allPassed ? 'tg-g' : 'tg-r') + '" style="font-size:.9rem;padding:6px 14px;font-weight:700">' + (allPassed ? '✓ ' + totalPassed + ' از ' + totalTests + ' سناریو کاملاً موفق' : (totalTests - totalPassed) + ' سناریو ناموفق') + '</span>';
     h += '<button class="btn bp bs" onclick="Rep.diagnostics()"><i class="bi bi-arrow-repeat"></i> اجرای مجدد آزمون‌ها</button>';
     h += '</div></div>';
 
-    // بخش ۱: ۷ آزمون الزامی و تخصصی اصلاح سود اقلام فاقد بهای خرید
+    // بخش ۱: آزمون‌های الزامی و تخصصی اصلاح سود و صورت P&L
     h += '<div class="cd" style="margin-bottom:24px;border:1.5px solid var(--p)">';
-    h += '<div class="cd-h"><div style="display:flex;align-items:center;gap:8px"><i class="bi bi-patch-check-fill" style="color:var(--p)"></i><strong style="color:var(--p)">مجموعه ۷ آزمون الزامی: اصلاح محاسبه سود و اقلام فاقد قیمت خرید</strong></div><span class="tg ' + (mandatorySuite.allPassed ? 'tg-g' : 'tg-r') + '">' + mandatorySuite.passed + ' از ۷ موفق</span></div>';
+    h += '<div class="cd-h"><div style="display:flex;align-items:center;gap:8px"><i class="bi bi-patch-check-fill" style="color:var(--p)"></i><strong style="color:var(--p)">مجموعه ' + mandatorySuite.total + ' آزمون الزامی: اصلاح محاسبه سود، اقلام نامشخص و صورت سود و زیان دوره‌ای</strong></div><span class="tg ' + (mandatorySuite.allPassed ? 'tg-g' : 'tg-r') + '">' + mandatorySuite.passed + ' از ' + mandatorySuite.total + ' موفق</span></div>';
     h += '<div style="padding:16px 20px;display:grid;grid-template-columns:1fr;gap:12px">';
     mandatorySuite.results.forEach(function(r) {
       var ok = r.passed;

@@ -648,31 +648,47 @@ var Dash = {
     '</div>';
 
     // ۳. سود ناخالص (پس از کسر کمیسیون واسطه‌ها)
-    h += '<div class="erp-kpi-card" onclick="ROUTES.profit()" title="سود ناخالص بازرگانی بر پایه بهای تمام‌شده موثق">' +
+    var card3Title = hasUnverified
+      ? (brokerCommissions > 0 ? 'سود قابل‌تأیید (پس از کمیسیون)' : 'سود ناخالص قابل‌تأیید')
+      : (brokerCommissions > 0 ? 'سود ناخالص (پس از کمیسیون)' : 'سود ناخالص بازرگانی');
+    var card3Tooltip = hasUnverified
+      ? 'سود قابل‌تأیید بر پایه اقلام دارای بهای موثق — سود نهایی دوره قابل تعیین نیست'
+      : 'سود ناخالص بازرگانی بر پایه بهای تمام‌شده موثق';
+
+    h += '<div class="erp-kpi-card" onclick="ROUTES.profit()" title="' + card3Tooltip + '">' +
       '<div class="erp-kpi-head">' +
-        '<span class="erp-kpi-title">' + (brokerCommissions > 0 ? 'سود ناخالص (پس از کمیسیون)' : 'سود ناخالص بازرگانی') + '</span>' +
+        '<span class="erp-kpi-title">' + card3Title + '</span>' +
         '<div class="erp-kpi-icon ' + profitColorClass + '"><i class="bi bi-graph-up-arrow"></i></div>' +
       '</div>' +
       '<div class="erp-kpi-value" style="color:' + (profitAfterBroker >= 0 ? 'var(--ok)' : 'var(--d)') + '">' +
         UI.fn(Math.round(profitAfterBroker)) + ' <small style="font-size:0.8rem;font-weight:500">ریال</small>' +
       '</div>' +
       '<div class="erp-kpi-sub">' +
-        '<span>حاشیه سود: ' + grossMarginPct.toFixed(1) + '٪' + (hasUnverified ? ' <span style="color:var(--w)" title="' + unverifiedItemsCount + ' قلم فاقد قیمت خرید">⚠</span>' : '') + '</span>' +
+        (hasUnverified
+          ? '<span style="color:var(--w);font-weight:600" title="' + unverifiedItemsCount + ' قلم فاقد قیمت خرید">⚠ سود نهایی دوره قابل تعیین نیست</span>'
+          : '<span>حاشیه سود: ' + grossMarginPct.toFixed(1) + '٪</span>') +
         '<span class="erp-kpi-link-hint">صورت P&L ←</span>' +
       '</div>' +
     '</div>';
 
     // ۴. سود خالص عملیاتی
-    h += '<div class="erp-kpi-card" onclick="ROUTES.profit()" title="سود خالص عملیاتی پس از کسر هزینه‌های جاری">' +
+    var card4Title = hasUnverified ? 'سود خالص قابل‌تأیید' : 'سود خالص عملیاتی';
+    var card4Tooltip = hasUnverified
+      ? 'سود خالص قابل‌تأیید بر پایه اقلام معتبر پس از کسر هزینه‌ها — سود نهایی دوره قابل تعیین نیست'
+      : 'سود خالص عملیاتی پس از کسر هزینه‌های جاری';
+
+    h += '<div class="erp-kpi-card" onclick="ROUTES.profit()" title="' + card4Tooltip + '">' +
       '<div class="erp-kpi-head">' +
-        '<span class="erp-kpi-title">سود خالص عملیاتی</span>' +
+        '<span class="erp-kpi-title">' + card4Title + '</span>' +
         '<div class="erp-kpi-icon ' + netColorClass + '"><i class="bi bi-award-fill"></i></div>' +
       '</div>' +
       '<div class="erp-kpi-value" style="color:' + (netProfit >= 0 ? 'var(--p)' : 'var(--d)') + '">' +
         UI.fn(Math.round(netProfit)) + ' <small style="font-size:0.8rem;font-weight:500">ریال</small>' +
       '</div>' +
       '<div class="erp-kpi-sub">' +
-        '<span>حاشیه خالص: ' + netMarginPct.toFixed(1) + '٪</span>' +
+        (hasUnverified
+          ? '<span style="color:var(--w);font-size:11.5px">سود نهایی نامشخص (' + UI.fn(unverifiedItemsCount) + ' قلم بدون بهای خرید)</span>'
+          : '<span>حاشیه خالص: ' + netMarginPct.toFixed(1) + '٪</span>') +
         '<span class="erp-kpi-link-hint">جزئیات ←</span>' +
       '</div>' +
     '</div>';
@@ -785,8 +801,8 @@ var Dash = {
     if (hasUnverified) {
       alertItemsHtml += '<div class="erp-alert-item" onclick="ROUTES.profit()">' +
         '<div class="erp-alert-lead">' +
-          '<span class="erp-alert-badge info"><i class="bi bi-receipt"></i> بهای تمام‌شده</span>' +
-          '<strong>' + UI.fn(unverifiedItemsCount) + ' قلم کالا در فروش‌های دوره فاقد بهای خرید معتبر هستند:</strong> برای ارزیابی دقیق‌تر سود، بهای خرید را در فاکتورها ثبت فرمایید.' +
+          '<span class="erp-alert-badge warning" style="background:rgba(217,119,6,.15);color:var(--w)"><i class="bi bi-exclamation-triangle-fill"></i> سود نهایی نامشخص</span>' +
+          '<strong>سود نهایی دوره قابل تعیین نیست:</strong> تعداد ' + UI.fn(unverifiedItemsCount) + ' قلم کالا در فروش‌های دوره فاقد بهای خرید معتبر هستند. سود نمایش‌داده‌شده صرفاً «سود قابل‌تأیید» است و نباید به عنوان سود قطعی کل دوره تلقی گردد.' +
         '</div>' +
         '<span class="erp-kpi-link-hint">گزارش سود ←</span>' +
       '</div>';
