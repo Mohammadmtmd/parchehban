@@ -140,24 +140,15 @@ var Bank = {
     if (typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.calculateBankBalances === 'function') {
       return FinanceEngine.calculateBankBalances(bs, pays, bts);
     }
+    console.error('[Bank.allBalances] خطای اساسی مالی: ماژول FinanceEngine در دسترس نیست! جهت جلوگیری از دوباره‌شماری و تناقض محاسباتی، از اجرای محاسبات موازی خودداری شد.');
     var map = {}, total = 0, list = [];
     bs.forEach(function(b) {
-      var bal = b.openingBalance || 0;
-      pays.forEach(function(p) {
-        if (p.bankId === b.id) {
-          if (p.type === 'receipt') bal += p.amount;
-          else bal -= p.amount;
-        }
-      });
-      bts.forEach(function(bt) {
-        if (bt.fromBankId === b.id) bal -= bt.amount;
-        if (bt.toBankId === b.id) bal += bt.amount;
-      });
-      map[b.id] = { id: b.id, name: b.name, balance: bal };
-      total += bal;
-      list.push({ id: b.id, name: b.name, balance: bal });
+      var ob = b.openingBalance || 0;
+      map[b.id] = { id: b.id, name: b.name, balance: ob };
+      total += ob;
+      list.push({ id: b.id, name: b.name, balance: ob });
     });
-    return { bankBalances: list, bankMap: map, totalBankBal: total, totalBankBalance: total };
+    return { bankBalances: list, bankMap: map, totalBankBal: total, totalBankBalance: total, error: 'FINANCE_ENGINE_UNAVAILABLE' };
   },
 
   balance: async function(bankId) {
@@ -171,18 +162,8 @@ var Bank = {
     if (typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.calculateAccountBalance === 'function') {
       return FinanceEngine.calculateAccountBalance(bankId, [b], pays, bts);
     }
-    var bal = b.openingBalance || 0;
-    pays.forEach(function(p) {
-      if (p.bankId === bankId) {
-        if (p.type === 'receipt') bal += p.amount;
-        else bal -= p.amount;
-      }
-    });
-    bts.forEach(function(bt) {
-      if (bt.fromBankId === bankId) bal -= bt.amount;
-      if (bt.toBankId === bankId) bal += bt.amount;
-    });
-    return bal;
+    console.error('[Bank.balance] خطای اساسی مالی: ماژول FinanceEngine در دسترس نیست! محاسبه موازی لغو شد.');
+    return b.openingBalance || 0;
   },
 
   /* توجه: نسخه قبلی دو تعریف از show داشت؛ اولی ناقص بود و فقط
@@ -361,3 +342,14 @@ var Bank = {
     UI.content(h);
   }
 };
+
+if (typeof window !== 'undefined') {
+  window.Bank = Bank;
+}
+if (typeof globalThis !== 'undefined') {
+  globalThis.Bank = Bank;
+}
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = Bank;
+}
+

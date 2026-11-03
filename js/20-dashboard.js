@@ -268,36 +268,18 @@ var Dash = {
     var bankPaymentsPeriod = bankCalc ? bankCalc.bankPaymentsPeriod : 0;
 
     if (!bankCalc) {
+      console.error('[Dashboard] خطای اساسی مالی: ماژول FinanceEngine بارگذاری نشده است! جهت جلوگیری از دوباره‌شماری و مغایرت، از اجرای محاسبات موازی خودداری شد.');
       banks.forEach(function(b) {
         if (!b) return;
-        var bal = numOf(b.openingBalance);
-        dashPays.forEach(function(p) {
-          if (p && p.bankId === b.id) {
-            var pAmt = numOf(p.amount);
-            var pDNum = pn(p.date);
-            var inPeriod = (startNum === 0 || pDNum >= startNum) && (endNum === 0 || pDNum <= endNum);
-            if (p.type === 'receipt') {
-              bal += pAmt;
-              if (inPeriod) bankReceiptsPeriod += pAmt;
-            } else {
-              bal -= pAmt;
-              if (inPeriod) bankPaymentsPeriod += pAmt;
-            }
-          }
-        });
-        dashBts.forEach(function(bt) {
-          if (!bt) return;
-          if (bt.fromBankId === b.id) bal -= numOf(bt.amount);
-          if (bt.toBankId === b.id) bal += numOf(bt.amount);
-        });
+        var ob = numOf(b.openingBalance);
         bankBalances.push({
           id: b.id,
           name: b.name,
           bankName: b.bankName || '',
           accountNumber: b.accountNumber || '',
-          balance: bal
+          balance: ob
         });
-        totalBankBal += bal;
+        totalBankBal += ob;
       });
     }
 
@@ -1531,3 +1513,14 @@ var Dash = {
     }
   }
 };
+
+if (typeof window !== 'undefined') {
+  window.Dash = Dash;
+}
+if (typeof globalThis !== 'undefined') {
+  globalThis.Dash = Dash;
+}
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = Dash;
+}
+

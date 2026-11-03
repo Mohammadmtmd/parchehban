@@ -1495,6 +1495,11 @@ var FinanceEngine = (function() {
       periodPayments: 0
     };
 
+    var unmatchedBankTransactions = [];
+    var unmatchedBankReceipts = 0;
+    var unmatchedBankPayments = 0;
+    var unmatchedBankTotal = 0;
+
     pList.forEach(function(p) {
       if (!p) return;
       var amt = safeNum(p.amount);
@@ -1504,7 +1509,10 @@ var FinanceEngine = (function() {
       var inPeriod = (startNum === 0 || pDateNum >= startNum) && (endNum === 0 || pDateNum <= endNum);
       var isReceipt = (p.type === 'receipt');
 
-      if (p.bankId != null && bankMap[p.bankId]) {
+      var hasBankId = (p.bankId !== null && p.bankId !== undefined && p.bankId !== '');
+
+      if (hasBankId && bankMap[p.bankId]) {
+        // ۱. پرداخت یا دریافت با bankId معتبر و موجود در فهرست حساب‌ها
         var acc = bankMap[p.bankId];
         if (isReceipt) {
           acc.balance += amt;
@@ -1521,8 +1529,8 @@ var FinanceEngine = (function() {
             periodPayments += amt;
           }
         }
-      } else {
-        // پرداخت یا دریافت نقدی بدون انتخاب حساب بانکی (صندوق آزاد / بدون حساب)
+      } else if (!hasBankId) {
+        // ۲. پرداخت یا دریافت نقدی فاقد شناسه حساب بانکی (صندوق آزاد)
         if (isReceipt) {
           unassignedCash.totalReceipts += amt;
           unassignedCash.balance += amt;
@@ -1532,24 +1540,60 @@ var FinanceEngine = (function() {
           unassignedCash.balance -= amt;
           if (inPeriod) unassignedCash.periodPayments += amt;
         }
+      } else {
+        // ۳. پرداخت یا دریافت با bankId دارای مقدار، اما حساب ناشناخته یا حذف‌شده
+        var unmatchedItem = {
+          id: p.id,
+          bankId: p.bankId,
+          type: p.type,
+          amount: amt,
+          date: p.date,
+          description: p.description || p.notes || '',
+          sourceInvoiceId: p.sourceInvoiceId || null,
+          category: p.category || null
+        };
+        unmatchedBankTransactions.push(unmatchedItem);
+        if (isReceipt) {
+          unmatchedBankReceipts += amt;
+          unmatchedBankTotal += amt;
+        } else {
+          unmatchedBankPayments += amt;
+          unmatchedBankTotal -= amt;
+        }
       }
     });
 
     // پردازش حواله‌ها و نقل و انتقالات بین‌بانکی
     var totalTransfersVolume = 0;
+    var unmatchedTransfers = [];
     btList.forEach(function(bt) {
       if (!bt) return;
       var amt = safeNum(bt.amount);
       if (amt <= 0) return;
       totalTransfersVolume += amt;
 
-      if (bt.fromBankId != null && bankMap[bt.fromBankId]) {
+      var validFrom = (bt.fromBankId != null && bankMap[bt.fromBankId]);
+      var validTo = (bt.toBankId != null && bankMap[bt.toBankId]);
+
+      if (validFrom) {
         bankMap[bt.fromBankId].balance -= amt;
         bankMap[bt.fromBankId].transfersOut += amt;
       }
-      if (bt.toBankId != null && bankMap[bt.toBankId]) {
+      if (validTo) {
         bankMap[bt.toBankId].balance += amt;
         bankMap[bt.toBankId].transfersIn += amt;
+      }
+
+      if (!validFrom || !validTo) {
+        unmatchedTransfers.push({
+          id: bt.id,
+          fromBankId: bt.fromBankId,
+          toBankId: bt.toBankId,
+          amount: amt,
+          date: bt.date,
+          validFrom: !!validFrom,
+          validTo: !!validTo
+        });
       }
     });
 
@@ -1571,6 +1615,11 @@ var FinanceEngine = (function() {
       bankReceiptsPeriod: periodReceipts,
       bankPaymentsPeriod: periodPayments,
       unassignedCash: unassignedCash,
+      unmatchedBankTransactions: unmatchedBankTransactions,
+      unmatchedBankReceipts: unmatchedBankReceipts,
+      unmatchedBankPayments: unmatchedBankPayments,
+      unmatchedBankTotal: unmatchedBankTotal,
+      unmatchedTransfers: unmatchedTransfers,
       totalLiquidity: totalBankBal + unassignedCash.balance,
       totalTransfersVolume: totalTransfersVolume
     };
@@ -1585,141 +1634,241 @@ var FinanceEngine = (function() {
 
   /**
    * ══════════════════════════════════════════════════════════════════════════════
-   * آزمون‌های ۸‌گانه الزامی ممیزی مانده حساب‌های بانکی و نقدینگی در رم (Bank Audit Suite)
+   * آزمون‌های ۱۲‌گانه تخصصی ممیزی مانده حساب‌های بانکی و نقدینگی در رم (Bank Audit Suite)
    * ══════════════════════════════════════════════════════════════════════════════
    */
   function runBankAuditSuite() {
     var results = [];
 
-    // ۱. ثبت فاکتور با پرداخت کامل بانکی: مبلغ فقط یک بار به مانده بانک اضافه شود
-    (function testB1_fullPayment() {
+    // ۱. دریافت با bankId معتبر
+    (function testB1_validBankReceipt() {
+      var bank = { id: 1, name: 'بانک ملت', openingBalance: 10000000 };
+      var payment = { id: 201, type: 'receipt', amount: 5000000, bankId: 1 };
+      var res = calculateBankBalances([bank], [payment], []);
+      var bal = res.bankMap[1].balance;
+      var pass = (bal === 15000000 && res.totalBankBal === 15000000 && res.unassignedCash.balance === 0);
+
+      results.push({
+        id: 1,
+        title: 'آزمون ۱: دریافت با bankId معتبر (افزایش دقیق مانده همان حساب)',
+        description: 'بررسی ثبت دریافت ۵M در حساب معتبر و افزایش مانده از ۱۰M به ۱۵M.',
+        expected: 'مانده بانک: ۱۵،۰۰۰،۰۰۰ ریال | نقد آزاد: ۰',
+        actual: 'مانده بانک: ' + bal + ' | نقد آزاد: ' + res.unassignedCash.balance,
+        passed: pass
+      });
+    })();
+
+    // ۲. پرداخت با bankId معتبر
+    (function testB2_validBankPayment() {
+      var bank = { id: 1, name: 'بانک ملت', openingBalance: 15000000 };
+      var payment = { id: 202, type: 'payment', amount: 4000000, bankId: 1 };
+      var res = calculateBankBalances([bank], [payment], []);
+      var bal = res.bankMap[1].balance;
+      var pass = (bal === 11000000 && res.totalBankBal === 11000000 && res.unassignedCash.balance === 0);
+
+      results.push({
+        id: 2,
+        title: 'آزمون ۲: پرداخت با bankId معتبر (کاهش دقیق مانده همان حساب)',
+        description: 'بررسی ثبت پرداخت ۴M از حساب معتبر و کاهش مانده از ۱۵M به ۱۱M.',
+        expected: 'مانده بانک: ۱۱،۰۰۰،۰۰۰ ریال',
+        actual: 'مانده بانک: ' + bal,
+        passed: pass
+      });
+    })();
+
+    // ۳. دریافت با bankId برابر null (ثبت در unassignedCash)
+    (function testB3_nullBankReceipt() {
+      var bank = { id: 1, name: 'بانک ملت', openingBalance: 10000000 };
+      var cashReceipt = { id: 203, type: 'receipt', amount: 3000000, bankId: null };
+      var res = calculateBankBalances([bank], [cashReceipt], []);
+      var bankBal = res.bankMap[1].balance;
+      var unassigned = res.unassignedCash.balance;
+      var pass = (bankBal === 10000000 && unassigned === 3000000 && res.unmatchedBankTransactions.length === 0);
+
+      results.push({
+        id: 3,
+        title: 'آزمون ۳: دریافت با bankId برابر null (ثبت در نقدینگی آزاد و حفظ مانده بانک)',
+        description: 'دریافت‌های نقدی بدون حساب باید وارد unassignedCash شوند و مانده بانک‌های ثبت‌شده را تغییر ندهند.',
+        expected: 'بانک: ۱۰،۰۰۰،۰۰۰ | نقدینگی آزاد: ۳،۰۰۰،۰۰۰',
+        actual: 'بانک: ' + bankBal + ' | نقد آزاد: ' + unassigned,
+        passed: pass
+      });
+    })();
+
+    // ۴. پرداخت با bankId برابر null (کسر از unassignedCash)
+    (function testB4_nullBankPayment() {
+      var bank = { id: 1, name: 'بانک ملت', openingBalance: 10000000 };
+      var cashPay = { id: 204, type: 'payment', amount: 1500000, bankId: null };
+      var res = calculateBankBalances([bank], [cashPay], []);
+      var bankBal = res.bankMap[1].balance;
+      var unassigned = res.unassignedCash.balance;
+      var pass = (bankBal === 10000000 && unassigned === -1500000 && res.unmatchedBankTransactions.length === 0);
+
+      results.push({
+        id: 4,
+        title: 'آزمون ۴: پرداخت با bankId برابر null (کسر از نقدینگی آزاد و حفظ مانده بانک)',
+        description: 'پرداخت‌های نقدی بدون حساب باید از unassignedCash کسر شوند و به حساب‌های بانکی دست نزنند.',
+        expected: 'بانک: ۱۰،۰۰۰،۰۰۰ | نقد آزاد: −۱،۵۰۰،۰۰۰',
+        actual: 'بانک: ' + bankBal + ' | نقد آزاد: ' + unassigned,
+        passed: pass
+      });
+    })();
+
+    // ۵. دریافت با bankId نامعتبر/حذف‌شده (ثبت در unmatchedBankTransactions، عدم تلقی به عنوان نقد آزاد)
+    (function testB5_invalidBankReceipt() {
+      var bank = { id: 1, name: 'بانک ملت', openingBalance: 10000000 };
+      var unlinkedReceipt = { id: 205, type: 'receipt', amount: 8000000, bankId: 999, description: 'واریز به حساب حذف‌شده' };
+      var res = calculateBankBalances([bank], [unlinkedReceipt], []);
+      var bankBal = res.bankMap[1].balance;
+      var unassigned = res.unassignedCash.balance;
+      var unmatched = res.unmatchedBankTransactions;
+      var pass = (bankBal === 10000000 &&
+                  unassigned === 0 &&
+                  unmatched.length === 1 &&
+                  unmatched[0].bankId === 999 &&
+                  unmatched[0].amount === 8000000 &&
+                  res.unmatchedBankReceipts === 8000000);
+
+      results.push({
+        id: 5,
+        title: 'آزمون ۵: دریافت با bankId نامعتبر (ثبت در تراکنش‌های نامنطبق و تفکیک از نقد آزاد)',
+        description: 'تراکنش دارای bankId که در لیست حساب‌ها نیست نباید به عنوان نقد آزاد یا موجودی بانک‌های دیگر شمرده شود.',
+        expected: 'بانک: ۱۰M | نقد آزاد: ۰ | نامنطبق: ۸M با شناسه ۹۹۹',
+        actual: 'بانک: ' + bankBal + ' | نقد آزاد: ' + unassigned + ' | نامنطبق: ' + res.unmatchedBankTotal,
+        passed: pass
+      });
+    })();
+
+    // ۶. پرداخت با bankId نامعتبر/حذف‌شده (ثبت در unmatchedBankTransactions)
+    (function testB6_invalidBankPayment() {
+      var bank = { id: 1, name: 'بانک ملت', openingBalance: 10000000 };
+      var unlinkedPayment = { id: 206, type: 'payment', amount: 4500000, bankId: 888, description: 'چک پاس‌شده در حساب مسدود' };
+      var res = calculateBankBalances([bank], [unlinkedPayment], []);
+      var bankBal = res.bankMap[1].balance;
+      var unassigned = res.unassignedCash.balance;
+      var unmatched = res.unmatchedBankTransactions;
+      var pass = (bankBal === 10000000 &&
+                  unassigned === 0 &&
+                  unmatched.length === 1 &&
+                  unmatched[0].bankId === 888 &&
+                  unmatched[0].amount === 4500000 &&
+                  res.unmatchedBankPayments === 4500000);
+
+      results.push({
+        id: 6,
+        title: 'آزمون ۶: پرداخت با bankId نامعتبر (ثبت در تراکنش‌های نامنطبق بدون کسر از نقد آزاد)',
+        description: 'پرداخت با شناسه حساب نامعتبر باید در unmatchedBankTransactions ثبت و در گزارش قابل ممیزی باشد.',
+        expected: 'بانک: ۱۰M | نقد آزاد: ۰ | پرداخت نامنطبق: ۴،۵۰۰،۰۰۰',
+        actual: 'بانک: ' + bankBal + ' | نقد آزاد: ' + unassigned + ' | پرداخت نامنطبق: ' + res.unmatchedBankPayments,
+        passed: pass
+      });
+    })();
+
+    // ۷. انتقال بین دو حساب معتبر (کاهش از مبدأ، افزایش به مقصد، ثبات ۱۰۰٪ نقدینگی کل)
+    (function testB7_validBankTransfer() {
+      var bankA = { id: 10, name: 'بانک الف', openingBalance: 20000000 };
+      var bankB = { id: 20, name: 'بانک ب', openingBalance: 30000000 };
+      var transfer = { id: 301, fromBankId: 10, toBankId: 20, amount: 7000000, date: '1404/01/15' };
+
+      var res = calculateBankBalances([bankA, bankB], [], [transfer]);
+      var balA = res.bankMap[10].balance;
+      var balB = res.bankMap[20].balance;
+      var total = res.totalBankBal;
+      var pass = (balA === 13000000 && balB === 37000000 && total === 50000000 && res.unmatchedTransfers.length === 0);
+
+      results.push({
+        id: 7,
+        title: 'آزمون ۷: انتقال بین دو حساب معتبر (تراز صفربین و حفظ ثبات دارایی نقد و بانک)',
+        description: 'انتقال ۷M از بانک الف به ب باید دقیقاً از الف کم و به ب اضافه شود و کل موجودی روی ۵۰M ثابت بماند.',
+        expected: 'بانک الف: ۱۳M | بانک ب: ۳۷M | مجموع: ۵۰،۰۰۰،۰۰۰',
+        actual: 'بانک الف: ' + balA + ' | بانک ب: ' + balB + ' | مجموع: ' + total,
+        passed: pass
+      });
+    })();
+
+    // ۸. انتقال از حساب معتبر به حساب نامعتبر (ثبت در unmatchedTransfers بدون کرش)
+    (function testB8_transferValidToInvalid() {
+      var bankA = { id: 10, name: 'بانک الف', openingBalance: 20000000 };
+      var transfer = { id: 302, fromBankId: 10, toBankId: 9999, amount: 5000000, date: '1404/01/16' };
+
+      var res = calculateBankBalances([bankA], [], [transfer]);
+      var balA = res.bankMap[10].balance;
+      var pass = (balA === 15000000 && res.unmatchedTransfers.length === 1 && res.unmatchedTransfers[0].toBankId === 9999);
+
+      results.push({
+        id: 8,
+        title: 'آزمون ۸: انتقال به حساب نامعتبر (کسر از مبدأ و ثبت در انتقالات نامنطبق)',
+        description: 'انتقال به شناسه ناموجود نباید برنامه را متوقف کند؛ از مبدأ کسر و در unmatchedTransfers ثبت می‌شود.',
+        expected: 'بانک الف: ۱۵M | انتقالات نامنطبق: ۱ مورد با مقصد ۹۹۹۹',
+        actual: 'بانک الف: ' + balA + ' | نامنطبق: ' + res.unmatchedTransfers.length,
+        passed: pass
+      });
+    })();
+
+    // ۹. عدم دوباره‌شماری پرداخت خودکار فاکتور
+    (function testB9_noDoubleCountInvoicePayment() {
       var bank = { id: 1, name: 'بانک ملت', openingBalance: 10000000 };
       var invoice = { id: 101, type: 'sale', grandTotal: 5000000, paidAmount: 5000000, bankId: 1 };
       var autoPayment = { id: 201, type: 'receipt', amount: 5000000, bankId: 1, sourceInvoiceId: 101, auto: true };
 
       var res = calculateBankBalances([bank], [autoPayment], []);
       var bal = res.bankMap[1].balance;
-      // اگر سیستم هم inv.paidAmount و هم autoPayment را جمع می‌کرد، مانده ۲۰،۰۰۰،۰۰۰ می‌شد
-      var pass = (bal === 15000000 && res.totalBankBal === 15000000);
+      var pass = (bal === 15000000); // 10M + 5M (not 10M + 5M + 5M = 20M)
 
       results.push({
-        id: 1,
-        title: 'آزمون ۱: فاکتور با پرداخت کامل بانکی (شمارش دقیقاً یک‌باره مبلغ)',
-        description: 'بررسی اینکه مبلغ پرداخت‌شده فاکتور فقط از طریق سند پرداختی جدول payments حساب شود و با paidAmount دوبار شمرده نشود.',
+        id: 9,
+        title: 'آزمون ۹: فاکتور با پرداخت کامل بانکی (تأیید عدم احتساب دوباره paidAmount فاکتور)',
+        description: 'اطمینان از اینکه پرداخت فاکتور فقط یک بار از طریق payments شمرده شده و دوباره‌شماری رخ نمی‌دهد.',
         expected: 'مانده بانک: ۱۵،۰۰۰،۰۰۰ ریال',
         actual: 'مانده محاسبه‌شده: ' + bal,
         passed: pass
       });
     })();
 
-    // ۲. ثبت فاکتور با پرداخت جزئی: فقط مبلغ پرداخت‌شده وارد بانک شود، نه کل مبلغ فاکتور
-    (function testB2_partialPayment() {
-      var bank = { id: 2, name: 'بانک صادرات', openingBalance: 20000000 };
-      var invoice = { id: 102, type: 'sale', grandTotal: 12000000, paidAmount: 4000000, bankId: 2 };
-      var autoPayment = { id: 202, type: 'receipt', amount: 4000000, bankId: 2, sourceInvoiceId: 102, auto: true };
-
-      var res = calculateBankBalances([bank], [autoPayment], []);
-      var bal = res.bankMap[2].balance;
-      var pass = (bal === 24000000); // 20M + 4M (not + 12M)
-
-      results.push({
-        id: 2,
-        title: 'آزمون ۲: فاکتور با پرداخت جزئی (اضافه شدن صرفاً مبلغ پرداختی واقعی)',
-        description: 'اطمینان از اینکه در پرداخت جزئی فقط مبلغ نقد پرداخت‌شده (۴M) به موجودی بانک افزوده می‌شود نه کل فاکتور (۱۲M).',
-        expected: 'مانده بانک: ۲۴،۰۰۰،۰۰۰ ریال',
-        actual: 'مانده محاسبه‌شده: ' + bal,
-        passed: pass
-      });
-    })();
-
-    // ۳. پرداخت بعدی برای مانده فاکتور: فقط مبلغ پرداخت بعدی اضافه شود و مانده قبلی حفظ شود
-    (function testB3_subsequentPayment() {
+    // ۱۰. فاکتور با پرداخت جزئی و ثبت مرحله‌ای بعدی
+    (function testB10_partialAndSubsequentPayment() {
       var bank = { id: 2, name: 'بانک صادرات', openingBalance: 20000000 };
       var autoPayment = { id: 202, type: 'receipt', amount: 4000000, bankId: 2, sourceInvoiceId: 102, auto: true };
-      var manualPayment = { id: 203, type: 'receipt', amount: 5000000, bankId: 2, contactId: 10, notes: 'تسویه قسط دوم فاکتور ۱۰۲' };
+      var manualPayment = { id: 203, type: 'receipt', amount: 5000000, bankId: 2, contactId: 10, notes: 'تسویه قسط دوم' };
 
       var res = calculateBankBalances([bank], [autoPayment, manualPayment], []);
       var bal = res.bankMap[2].balance;
       var pass = (bal === 29000000); // 20M + 4M + 5M
 
       results.push({
-        id: 3,
-        title: 'آزمون ۳: پرداخت مرحله‌ای برای مانده فاکتور (شمارش مستقل هر پرداخت بعدی)',
-        description: 'بررسی ثبت دریافت قسطی یا ثانویه فاکتور و افزایش دقیق ۵M بدون دستکاری پرداخت اولیه ۴M.',
+        id: 10,
+        title: 'آزمون ۱۰: پرداخت جزئی فاکتور و ثبت مرحله‌ای بعدی (محاسبه دقیق بدون انباشت تکراری)',
+        description: 'شمارش مستقل پیش‌پرداخت ۴M و واریزی بعدی ۵M بدون دستکاری مبالغ تاریخی.',
         expected: 'مانده بانک: ۲۹،۰۰۰،۰۰۰ ریال',
         actual: 'مانده محاسبه‌شده: ' + bal,
         passed: pass
       });
     })();
 
-    // ۴. پرداخت نقدی فاکتور: مانده بانک‌های غیرنقدی تغییر نکند
-    (function testB4_cashPayment() {
-      var bank = { id: 3, name: 'بانک تجارت', openingBalance: 50000000 };
-      var invoice = { id: 103, type: 'sale', grandTotal: 3000000, paidAmount: 3000000, bankId: null };
-      var autoCashPayment = { id: 204, type: 'receipt', amount: 3000000, bankId: null, sourceInvoiceId: 103, auto: true };
+    // ۱۱. بررسی شناسه‌ها و مبالغ تراکنش‌های نامعتبر در خروجی
+    (function testB11_unmatchedBankInspection() {
+      var bank = { id: 1, name: 'بانک ملی', openingBalance: 10000000 };
+      var p1 = { id: 501, type: 'receipt', amount: 2000000, bankId: 991, description: 'واریز به حساب حذف‌شده ۱' };
+      var p2 = { id: 502, type: 'payment', amount: 1500000, bankId: 992, description: 'برداشت از حساب مسدود ۲' };
 
-      var res = calculateBankBalances([bank], [autoCashPayment], []);
-      var bankBal = res.bankMap[3].balance;
-      var unassigned = res.unassignedCash.balance;
-      var pass = (bankBal === 50000000 && unassigned === 3000000);
+      var res = calculateBankBalances([bank], [p1, p2], []);
+      var pass = (res.unmatchedBankTransactions.length === 2 &&
+                  res.unmatchedBankReceipts === 2000000 &&
+                  res.unmatchedBankPayments === 1500000 &&
+                  res.unmatchedBankTotal === 500000);
 
       results.push({
-        id: 4,
-        title: 'آزمون ۴: پرداخت نقدی فاکتور (تفکیک از حساب‌های بانکی و حفظ مانده بانک)',
-        description: 'دریافت‌های نقدی بدون شناسه حساب نباید مانده بانک‌های تعریف‌شده را تغییر دهند و در نقدینگی آزاد لحاظ می‌شوند.',
-        expected: 'مانده بانک تجارت: ۵۰،۰۰۰،۰۰۰ | نقدینگی نقدی آزاد: ۳،۰۰۰،۰۰۰',
-        actual: 'بانک تجارت: ' + bankBal + ' | نقد آزاد: ' + unassigned,
+        id: 11,
+        title: 'آزمون ۱۱: امکان ممیزی و مشاهده مبالغ و شناسه‌های حساب نامعتبر در خروجی',
+        description: 'در دسترس بودن اطلاعات تراکنش‌های نامعتبر (مجموع دریافت: ۲M، پرداخت: ۱.۵M) جهت گزارش‌گیری مدیریتی.',
+        expected: '۲ تراکنش نامنطبق | دریافت نامنطبق: ۲M | پرداخت نامنطبق: ۱.۵M',
+        actual: res.unmatchedBankTransactions.length + ' تراکنش نامنطبق | دریافت: ' + res.unmatchedBankReceipts + ' | پرداخت: ' + res.unmatchedBankPayments,
         passed: pass
       });
     })();
 
-    // ۵. انتقال وجه بین دو حساب: از مبدأ کسر، به مقصد اضافه، و جمع کل نقدینگی ثابت بماند
-    (function testB5_bankTransfer() {
-      var bankA = { id: 10, name: 'بانک الف', openingBalance: 15000000 };
-      var bankB = { id: 20, name: 'بانک ب', openingBalance: 25000000 };
-      var transfer = { id: 301, fromBankId: 10, toBankId: 20, amount: 6000000, date: '1404/01/15' };
-
-      var res = calculateBankBalances([bankA, bankB], [], [transfer]);
-      var balA = res.bankMap[10].balance;
-      var balB = res.bankMap[20].balance;
-      var total = res.totalBankBal;
-      var pass = (balA === 9000000 && balB === 31000000 && total === 40000000);
-
-      results.push({
-        id: 5,
-        title: 'آزمون ۵: انتقال وجه بین‌بانکی (تراز صفربین و حفظ ثبات جمع دارایی نقد و بانک)',
-        description: 'انتقال ۶M از بانک الف به ب باید دقیقاً از الف کم و به ب اضافه شود و کل موجودی روی ۴۰M ثابت بماند.',
-        expected: 'بانک الف: ۹M | بانک ب: ۳۱M | جمع کل نقدینگی: ۴۰،۰۰۰،۰۰۰',
-        actual: 'بانک الف: ' + balA + ' | بانک ب: ' + balB + ' | جمع کل: ' + total,
-        passed: pass
-      });
-    })();
-
-    // ۶. ویرایش مبلغ پرداختی فاکتور: به‌روزرسانی سند خودکار، عدم انباشت یا ساخت رکورد جدید
-    (function testB6_editPayment() {
-      var bank = { id: 1, name: 'بانک ملت', openingBalance: 10000000 };
-      // حالت قبل از ویرایش: paidAmount = 2000000
-      var autoPayment = { id: 205, type: 'receipt', amount: 2000000, bankId: 1, sourceInvoiceId: 104, auto: true };
-      // کاربر فاکتور را ویرایش کرده و پرداختی را به 7000000 تغییر داده است؛ syncAutoPayment رکورد موجود را آپدیت می‌کند:
-      autoPayment.amount = 7000000;
-
-      var res = calculateBankBalances([bank], [autoPayment], []);
-      var bal = res.bankMap[1].balance;
-      // اگر رکورد جدید افزوده می‌شد یا دوباره‌شماری رخ می‌داد، عدد ۱۹،۰۰۰،۰۰۰ می‌شد
-      var pass = (bal === 17000000); // 10M + 7M
-
-      results.push({
-        id: 6,
-        title: 'آزمون ۶: ویرایش پرداخت فاکتور (جایگزینی دقیق مبلغ و عدم ایجاد رکورد مضاعف)',
-        description: 'تغییر مبلغ پرداختی فاکتور باید بدون انباشت سند، مبلغ جدید (۷M) را جایگزین کند.',
-        expected: 'مانده بانک: ۱۷،۰۰۰،۰۰۰ ریال',
-        actual: 'مانده محاسبه‌شده: ' + bal,
-        passed: pass
-      });
-    })();
-
-    // ۷. تطابق ۱۰۰٪ مانده محاسبه‌شده بین داشبورد و صفحه بانک‌ها
-    (function testB7_dashboardAndBankMatch() {
+    // ۱۲. تطابق ۱۰۰٪ مانده محاسبه‌شده بین داشبورد و صفحه بانک‌ها
+    (function testB12_dashboardAndBankMatch() {
       var b1 = { id: 101, name: 'بانک ملی', openingBalance: 12000000 };
       var b2 = { id: 102, name: 'بانک ملت', openingBalance: 18000000 };
       var b3 = { id: 103, name: 'صندوق نقدی', openingBalance: 5000000 };
@@ -1736,9 +1885,7 @@ var FinanceEngine = (function() {
         { id: 1, fromBankId: 102, toBankId: 101, amount: 4000000 }
       ];
 
-      // محاسبه در داشبورد به روش تجمیعی
       var dashRes = calculateBankBalances(banks, payments, transfers);
-      // محاسبه تک‌تک در صفحه بانک‌ها
       var singleBal101 = calculateAccountBalance(101, banks, payments, transfers);
       var singleBal102 = calculateAccountBalance(102, banks, payments, transfers);
       var singleBal103 = calculateAccountBalance(103, banks, payments, transfers);
@@ -1746,48 +1893,16 @@ var FinanceEngine = (function() {
       var pass = (dashRes.bankMap[101].balance === singleBal101 &&
                   dashRes.bankMap[102].balance === singleBal102 &&
                   dashRes.bankMap[103].balance === singleBal103 &&
-                  singleBal101 === 17000000 && // 12M + 3M - 2M + 4M
-                  singleBal102 === 21000000 && // 18M + 7M - 4M
-                  singleBal103 === 4000000);  // 5M - 1M
+                  singleBal101 === 17000000 &&
+                  singleBal102 === 21000000 &&
+                  singleBal103 === 4000000);
 
       results.push({
-        id: 7,
-        title: 'آزمون ۷: تطابق ۱۰۰٪ مانده محاسبه‌شده بین داشبورد و صفحه بانک‌ها',
+        id: 12,
+        title: 'آزمون ۱۲: تطابق ۱۰۰٪ مانده محاسبه‌شده بین داشبورد و صفحه بانک‌ها',
         description: 'تضمین انطباق ریاضی کامل خروجی داشبورد و صفحه جزئیات حساب‌ها با منبع واحد حقیقت.',
         expected: 'ب۱۰۱: ۱۷M | ب۱۰۲: ۲۱M | ب۱۰۳: ۴M با تطابق کامل دوطرفه',
         actual: 'ب۱۰۱: ' + singleBal101 + ' | ب۱۰۲: ' + singleBal102 + ' | ب۱۰۳: ' + singleBal103,
-        passed: pass
-      });
-    })();
-
-    // ۸. عدم جمع جبری paidAmount فاکتور و پرداخت‌های متناظر آن در گزارش‌ها/داشبورد
-    (function testB8_noDoubleCountInReports() {
-      var inv = { id: 901, type: 'sale', grandTotal: 10000000, paidAmount: 6000000 };
-      var autoPay = { id: 91, type: 'receipt', amount: 6000000, sourceInvoiceId: 901, auto: true };
-      var indepPay = { id: 92, type: 'receipt', amount: 2000000, sourceInvoiceId: null };
-
-      var allPays = [autoPay, indepPay];
-
-      // شبیه‌سازی منطق بدون دوباره‌شماری در گزارش‌ها:
-      // دریافت فاکتور = مجموع پرداختی فاکتورها (یا پرداخت‌های دارای sourceInvoiceId)
-      var invPaid = inv.paidAmount;
-      // دریافت مستقل = دریافت‌های فاقد sourceInvoiceId
-      var indepTotal = 0;
-      allPays.forEach(function(p) {
-        if (!p.sourceInvoiceId && p.type === 'receipt') indepTotal += p.amount;
-      });
-      var totalReceived = invPaid + indepTotal;
-      var remainingReceivable = inv.grandTotal - totalReceived;
-
-      // در حالت اشتباه قبلی: totalReceived = invPaid + (autoPay + indepPay) = 6M + 8M = 14M (بیش از کل فاکتور!)
-      var pass = (totalReceived === 8000000 && remainingReceivable === 2000000);
-
-      results.push({
-        id: 8,
-        title: 'آزمون ۸: ممیزی گزارش‌ها و تفکیک پرداخت‌های مستقل از اسناد خودکار فاکتور',
-        description: 'عدم احتساب مضاعف سند خودکار فاکتور در پرداخت‌های مستقل و صحت مانده مطالبات.',
-        expected: 'دریافتی فاکتور: ۶M | دریافتی مستقل: ۲M | کل دریافت: ۸M | مانده طلب: ۲M',
-        actual: 'کل دریافت: ' + totalReceived + ' | مانده طلب: ' + remainingReceivable,
         passed: pass
       });
     })();

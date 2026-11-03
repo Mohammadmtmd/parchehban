@@ -122,7 +122,7 @@ assert.strictEqual(phase2Suite.allPassed, true);
 
 console.log('✓ تمامی ۷ آزمون تکمیلی ممیزی مرحله دوم با موفقیت ۱۰۰٪ تأیید شدند.');
 
-console.log('\n--- اجرای ۸ آزمون الزامی ممیزی و محاسبه مانده حساب‌های بانکی و نقدینگی ---');
+console.log('\n--- اجرای ۱۲ آزمون الزامی ممیزی و محاسبه مانده حساب‌های بانکی و نقدینگی ---');
 const bankSuite = FinanceEngine.runBankAuditSuite();
 console.log(`نتیجه کلی آزمون‌های مانده بانک: ${bankSuite.passed} از ${bankSuite.total} سناریو با موفقیت پاس شدند.`);
 
@@ -131,9 +131,316 @@ bankSuite.results.forEach(r => {
   assert(r.passed, `تست ممیزی مانده بانک شکست خورد: ${r.title} - ${r.actual}`);
 });
 
-assert.strictEqual(bankSuite.passed, 8, 'باید تمام ۸ آزمون ممیزی مانده بانک پاس شوند');
+assert.strictEqual(bankSuite.passed, 12, 'باید تمام ۱۲ آزمون ممیزی مانده بانک پاس شوند');
 assert.strictEqual(bankSuite.allPassed, true);
 
-console.log('✓ تمامی ۸ آزمون تخصصی مانده بانک و نقدینگی با موفقیت ۱۰۰٪ تأیید شدند.');
-console.log(`\n🎉 مجموع کل: ${suite.total + mandatorySuite.total + opExSuite.total + phase2Suite.total + bankSuite.total} سناریوی مالی و حسابداری پارچه‌بان با موفقیت ۱۰۰٪ پاس شدند.`);
+console.log('✓ تمامی ۱۲ آزمون تخصصی مانده بانک و نقدینگی با موفقیت ۱۰۰٪ تأیید شدند.');
+
+console.log('\n--- راه‌اندازی محیط Mock ایزوله در رم جهت آزمون‌های واقعی توابع سیستم ---');
+// شبیه‌سازی متغیرها و ماک دیتابیس در حافظه
+globalThis.numOf = function(val) {
+  if (val === null || val === undefined || val === '') return 0;
+  var n = parseFloat(String(val).replace(/,/g, '').trim());
+  return isNaN(n) ? 0 : n;
+};
+globalThis.intOf = function(val) {
+  var n = parseInt(val, 10);
+  return isNaN(n) ? 0 : n;
+};
+globalThis.esc = function(val) { return String(val || ''); };
+globalThis.todayJ = function() { return '1404/01/15'; };
+globalThis.Jalali = {
+  parse: function(d) { return d; },
+  today: function() { return '1404/01/15'; },
+  addMonths: function(d, m) { return '1403/12/15'; }
+};
+globalThis.Perm = { require: function() { return true; } };
+globalThis.STATE = { yearId: 1 };
+globalThis.currentPage = '';
+globalThis.Pag = {
+  register: function() {},
+  slice: function(k, list) { return { items: list, page: 1, per: 50 }; },
+  html: function() { return ''; }
+};
+globalThis.Con = {
+  balance: async function(cid) { return 0; },
+  allBalances: async function() { return {}; },
+  balTag: function() { return ''; },
+  tt: function() { return ''; },
+  tl: function(t) { return t; }
+};
+globalThis.Prod = {
+  stock: async function() { return 1000; },
+  stockMap: async function() { return {}; }
+};
+
+let capturedUIContent = '';
+let capturedHTML = {};
+globalThis.setHTML = function(id, html) {
+  capturedHTML[id] = html;
+};
+globalThis.UI = {
+  fn: function(n) { return (n || 0).toLocaleString('fa-IR'); },
+  toast: function() {},
+  close: function() {},
+  open: function() {},
+  confirm: async function() { return true; },
+  nav: function() {},
+  title: function() {},
+  act: function() {},
+  content: function(html) { capturedUIContent = html; }
+};
+
+// تعریف دیتابیس ساختگی درون رم (کاملاً ایزوله بدون اتصال به IndexedDB یا Supabase)
+let memStore = {
+  invoices: {},
+  payments: [],
+  banks: {},
+  bankTransfers: []
+};
+let mockAutoId = 2000;
+
+globalThis.DB = {
+  get: async function(table, id) {
+    if (table === 'invoices') return memStore.invoices[id] ? JSON.parse(JSON.stringify(memStore.invoices[id])) : null;
+    if (table === 'banks') return memStore.banks[id] ? JSON.parse(JSON.stringify(memStore.banks[id])) : null;
+    if (table === 'payments') {
+      const p = memStore.payments.find(x => x.id === id);
+      return p ? JSON.parse(JSON.stringify(p)) : null;
+    }
+    return null;
+  },
+  all: async function(table) {
+    if (table === 'payments') return JSON.parse(JSON.stringify(memStore.payments));
+    if (table === 'invoices') return Object.values(memStore.invoices).map(x => JSON.parse(JSON.stringify(x)));
+    if (table === 'banks') return Object.values(memStore.banks).map(x => JSON.parse(JSON.stringify(x)));
+    if (table === 'bankTransfers') return JSON.parse(JSON.stringify(memStore.bankTransfers));
+    if (table === 'contacts') return [{ id: 1, name: 'مشتری ۱' }, { id: 2, name: 'تأمین‌کننده ۲' }];
+    return [];
+  },
+  add: async function(table, doc) {
+    const copy = JSON.parse(JSON.stringify(doc));
+    copy.id = ++mockAutoId;
+    if (table === 'payments') memStore.payments.push(copy);
+    if (table === 'invoices') memStore.invoices[copy.id] = copy;
+    return copy.id;
+  },
+  put: async function(table, doc) {
+    const copy = JSON.parse(JSON.stringify(doc));
+    if (table === 'payments') {
+      const idx = memStore.payments.findIndex(x => x.id === copy.id);
+      if (idx !== -1) memStore.payments[idx] = copy;
+      else memStore.payments.push(copy);
+    }
+    if (table === 'invoices') memStore.invoices[copy.id] = copy;
+  },
+  del: async function(table, id) {
+    if (table === 'payments') {
+      memStore.payments = memStore.payments.filter(x => x.id !== id);
+    }
+    if (table === 'invoices') {
+      delete memStore.invoices[id];
+    }
+  }
+};
+
+globalThis.FY = {
+  byYear: async function(table) {
+    return globalThis.DB.all(table);
+  },
+  assertOpen: async function() { return true; }
+};
+
+// بارگذاری ماژول‌های پروژه
+await import('../js/12-invoices.js');
+await import('../js/18-reports.js');
+await import('../js/22-banks.js');
+
+const Inv = globalThis.Inv;
+const Rep = globalThis.Rep;
+const Bank = globalThis.Bank;
+
+assert(Inv && typeof Inv.syncAutoPayment === 'function', 'ماژول Inv باید در دسترس باشد');
+assert(Rep && typeof Rep.summary === 'function', 'ماژول Rep باید در دسترس باشد');
+assert(Bank && typeof Bank.balance === 'function', 'ماژول Bank باید در دسترس باشد');
+
+console.log('✓ محیط Mock در رم و ماژول‌های Inv، Rep و Bank با موفقیت مقداردهی شدند.');
+
+console.log('\n--- اجرای آزمون واقعی ۲: رفتار دقیق Inv.syncAutoPayment در ویرایش و حذف ---');
+await (async () => {
+  // مرحله ۱: ثبت فاکتور با پرداخت اولیه ۲،۰۰۰،۰۰۰ ریال به بانک ۱ (موجودی اولیه ۱۰M)
+  memStore.banks[1] = { id: 1, name: 'بانک سپه', openingBalance: 10000000 };
+  memStore.invoices[501] = {
+    id: 501,
+    invoiceNumber: 'ف-۵۰۱',
+    type: 'sale',
+    grandTotal: 10000000,
+    paidAmount: 2000000,
+    bankId: 1,
+    contactId: 1,
+    date: '1404/01/10'
+  };
+
+  await Inv.syncAutoPayment(501);
+
+  // بررسی ایجاد دقیقاً ۱ سند خودکار
+  assert.strictEqual(memStore.payments.length, 1, 'دقیقاً ۱ سند پرداخت خودکار باید ساخته شود');
+  assert.strictEqual(memStore.payments[0].amount, 2000000, 'مبلغ سند خودکار باید ۲،۰۰۰،۰۰۰ باشد');
+  assert.strictEqual(memStore.payments[0].sourceInvoiceId, 501, 'شناسه فاکتور مبدأ باید ۵۰۱ باشد');
+  assert.strictEqual(memStore.payments[0].auto, true, 'پرچم auto باید true باشد');
+
+  let bal1 = await Bank.balance(1);
+  assert.strictEqual(bal1, 12000000, 'مانده بانک باید ۱۰M + ۲M = ۱۲،۰۰۰،۰۰۰ ریال باشد');
+  console.log('  [✓] گام ۱: ساخت اولیه سند خودکار و افزایش دقیق مانده بانک به ۱۲M تأیید شد.');
+
+  // مرحله ۲: ویرایش فاکتور و افزایش مبلغ پرداختی به ۷،۰۰۰،۰۰۰ ریال
+  memStore.invoices[501].paidAmount = 7000000;
+  await Inv.syncAutoPayment(501);
+
+  // بررسی به‌روزرسانی همان سند بدون ایجاد سند جدید
+  assert.strictEqual(memStore.payments.length, 1, 'تعداد اسناد خودکار باید همچنان دقیقاً ۱ باشد (عدم انباشت)');
+  assert.strictEqual(memStore.payments[0].amount, 7000000, 'مبلغ سند باید به ۷،۰۰۰،۰۰۰ به‌روزرسانی شده باشد');
+
+  let bal2 = await Bank.balance(1);
+  assert.strictEqual(bal2, 17000000, 'مانده بانک باید دقیقاً ۱۰M + ۷M = ۱۷،۰۰۰،۰۰۰ باشد نه ۱۹،۰۰۰،۰۰۰');
+  console.log('  [✓] گام ۲: به‌روزرسانی سند موجود، عدم ایجاد رکورد مضاعف و مانده قطعی ۱۷M تأیید شد.');
+
+  // مرحله ۳: صفر کردن مبلغ پرداختی فاکتور (تسویه نقدی حذف شده)
+  memStore.invoices[501].paidAmount = 0;
+  await Inv.syncAutoPayment(501);
+
+  assert.strictEqual(memStore.payments.length, 0, 'با صفر شدن پرداختی، سند خودکار باید کاملاً حذف شود');
+  let bal3 = await Bank.balance(1);
+  assert.strictEqual(bal3, 10000000, 'مانده بانک به موجودی اولیه ۱۰،۰۰۰،۰۰۰ برگشت.');
+  console.log('  [✓] گام ۳: حذف خودکار سند پرداخت هنگام صفر شدن paidAmount فاکتور تأیید شد.');
+
+  // مرحله ۴: شبیه‌سازی وجود داده‌های تکراری سنواتی و پاکسازی هوشمند
+  memStore.invoices[502] = { id: 502, invoiceNumber: 'ف-۵۰۲', type: 'sale', grandTotal: 5000000, paidAmount: 3000000, bankId: 1 };
+  memStore.payments.push(
+    { id: 9001, sourceInvoiceId: 502, amount: 3000000, auto: true },
+    { id: 9002, sourceInvoiceId: 502, amount: 3000000, auto: true } // رکورد تکراری اشتباهی
+  );
+  assert.strictEqual(memStore.payments.filter(p => p.sourceInvoiceId === 502).length, 2);
+
+  await Inv.syncAutoPayment(502);
+  const remainingLinked = memStore.payments.filter(p => p.sourceInvoiceId === 502);
+  assert.strictEqual(remainingLinked.length, 1, 'تابع باید رکوردهای تکراری اضافه را پاکسازی کند');
+  console.log('  [✓] گام ۴: پاکسازی اسناد تکراری و ابقای یک سند واحد توسط syncAutoPayment تأیید شد.');
+})();
+
+console.log('✓ آزمون واقعی ۲: همگام‌سازی، ویرایش، حذف و پاکسازی سند خودکار فاکتور با موفقیت ۱۰۰٪ تأیید شد.');
+
+console.log('\n--- اجرای آزمون واقعی ۳: گزارش‌های Rep.summary و Rep._ir با تفکیک مستقل ---');
+await (async () => {
+  // داده‌های فاکتور فروش ۱۰M (پرداختی ۶M)، فاکتور خرید ۱۵M (پرداختی ۱۰M)
+  // پرداخت‌های متناظر در جدول payments + دریافت مستقل ۲M و پرداخت مستقل ۳M
+  memStore.invoices = {
+    10: { id: 10, type: 'sale', grandTotal: 10000000, paidAmount: 6000000, shippingCost: 0 },
+    20: { id: 20, type: 'purchase', grandTotal: 15000000, paidAmount: 10000000, shippingCost: 0 }
+  };
+  memStore.payments = [
+    { id: 1, type: 'receipt', amount: 6000000, sourceInvoiceId: 10, auto: true },
+    { id: 2, type: 'receipt', amount: 2000000, sourceInvoiceId: null },
+    { id: 3, type: 'payment', amount: 10000000, sourceInvoiceId: 20, auto: true },
+    { id: 4, type: 'payment', amount: 3000000, sourceInvoiceId: null }
+  ];
+
+  await Rep.summary();
+  const summaryHtml = capturedHTML['rC'] || '';
+
+  // بررسی خروجی وضعیت فروش:
+  // دریافت فاکتور: ۶M | دریافت مستقل: ۲M | کل دریافت: ۸M | مانده: ۲M
+  assert(summaryHtml.includes('کل فروش: ۱۰٬۰۰۰٬۰۰۰') || summaryHtml.includes('10,000,000') || summaryHtml.includes('۱۰,۰۰۰,۰۰۰'), 'کل فروش باید ۱۰M باشد');
+  assert(summaryHtml.includes('دریافت فاکتور: ۶٬۰۰۰٬۰۰۰') || summaryHtml.includes('۶,۰۰۰,۰۰۰'), 'دریافت فاکتور باید ۶M باشد');
+  assert(summaryHtml.includes('دریافت مستقل: ۲٬۰۰۰٬۰۰۰') || summaryHtml.includes('۲,۰۰۰,۰۰۰'), 'دریافت مستقل باید ۲M باشد');
+  assert(summaryHtml.includes('کل دریافتی: ۸٬۰۰۰٬۰۰۰') || summaryHtml.includes('۸,۰۰۰,۰۰۰'), 'کل دریافتی باید ۸M باشد نه ۱۴M');
+  assert(summaryHtml.includes('مانده: ۲٬۰۰۰٬۰۰۰') || summaryHtml.includes('۲,۰۰۰,۰۰۰'), 'مانده طلب باید ۲M باشد');
+
+  // بررسی خروجی وضعیت خرید:
+  // پرداخت فاکتور: ۱۰M | پرداخت مستقل: ۳M | کل پرداخت: ۱۳M | مانده: ۲M
+  assert(summaryHtml.includes('کل خرید: ۱۵٬۰۰۰٬۰۰۰') || summaryHtml.includes('15,000,000') || summaryHtml.includes('۱۵,۰۰۰,۰۰۰'), 'کل خرید باید ۱۵M باشد');
+  assert(summaryHtml.includes('پرداخت فاکتور: ۱۰٬۰۰۰٬۰۰۰') || summaryHtml.includes('۱۰,۰۰۰,۰۰۰'), 'پرداخت فاکتور خرید باید ۱۰M باشد');
+  assert(summaryHtml.includes('پرداخت مستقل: ۳٬۰۰۰٬۰۰۰') || summaryHtml.includes('۳,۰۰۰,۰۰۰'), 'پرداخت مستقل خرید باید ۳M باشد');
+  assert(summaryHtml.includes('کل پرداختی: ۱۳٬۰۰۰٬۰۰۰') || summaryHtml.includes('۱۳,۰۰۰,۰۰۰'), 'کل پرداختی خرید باید ۱۳M باشد');
+  console.log('  [✓] خروجی Rep.summary بدون دوباره‌شماری و با تفکیک کامل فروش و خرید تأیید شد.');
+
+  // آزمون گزارش مجزای فروش Rep._ir('sale')
+  await Rep.sales();
+  const salesHtml = capturedHTML['rC'] || '';
+  assert(salesHtml.includes('کل دریافتی') || salesHtml.includes('کل دریافت'), 'گزارش فروش باید شامل کل دریافت باشد');
+  assert(salesHtml.includes('۸٬۰۰۰٬۰۰۰') || salesHtml.includes('8,000,000'), 'کل دریافت فروش باید ۸M باشد');
+  assert(salesHtml.includes('۲٬۰۰۰٬۰۰۰') || salesHtml.includes('2,000,000'), 'مانده طلب فروش باید ۲M باشد');
+  console.log('  [✓] خروجی Rep.sales بدون دوباره‌شماری با دریافت ۸M و مانده ۲M تأیید شد.');
+
+  // آزمون گزارش مجزای خرید Rep._ir('purchase')
+  await Rep.purchases();
+  const purchaseHtml = capturedHTML['rC'] || '';
+  assert(purchaseHtml.includes('۱۳٬۰۰۰٬۰۰۰') || purchaseHtml.includes('13,000,000'), 'کل پرداختی خرید باید ۱۳M باشد');
+  assert(purchaseHtml.includes('۲٬۰۰۰٬۰۰۰') || purchaseHtml.includes('2,000,000'), 'مانده بدهی خرید باید ۲M باشد');
+  console.log('  [✓] خروجی Rep.purchases بدون دوباره‌شماری با پرداخت ۱۳M و مانده ۲M تأیید شد.');
+})();
+
+console.log('✓ آزمون واقعی ۳: محاسبات و خروجی گزارش‌های Rep با موفقیت ۱۰۰٪ تأیید شدند.');
+
+console.log('\n--- اجرای آزمون واقعی ۴: تطابق چندلایه مانده داشبورد، فهرست بانک‌ها و جزئیات بانک ---');
+await (async () => {
+  const bankA = { id: 101, name: 'بانک ملت', bankName: 'ملت', accountNumber: '111', openingBalance: 12000000 };
+  const bankB = { id: 102, name: 'بانک صادرات', bankName: 'صادرات', accountNumber: '222', openingBalance: 18000000 };
+  memStore.banks = { 101: bankA, 102: bankB };
+
+  memStore.payments = [
+    { id: 1, type: 'receipt', amount: 4000000, bankId: 101, date: '1404/01/10' },
+    { id: 2, type: 'payment', amount: 1000000, bankId: 101, date: '1404/01/11' },
+    { id: 3, type: 'receipt', amount: 6000000, bankId: 102, date: '1404/01/12' }
+  ];
+
+  memStore.bankTransfers = [
+    { id: 1, fromBankId: 102, toBankId: 101, amount: 5000000, date: '1404/01/14' }
+  ];
+
+  // محاسبه مستقیم از موتور مالی (استفاده‌شده در داشبورد)
+  const dashEngine = FinanceEngine.calculateBankBalances(
+    Object.values(memStore.banks),
+    memStore.payments,
+    memStore.bankTransfers
+  );
+
+  // استخراج از متدهای واقعی بانک
+  const bankAll = await Bank.allBalances();
+  const balA_single = await Bank.balance(101);
+  const balB_single = await Bank.balance(102);
+
+  // بررسی ریاضی:
+  // بانک ۱۰۱: ۱۲M + ۴M - ۱M + ۵M = ۲۰،۰۰۰،۰۰۰ ریال
+  // بانک ۱۰۲: ۱۸M + ۶M - ۵M = ۱۹،۰۰۰،۰۰۰ ریال
+  // مجموع کل: ۳۹،۰۰۰،۰۰۰ ریال
+  assert.strictEqual(dashEngine.bankMap[101].balance, 20000000);
+  assert.strictEqual(dashEngine.bankMap[102].balance, 19000000);
+  assert.strictEqual(dashEngine.totalBankBal, 39000000);
+
+  // بررسی تطابق ۱۰۰٪ با Bank.allBalances
+  assert.strictEqual(bankAll.bankMap[101].balance, 20000000);
+  assert.strictEqual(bankAll.bankMap[102].balance, 19000000);
+  assert.strictEqual(bankAll.totalBankBal, 39000000);
+
+  // بررسی تطابق با Bank.balance تک‌تک حساب‌ها
+  assert.strictEqual(balA_single, 20000000);
+  assert.strictEqual(balB_single, 19000000);
+
+  // اجرای واقعی Bank.show(101) جهت بررسی تطابق صفحه جزئیات
+  await Bank.show(101);
+  assert(capturedUIContent.includes('۲۰٬۰۰۰٬۰۰۰') || capturedUIContent.includes('20,000,000'), 'صفحه جزئیات بانک ۱۰۱ باید مانده نهایی ۲۰M را نشان دهد');
+
+  await Bank.show(102);
+  assert(capturedUIContent.includes('۱۹٬۰۰۰٬۰۰۰') || capturedUIContent.includes('19,000,000'), 'صفحه جزئیات بانک ۱۰۲ باید مانده نهایی ۱۹M را نشان دهد');
+
+  console.log('  [✓] تطابق ۱۰۰٪ بین خروجی داشبورد، Bank.allBalances، Bank.balance و Bank.show تأیید شد.');
+})();
+
+console.log('✓ آزمون واقعی ۴: تطابق کامل تمام مسیرهای محاسبه مانده بانک با موفقیت تأیید شد.');
+
+const totalSystemTests = suite.total + mandatorySuite.total + opExSuite.total + phase2Suite.total + bankSuite.total + 3;
+console.log(`\n🎉 مجموع کل: ${totalSystemTests} سناریوی جامع مالی، بانکی و حسابداری پارچه‌بان با موفقیت ۱۰۰٪ پاس شدند.`);
+
+
 

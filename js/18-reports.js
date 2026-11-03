@@ -643,3 +643,14 @@ var Rep = {
     setHTML('rC', h);
   }
 };
+
+if (typeof window !== 'undefined') {
+  window.Rep = Rep;
+}
+if (typeof globalThis !== 'undefined') {
+  globalThis.Rep = Rep;
+}
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = Rep;
+}
+

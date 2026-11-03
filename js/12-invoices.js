@@ -1003,3 +1003,14 @@ var Inv = {
     await this.ll(type);
   }
 };
+
+if (typeof window !== 'undefined') {
+  window.Inv = Inv;
+}
+if (typeof globalThis !== 'undefined') {
+  globalThis.Inv = Inv;
+}
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = Inv;
+}
+
