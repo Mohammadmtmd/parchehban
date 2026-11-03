@@ -93,6 +93,10 @@ var Inv = {
     return pf + String(mx + 1).padStart(4, '0');
   },
 
+  form: function(type, id) {
+    return this.showF(type, id);
+  },
+
   showF: async function(type, id) {
     var inv = id ? await DB.get('invoices', id) : null;
     var isS = type === 'sale';
@@ -626,7 +630,6 @@ var Inv = {
         h += '<div><strong>مانده کل حساب به حروف:</strong> ' + esc(num2fa(Math.abs(cBal))) + ' ریال (' + (cBal > 0 ? 'بدهکار' : 'بستانکار') + ')</div>';
       }
       h += '</div>';
-    }
 
     // Notes
     if (opts.showNotes && v.notes) {

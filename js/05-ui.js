@@ -10,6 +10,7 @@ var UI = {
       /* باز کردن خودکار گروه کشویی بالاسری این صفحه در منو */
       var sub = el.closest('.sb-sub');
       if (sub) {
+        sub.classList.add('open');
         var prev = sub.previousElementSibling;
         if (prev && prev.classList.contains('sb-drop')) {
           prev.classList.add('open');
@@ -36,7 +37,12 @@ var UI = {
       if (evt.stopPropagation) evt.stopPropagation();
     }
     if (!el) return;
-    el.classList.toggle('open');
+    var isOpen = el.classList.toggle('open');
+    var sub = el.nextElementSibling;
+    if (sub && sub.classList.contains('sb-sub')) {
+      if (isOpen) sub.classList.add('open');
+      else sub.classList.remove('open');
+    }
     el._justToggled = true;
     setTimeout(function() {
       el._justToggled = false;

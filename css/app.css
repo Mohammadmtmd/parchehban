@@ -225,8 +225,9 @@ body.dark .lg-page .lg-box {
   transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.sb-sub.open,
 .sb-drop.open + .sb-sub {
-  max-height: 600px;
+  max-height: 800px;
 }
 
 .ni {
