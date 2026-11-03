@@ -107,5 +107,19 @@ assert.strictEqual(opExSuite.passed, 8, 'باید تمام ۸ آزمون هزی�
 assert.strictEqual(opExSuite.allPassed, true);
 
 console.log('✓ تمامی ۸ آزمون تخصصی ثبت و تفکیک هزینه‌های عملیاتی با موفقیت ۱۰۰٪ تأیید شدند.');
-console.log(`\n🎉 مجموع کل: ${suite.total + mandatorySuite.total + opExSuite.total} سناریوی مالی و حسابداری پارچه‌بان با موفقیت ۱۰۰٪ پاس شدند.`);
+
+console.log('\n--- اجرای ۷ آزمون تکمیلی ممیزی مرحله دوم (اعتبارسنجی سرفصل‌های هزینه و اصلاح تشخیص حواله) ---');
+const phase2Suite = FinanceEngine.runPhase2AuditSuite();
+console.log(`نتیجه کلی ممیزی مرحله دوم: ${phase2Suite.passed} از ${phase2Suite.total} سناریو با موفقیت پاس شدند.`);
+
+phase2Suite.results.forEach(r => {
+  console.log(`[${r.passed ? '✓' : '✗'}] ${r.title}`);
+  assert(r.passed, `تست ممیزی مرحله دوم شکست خورد: ${r.title} - ${r.actual}`);
+});
+
+assert.strictEqual(phase2Suite.passed, 7, 'باید تمام ۷ آزمون ممیزی مرحله دوم پاس شوند');
+assert.strictEqual(phase2Suite.allPassed, true);
+
+console.log('✓ تمامی ۷ آزمون تکمیلی ممیزی مرحله دوم با موفقیت ۱۰۰٪ تأیید شدند.');
+console.log(`\n🎉 مجموع کل: ${suite.total + mandatorySuite.total + opExSuite.total + phase2Suite.total} سناریوی مالی و حسابداری پارچه‌بان با موفقیت ۱۰۰٪ پاس شدند.`);
 

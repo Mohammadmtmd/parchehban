@@ -212,6 +212,69 @@ var FinanceEngine = (function() {
   }
 
   /**
+   * سرفصل‌های معتبر و تأییدشده هزینه‌های عملیاتی دوره (مطابق ممیزی مرحله دوم)
+   * فقط این سرفصل‌ها مجاز به ورود به محاسبات هزینه عملیاتی (OpEx) هستند.
+   */
+  var APPROVED_OPEX_CATEGORIES = [
+    'حقوق و دستمزد',
+    'اجاره',
+    'هزینه اداری',
+    'هزینه حمل',
+    'هزینه بازاریابی و تبلیغات',
+    'تعمیر و نگهداری',
+    'کارمزد بانکی',
+    'هزینه‌های متفرقه',
+    'سایر هزینه‌ها'
+  ];
+
+  function normalizePersianText(str) {
+    if (!str || typeof str !== 'string') return '';
+    return str
+      .trim()
+      .replace(/\u200c/g, ' ') // تبدیل نیم‌فاصله به فاصله جهت یکدست‌سازی
+      .replace(/[\u064A\u0649]/g, '\u06CC') // ي عربی به ی فارسی
+      .replace(/\u0643/g, '\u06A9') // ك عربی به ک فارسی
+      .replace(/\s+/g, ' '); // حذف فاصله‌های اضافی
+  }
+
+  function isApprovedOpEx(cat) {
+    if (!cat || typeof cat !== 'string') return false;
+    var norm = normalizePersianText(cat);
+    for (var i = 0; i < APPROVED_OPEX_CATEGORIES.length; i++) {
+      if (norm === normalizePersianText(APPROVED_OPEX_CATEGORIES[i])) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function isSupplierSettlementCategory(cat) {
+    if (!cat || typeof cat !== 'string') return false;
+    var norm = normalizePersianText(cat);
+    var supplierKeywords = [
+      'تامین کننده',
+      'تأمین کننده',
+      'بستانکار',
+      'تسویه حساب',
+      'تسویه تامین کننده',
+      'تسویه تأمین کننده',
+      'تسویه خرید',
+      'تسویه بدهی',
+      'تسویه تامین کننده / خرید',
+      'تسویه تأمین کننده / خرید'
+    ];
+    for (var i = 0; i < supplierKeywords.length; i++) {
+      if (norm === normalizePersianText(supplierKeywords[i])) {
+        return true;
+      }
+    }
+    if (norm.indexOf('تسویه تامین کننده') !== -1 || norm.indexOf('تسویه تأمین کننده') !== -1) {
+      return true;
+    }
+    return false;
+  }
+
+  /**
    * پالایش دقیق هزینه‌های عملیاتی دوره‌ای و تفکیک جریان‌های نامربوط
    * @param {Array} payments - آرایه رکوردهای جدول payments
    * @param {number} startNum - تاریخ آغاز دوره به صورت عدد
@@ -244,9 +307,13 @@ var FinanceEngine = (function() {
       // دریافت‌ها جریان درآمدی یا تسویه هستند، نه هزینه عملیاتی
       if (p.type === 'receipt') return;
 
-      // ۱. انتقال بین‌بانکی / حواله / صندوق
+      // ۱. انتقال بین‌بانکی / حواله / صندوق ساختاریافته
+      // طبق ممیزی مرحله دوم: صرف وجود کلمات «حواله» یا «انتقال» در شرح آزاد پرداخت نباید
+      // به‌تنهایی باعث حذف آن از هزینه‌های عملیاتی یا تلقی خودکار به عنوان حواله شود.
+      // تشخیص حواله منحصراً بر پایه transferId و فیلدهای ساختاریافته انتقال انجام می‌گیرد.
       var pDesc = String(p.description || p.notes || p.note || '');
-      if (p.transferId || pDesc.indexOf('انتقال') !== -1 || pDesc.indexOf('حواله') !== -1) {
+      var isStructuredTransfer = !!(p.transferId || p.transferTo || p.transferFrom);
+      if (isStructuredTransfer) {
         transfers += amt;
         return;
       }
@@ -259,23 +326,15 @@ var FinanceEngine = (function() {
 
       // ۳. پرداخت متصل به فاکتور خرید یا دارای سرفصل تسویه بستانکاران / تأمین‌کنندگان
       var cat = (p.category || '').trim();
-      var isSupplierSettlementCat = (
-        cat === 'تأمین‌کننده' ||
-        cat === 'بستانکار' ||
-        cat === 'تسویه حساب' ||
-        cat === 'تسویه تأمین‌کننده' ||
-        cat === 'تسویه تأمین‌کننده / خرید' ||
-        cat === 'تسویه خرید' ||
-        cat === 'تسویه بدهی'
-      );
-
-      if (p.sourceInvoiceId || isSupplierSettlementCat) {
+      if (p.sourceInvoiceId || isSupplierSettlementCategory(cat)) {
         supplierSettlements += amt;
         return;
       }
 
       // ۴. بررسی سرفصل دسته‌بندی هزینه عملیاتی
-      if (cat) {
+      // فقط سرفصل‌های معتبر و تأییدشده وارد محاسبات OpEx می‌شوند.
+      // هر سرفصل ناشناخته، قدیمی یا خالی در گروه «نیازمند بررسی» قرار گرفته و از سود کسر نمی‌شود.
+      if (isApprovedOpEx(cat)) {
         classifiedOpEx += amt;
         byCategory[cat] = (byCategory[cat] || 0) + amt;
         classifiedItems.push({
@@ -286,14 +345,16 @@ var FinanceEngine = (function() {
           note: pDesc
         });
       } else {
-        // پرداخت‌های بدون سرفصل مشخص (مطابق تصمیم تأییدشده کاربر: تفکیک و عدم کسر خودکار)
+        // پرداخت‌های بدون سرفصل مشخص یا سرفصل‌های ناشناخته/قدیمی
+        // (مطابق استانداردهای محافظه‌کارانه حسابداری: تفکیک در نیازمند بررسی بدون کسر از سود)
         unclassifiedPayments += amt;
         unclassifiedItems.push({
           id: p.id,
           date: p.date,
           amount: amt,
-          category: 'نامشخص',
-          note: pDesc
+          category: cat || 'نامشخص',
+          note: pDesc,
+          isUnknownCategory: !!cat
         });
       }
     });
@@ -737,7 +798,7 @@ var FinanceEngine = (function() {
         }
       ];
       var payments = [
-        { id: 1, type: 'payment', amount: 30000, category: 'ملزومات دفتر', date: '1403/08/05' }
+        { id: 1, type: 'payment', amount: 30000, category: 'هزینه اداری', description: 'ملزومات دفتر', date: '1403/08/05' }
       ];
 
       var pl = calculatePeriodPL(invoices, payments, 14030801, 14030830);
@@ -1206,6 +1267,172 @@ var FinanceEngine = (function() {
     };
   }
 
+  /**
+   * مجموعه آزمون‌های تکمیلی ممیزی مرحله دوم: اعتبارسنجی سرفصل‌های هزینه و اصلاح تشخیص حواله
+   */
+  function runPhase2AuditSuite() {
+    var results = [];
+
+    // ۱. پرداخت با سرفصل معتبر «اجاره» به عنوان OpEx شناسایی شود
+    (function testP2_1() {
+      var p = { id: 401, type: 'payment', amount: 7000000, category: 'اجاره', date: '1404/01/10', description: 'اجاره انبار مرکزی' };
+      var exp = filterOperatingExpenses([p]);
+      var pass = (exp.classifiedOpEx === 7000000 &&
+                  exp.byCategory['اجاره'] === 7000000 &&
+                  exp.unclassifiedPayments === 0 &&
+                  exp.transfers === 0);
+      results.push({
+        id: 1,
+        title: 'ممیزی ۱: شناسایی قطعی سرفصل معتبر «اجاره» در هزینه‌های عملیاتی (OpEx)',
+        description: 'بررسی صحت ورود پرداخت با سرفصل معتبر «اجاره» به محاسبات هزینه عملیاتی دوره.',
+        expected: 'classifiedOpEx: ۷،۰۰۰،۰۰۰ | byCategory[اجاره]: ۷،۰۰۰،۰۰۰ | unclassified: ۰',
+        actual: 'classifiedOpEx: ' + exp.classifiedOpEx + ' | byCategory[اجاره]: ' + (exp.byCategory['اجاره'] || 0) + ' | unclassified: ' + exp.unclassifiedPayments,
+        passed: pass
+      });
+    })();
+
+    // ۲. پرداخت با سرفصل ناشناخته از سود کسر نشود (انتقال به نیازمند بررسی)
+    (function testP2_2() {
+      var p = { id: 402, type: 'payment', amount: 4000000, category: 'سرمایه‌گذاری شخصی', date: '1404/01/12', description: 'واریز متفرقه' };
+      var inv = { id: 501, type: 'sale', subtotal: 10000000, items: [{ productId: 1, quantity: 1, unitPrice: 10000000, buyPrice: 6000000 }] };
+      var exp = filterOperatingExpenses([p]);
+      var pl = calculatePeriodPL([inv], [p], 0, 0);
+      var pass = (exp.classifiedOpEx === 0 &&
+                  exp.unclassifiedPayments === 4000000 &&
+                  pl.netOperatingProfit === 4000000); // 10M - 6M = 4M gross profit (untouched)
+      results.push({
+        id: 2,
+        title: 'ممیزی ۲: عدم کسر پرداخت با سرفصل ناشناخته از سود و تفکیک در «نیازمند بررسی»',
+        description: 'بررسی عدم ورود سرفصل‌های نامعتبر یا ناشناخته به OpEx و حفظ سود عملیاتی.',
+        expected: 'classifiedOpEx: ۰ | unclassifiedPayments: ۴،۰۰۰،۰۰۰ | سود خالص بدون کسر: ۴،۰۰۰،۰۰۰',
+        actual: 'classifiedOpEx: ' + exp.classifiedOpEx + ' | unclassified: ' + exp.unclassifiedPayments + ' | سود خالص: ' + pl.netOperatingProfit,
+        passed: pass
+      });
+    })();
+
+    // ۳. پرداخت با سرفصل قدیمی و ناشناخته از سود کسر نشود
+    (function testP2_3() {
+      var p = { id: 403, type: 'payment', amount: 3500000, category: 'هزینه نامشخص دوره قبل', date: '1404/01/14', notes: 'سند سنواتی قدیمی' };
+      var inv = { id: 502, type: 'sale', subtotal: 15000000, items: [{ productId: 1, quantity: 1, unitPrice: 15000000, buyPrice: 10000000 }] };
+      var exp = filterOperatingExpenses([p]);
+      var pl = calculatePeriodPL([inv], [p], 0, 0);
+      var pass = (exp.classifiedOpEx === 0 &&
+                  exp.unclassifiedPayments === 3500000 &&
+                  pl.netOperatingProfit === 5000000); // 15M - 10M = 5M gross profit (untouched)
+      results.push({
+        id: 3,
+        title: 'ممیزی ۳: عدم کسر پرداخت با سرفصل قدیمی/سنواتی ناشناخته از سود دوره',
+        description: 'اطمینان از اینکه صرف وجود مقدار در category در اسناد قدیمی، باعث کسر از سود نمی‌شود.',
+        expected: 'classifiedOpEx: ۰ | unclassifiedPayments: ۳،۵۰۰،۰۰۰ | سود خالص مصون: ۵،۰۰۰،۰۰۰',
+        actual: 'classifiedOpEx: ' + exp.classifiedOpEx + ' | unclassified: ' + exp.unclassifiedPayments + ' | سود خالص: ' + pl.netOperatingProfit,
+        passed: pass
+      });
+    })();
+
+    // ۴. پرداخت واقعی با شرحی شامل کلمه «حواله» ولی بدون شناسه انتقال، اشتباهاً حواله محسوب نشود
+    (function testP2_4() {
+      // حالت الف: پرداخت هزینه اجاره که در شرح آن واژه حواله آمده است (باید OpEx باشد، نه حواله)
+      var pOpEx = { id: 404, type: 'payment', amount: 6000000, category: 'اجاره', description: 'حواله اینترنتی اجاره فروردین دفتر' };
+      // حالت ب: پرداخت بدون شناسه انتقال با شرح حواله (حالت مبهم: نباید خودکار حواله شود، بلکه نیازمند بررسی)
+      var pAmbiguous = { id: 405, type: 'payment', amount: 2000000, category: null, description: 'حواله نامشخص بدون شناسه' };
+      var exp = filterOperatingExpenses([pOpEx, pAmbiguous]);
+      var pass = (exp.classifiedOpEx === 6000000 &&
+                  exp.byCategory['اجاره'] === 6000000 &&
+                  exp.transfers === 0 &&
+                  exp.unclassifiedPayments === 2000000);
+      results.push({
+        id: 4,
+        title: 'ممیزی ۴: عدم تلقی اشتباه پرداخت‌های شامل کلمه «حواله» در متن به عنوان انتقال بین‌حسابی',
+        description: 'اطمینان از اینکه وجود واژه «حواله» در شرح، هزینه اجاره را حذف نمی‌کند و پرداخت مبهم را خودکار حواله نمی‌کند.',
+        expected: 'classifiedOpEx: ۶،۰۰۰،۰۰۰ (اجاره) | transfers: ۰ (هیچ حواله ساختاریافته‌ای نیست) | unclassified: ۲،۰۰۰،۰۰۰',
+        actual: 'classifiedOpEx: ' + exp.classifiedOpEx + ' | transfers: ' + exp.transfers + ' | unclassified: ' + exp.unclassifiedPayments,
+        passed: pass
+      });
+    })();
+
+    // ۵. حواله ساختاریافته دارای transferId همچنان از هزینه عملیاتی جدا باشد
+    (function testP2_5() {
+      var pTr = { id: 406, type: 'payment', amount: 15000000, transferId: 887766, date: '1404/01/18', description: 'انتقال وجه بین بانکی صادرات به سامان' };
+      var exp = filterOperatingExpenses([pTr]);
+      var pass = (exp.transfers === 15000000 &&
+                  exp.classifiedOpEx === 0 &&
+                  exp.unclassifiedPayments === 0);
+      results.push({
+        id: 5,
+        title: 'ممیزی ۵: تفکیک قطعی حواله‌های دارای transferId از هزینه‌های عملیاتی',
+        description: 'تأیید شناسایی دقیق حواله ساختاریافته بر پایه شناسه انتقال و تفکیک کامل از هزینه‌ها.',
+        expected: 'transfers: ۱۵،۰۰۰،۰۰۰ | classifiedOpEx: ۰ | unclassified: ۰',
+        actual: 'transfers: ' + exp.transfers + ' | classifiedOpEx: ' + exp.classifiedOpEx + ' | unclassified: ' + exp.unclassifiedPayments,
+        passed: pass
+      });
+    })();
+
+    // ۶. سرفصل «تسویه تأمین‌کننده / خرید» از سود کسر نشود
+    (function testP2_6() {
+      var pSup = { id: 407, type: 'payment', amount: 12000000, category: 'تسویه تأمین‌کننده / خرید', date: '1404/01/20', description: 'تسویه بستانکاری خرید پارچه' };
+      var inv = { id: 503, type: 'sale', subtotal: 20000000, items: [{ productId: 1, quantity: 1, unitPrice: 20000000, buyPrice: 12000000 }] };
+      var pl = calculatePeriodPL([inv], [pSup], 0, 0);
+      var pass = (pl.supplierSettlements === 12000000 &&
+                  pl.classifiedOpEx === 0 &&
+                  pl.netOperatingProfit === 8000000); // 20M - 12M = 8M gross profit (untouched)
+      results.push({
+        id: 6,
+        title: 'ممیزی ۶: عدم کسر سرفصل «تسویه تأمین‌کننده / خرید» از صورت سود و زیان',
+        description: 'تأیید قرارگیری در گروه تسویه تأمین‌کنندگان و مصونیت کامل سود خالص از این پرداخت.',
+        expected: 'supplierSettlements: ۱۲،۰۰۰،۰۰۰ | classifiedOpEx: ۰ | سود خالص دست‌نخورده: ۸،۰۰۰،۰۰۰',
+        actual: 'supplierSettlements: ' + pl.supplierSettlements + ' | classifiedOpEx: ' + pl.classifiedOpEx + ' | سود خالص: ' + pl.netOperatingProfit,
+        passed: pass
+      });
+    })();
+
+    // ۷. تفکیک دقیق و عدم اختلاط هزینه‌های عملیاتی، پرداخت‌های ناشناخته، حواله‌ها و تسویه‌ها
+    (function testP2_7() {
+      var inv = {
+        id: 504,
+        type: 'sale',
+        subtotal: 30000000,
+        brokerCommission: 2000000,
+        items: [{ productId: 1, quantity: 1, unitPrice: 30000000, buyPrice: 10000000 }]
+      }; // سود ناخالص = 20,000,000 | پس از کمیسیون = 18,000,000
+
+      var pRent = { id: 410, type: 'payment', amount: 6000000, category: 'اجاره', description: 'حواله اجاره' };
+      var pSalary = { id: 411, type: 'payment', amount: 4000000, category: 'حقوق و دستمزد', description: 'حقوق پرسنل' };
+      var pUnknown = { id: 412, type: 'payment', amount: 5000000, category: 'سرفصل نامعتبر ناشناس', description: 'مخارج نامشخص' };
+      var pAmbiguousWord = { id: 413, type: 'payment', amount: 3000000, category: null, description: 'انتقال بدون شناسه' };
+      var pRealTransfer = { id: 414, type: 'payment', amount: 8000000, transferId: 998877, description: 'حواله به بانک دیگر' };
+      var pSupSettlement = { id: 415, type: 'payment', amount: 14000000, category: 'تسویه تأمین‌کننده / خرید' };
+
+      var pl = calculatePeriodPL([inv], [pRent, pSalary, pUnknown, pAmbiguousWord, pRealTransfer, pSupSettlement], 0, 0);
+
+      var pass = (pl.grossProfit === 20000000 &&
+                  pl.brokerCommissions === 2000000 &&
+                  pl.profitAfterBroker === 18000000 &&
+                  pl.classifiedOpEx === 10000000 && // 6M + 4M
+                  pl.unclassifiedPayments === 8000000 && // 5M + 3M
+                  pl.transfers === 8000000 && // 8M
+                  pl.supplierSettlements === 14000000 && // 14M
+                  pl.netOperatingProfit === 8000000); // 20M - 2M - 10M = 8M
+
+      results.push({
+        id: 7,
+        title: 'ممیزی ۷: آزمون تجمیعی عدم اختلاط OpEx، پرداخت‌های ناشناخته، حواله‌ها و تسویه‌ها در P&L',
+        description: 'بررسی جامع همزمانی تمام جریان‌ها و اطمینان از کسر صرفاً هزینه‌های عملیاتی تأییدشده از سود.',
+        expected: 'OpEx: ۱۰M | نامشخص: ۸M | حواله: ۸M | تسویه: ۱۴M | سود خالص نهایی: ۸،۰۰۰،۰۰۰',
+        actual: 'OpEx: ' + pl.classifiedOpEx + ' | نامشخص: ' + pl.unclassifiedPayments + ' | حواله: ' + pl.transfers + ' | تسویه: ' + pl.supplierSettlements + ' | سود خالص: ' + pl.netOperatingProfit,
+        passed: pass
+      });
+    })();
+
+    var passedCount = results.filter(function(r) { return r.passed; }).length;
+    return {
+      passed: passedCount,
+      failed: results.length - passedCount,
+      total: results.length,
+      allPassed: passedCount === results.length,
+      results: results
+    };
+  }
+
   // اکسپورت ماژول به دامنه سراسری پنجره
   return {
     isValidBuyPrice: isValidBuyPrice,
@@ -1215,7 +1442,11 @@ var FinanceEngine = (function() {
     calculatePeriodPL: calculatePeriodPL,
     runDiagnosticSuite: runDiagnosticSuite,
     runMandatoryAuditSuite: runMandatoryAuditSuite,
-    runOperatingExpensesSuite: runOperatingExpensesSuite
+    runOperatingExpensesSuite: runOperatingExpensesSuite,
+    runPhase2AuditSuite: runPhase2AuditSuite,
+    APPROVED_OPEX_CATEGORIES: APPROVED_OPEX_CATEGORIES,
+    isApprovedOpEx: isApprovedOpEx,
+    isSupplierSettlementCategory: isSupplierSettlementCategory
   };
 })();
 

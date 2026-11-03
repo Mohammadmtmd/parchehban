@@ -119,7 +119,7 @@ var Pay = {
       return { v: c, t: c };
     });
     if (p && p.category && this.EXPENSE_CATEGORIES.indexOf(p.category) === -1) {
-      catItems.push({ v: p.category, t: p.category });
+      catItems.push({ v: p.category, t: p.category + ' (سرفصل قدیمی / نیازمند بررسی)' });
     }
 
     var h = F.section(isR ? 'طرف حساب' : 'طرف حساب و سرفصل', isR ? 'bi-arrow-down-left' : 'bi-arrow-up-right') +
