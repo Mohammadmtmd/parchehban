@@ -452,7 +452,7 @@ var Rasgiri = {
 
       /* جمع حروفی */
       '<div style="margin-bottom:24px;padding:8px 12px;border:1px dashed #999;border-radius:6px;font-size:10px;background:#fafafa">' +
-      '<strong>مبلغ کل به حروف:</strong> ' + esc(num2fa(res.totalAmount)) + ' ریال' +
+      '<strong>مبلغ کل به حروف:</strong> ' + esc(num2fa(res.totalAmount)) +
       '</div>' +
 
       /* خطوط امضا در پایین صفحه */

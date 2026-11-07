@@ -262,24 +262,38 @@ var Dash = {
       ? FinanceEngine.calculateBankBalances(banks, dashPays, dashBts, { startNum: startNum, endNum: endNum })
       : null;
 
-    var bankBalances = bankCalc ? bankCalc.bankBalances : [];
-    var totalBankBal = bankCalc ? bankCalc.totalBankBal : 0;
-    var bankReceiptsPeriod = bankCalc ? bankCalc.bankReceiptsPeriod : 0;
-    var bankPaymentsPeriod = bankCalc ? bankCalc.bankPaymentsPeriod : 0;
+    var bankBalances = [];
+    var totalBankBal = null;
+    var bankReceiptsPeriod = 0;
+    var bankPaymentsPeriod = 0;
+    var unassignedCash = { totalReceipts: 0, totalPayments: 0, balance: 0, periodReceipts: 0, periodPayments: 0 };
+    var unmatchedBankTransactions = [];
+    var unmatchedBankReceipts = 0;
+    var unmatchedBankPayments = 0;
+    var unmatchedBankTotal = 0;
 
-    if (!bankCalc) {
-      console.error('[Dashboard] خطای اساسی مالی: ماژول FinanceEngine بارگذاری نشده است! جهت جلوگیری از دوباره‌شماری و مغایرت، از اجرای محاسبات موازی خودداری شد.');
+    if (bankCalc) {
+      bankBalances = bankCalc.bankBalances || [];
+      totalBankBal = bankCalc.totalBankBal;
+      bankReceiptsPeriod = bankCalc.bankReceiptsPeriod || 0;
+      bankPaymentsPeriod = bankCalc.bankPaymentsPeriod || 0;
+      unassignedCash = bankCalc.unassignedCash || unassignedCash;
+      unmatchedBankTransactions = bankCalc.unmatchedBankTransactions || [];
+      unmatchedBankReceipts = bankCalc.unmatchedBankReceipts || 0;
+      unmatchedBankPayments = bankCalc.unmatchedBankPayments || 0;
+      unmatchedBankTotal = bankCalc.unmatchedBankTotal || 0;
+    } else {
+      console.error('[Dashboard] خطای اساسی مالی: ماژول FinanceEngine بارگذاری نشده است! جهت جلوگیری از نمایش اطلاعات گمراه‌کننده، مانده اولیه حساب‌ها به عنوان مانده واقعی تلقی نشد و محاسبات موازی لغو گردید.');
       banks.forEach(function(b) {
         if (!b) return;
-        var ob = numOf(b.openingBalance);
         bankBalances.push({
           id: b.id,
           name: b.name,
           bankName: b.bankName || '',
           accountNumber: b.accountNumber || '',
-          balance: ob
+          balance: null,
+          unavailable: true
         });
-        totalBankBal += ob;
       });
     }
 
@@ -500,6 +514,11 @@ var Dash = {
       totalBankBal: totalBankBal,
       bankReceiptsPeriod: bankReceiptsPeriod,
       bankPaymentsPeriod: bankPaymentsPeriod,
+      unassignedCash: unassignedCash,
+      unmatchedBankTransactions: unmatchedBankTransactions,
+      unmatchedBankReceipts: unmatchedBankReceipts,
+      unmatchedBankPayments: unmatchedBankPayments,
+      unmatchedBankTotal: unmatchedBankTotal,
       totalDebtors: totalDebtors,
       debtorCount: debtorCount,
       top5Debtors: top5Debtors,
@@ -527,6 +546,7 @@ var Dash = {
       endNum: endNum,
       rangeDescription: rangeDescription
     };
+    this.lastData = this._cache;
 
     /* ══ رندر HTML کامل داشبورد ══ */
     var h = '<div class="erp-dash">';
@@ -708,16 +728,20 @@ var Dash = {
     '</div>';
 
     // ۷. موجودی نقد و بانک‌ها
+    var bankCardValue = (totalBankBal !== null)
+      ? (UI.fn(totalBankBal) + ' <small style="font-size:0.8rem;font-weight:500">ریال</small>')
+      : '<span style="font-size:0.95rem;color:var(--w)">غیرقابل محاسبه</span>';
+    var bankCardSub = (totalBankBal !== null)
+      ? ('<span>' + UI.fn(banks.length) + ' حساب بانکی و صندوق</span><span class="erp-kpi-link-hint">دفتر بانک ←</span>')
+      : '<span style="color:var(--w)">⚠ خطا در دسترسی به موتور مالی</span>';
+
     h += '<div class="erp-kpi-card" onclick="ROUTES.banks()" title="مشاهده حساب‌های بانکی و صندوق">' +
       '<div class="erp-kpi-head">' +
         '<span class="erp-kpi-title">مانده نقد و بانک‌ها</span>' +
         '<div class="erp-kpi-icon purple"><i class="bi bi-bank2"></i></div>' +
       '</div>' +
-      '<div class="erp-kpi-value">' + UI.fn(totalBankBal) + ' <small style="font-size:0.8rem;font-weight:500">ریال</small></div>' +
-      '<div class="erp-kpi-sub">' +
-        '<span>' + UI.fn(banks.length) + ' حساب بانکی و صندوق</span>' +
-        '<span class="erp-kpi-link-hint">دفتر بانک ←</span>' +
-      '</div>' +
+      '<div class="erp-kpi-value">' + bankCardValue + '</div>' +
+      '<div class="erp-kpi-sub">' + bankCardSub + '</div>' +
     '</div>';
 
     // ۸. ارزش موجودی انبار
@@ -803,6 +827,17 @@ var Dash = {
           '<strong>مبلغ ' + UI.fn(plData.unclassifiedPayments) + ' ریال پرداخت فاقد سرفصل مشخص هزینه:</strong> در جدول P&L جدا شده و خودکار کسر نشده است.' +
         '</div>' +
         '<span class="erp-kpi-link-hint">تخصیص سرفصل ←</span>' +
+      '</div>';
+    }
+
+    if (unmatchedBankTransactions && unmatchedBankTransactions.length > 0) {
+      alertItemsHtml += '<div class="erp-alert-item" style="border-right:3px solid var(--w);cursor:pointer" onclick="Dash.showUnmatchedBankModal()">' +
+        '<div class="erp-alert-lead">' +
+          '<span class="erp-alert-badge warning" style="background:rgba(245,158,11,.15);color:var(--w)"><i class="bi bi-exclamation-triangle-fill"></i> ممیزی حساب</span>' +
+          '<strong>' + UI.fn(unmatchedBankTransactions.length) + ' تراکنش دارای شناسه حساب نامعتبر:</strong> ' +
+          'دریافت‌های نامنطبق: ' + UI.fn(unmatchedBankReceipts) + ' ریال | پرداخت‌های نامنطبق: ' + UI.fn(unmatchedBankPayments) + ' ریال (جهت بررسی و مشاهده جزئیات کلیک کنید).' +
+        '</div>' +
+        '<button class="btn bo bs" style="color:var(--w);border-color:var(--w)" onclick="event.stopPropagation();Dash.showUnmatchedBankModal()">مشاهده جزئیات</button>' +
       '</div>';
     }
 
@@ -999,24 +1034,63 @@ var Dash = {
           '</div>' +
           '<button class="btn bo bs" onclick="ROUTES.banks()">مدیریت بانک‌ها ←</button>' +
         '</div>' +
-        '<div class="cd-b" style="padding:12px 14px;background:rgba(22,163,74,.03);border-bottom:1px solid var(--bd)">' +
-          '<div style="font-size:0.78rem;color:var(--txs)">موجودی نقدی تجمیعی:</div>' +
-          '<div style="font-size:1.3rem;font-weight:800;color:var(--ok);font-variant-numeric:tabular-nums">' +
-            UI.fn(totalBankBal) + ' <small style="font-size:0.75rem">ریال</small>' +
+        (totalBankBal === null ? (
+          '<div class="cd-b" style="padding:12px 14px;background:rgba(220,38,38,.04);border-bottom:1px solid var(--bd)">' +
+            '<div style="color:var(--d);font-weight:700;font-size:0.84rem;margin-bottom:4px"><i class="bi bi-exclamation-triangle-fill"></i> خطا در دسترسی به موتور مالی (FinanceEngine)</div>' +
+            '<div style="font-size:0.75rem;color:var(--txs);line-height:1.6">جهت جلوگیری از نمایش اطلاعات نادرست، مانده حساب‌ها محاسبه نگردید.</div>' +
           '</div>' +
-          '<div style="margin-top:4px;font-size:0.74rem;color:var(--txs);display:flex;justify-content:space-between">' +
-            '<span>گردش دریافت دوره: +' + UI.fn(bankReceiptsPeriod) + '</span>' +
-            '<span>پرداخت: −' + UI.fn(bankPaymentsPeriod) + '</span>' +
+          '<div class="erp-mini-list">' +
+            (bankBalances.length ? bankBalances.map(function(b) {
+              return '<div class="erp-mini-item">' +
+                '<div><strong>' + esc(b.name) + '</strong><div style="font-size:0.72rem;color:var(--txs)">' + esc(b.bankName || b.accountNumber || '—') + '</div></div>' +
+                '<strong style="color:var(--w);font-size:0.8rem">غیرقابل محاسبه</strong>' +
+              '</div>';
+            }).join('') : '<div class="em" style="padding:20px"><p>حساب بانکی تعریف نشده است</p></div>') +
+          '</div>'
+        ) : (
+          '<div class="cd-b" style="padding:12px 14px;background:rgba(22,163,74,.03);border-bottom:1px solid var(--bd)">' +
+            '<div style="font-size:0.78rem;color:var(--txs)">موجودی نقدی تجمیعی حساب‌های بانکی:</div>' +
+            '<div style="font-size:1.3rem;font-weight:800;color:var(--ok);font-variant-numeric:tabular-nums">' +
+              UI.fn(totalBankBal) + ' <small style="font-size:0.75rem">ریال</small>' +
+            '</div>' +
+            '<div style="margin-top:4px;font-size:0.74rem;color:var(--txs);display:flex;justify-content:space-between">' +
+              '<span>گردش دریافت دوره: +' + UI.fn(bankReceiptsPeriod) + '</span>' +
+              '<span>پرداخت: −' + UI.fn(bankPaymentsPeriod) + '</span>' +
+            '</div>' +
           '</div>' +
-        '</div>' +
-        '<div class="erp-mini-list">' +
-          (bankBalances.length ? bankBalances.map(function(b) {
-            return '<div class="erp-mini-item" onclick="Bank.show(' + b.id + ')" title="مشاهده گردش حساب">' +
-              '<div><strong>' + esc(b.name) + '</strong><div style="font-size:0.72rem;color:var(--txs)">' + esc(b.bankName || b.accountNumber || '—') + '</div></div>' +
-              '<strong style="color:' + (b.balance >= 0 ? 'var(--ok)' : 'var(--d)') + ';font-variant-numeric:tabular-nums">' + UI.fn(b.balance) + '</strong>' +
-            '</div>';
-          }).join('') : '<div class="em" style="padding:20px"><p>حساب بانکی تعریف نشده است</p></div>') +
-        '</div>' +
+          '<div class="erp-mini-list">' +
+            (bankBalances.length ? bankBalances.map(function(b) {
+              return '<div class="erp-mini-item" onclick="Bank.show(' + b.id + ')" title="مشاهده گردش حساب">' +
+                '<div><strong>' + esc(b.name) + '</strong><div style="font-size:0.72rem;color:var(--txs)">' + esc(b.bankName || b.accountNumber || '—') + '</div></div>' +
+                '<strong style="color:' + (b.balance >= 0 ? 'var(--ok)' : 'var(--d)') + ';font-variant-numeric:tabular-nums">' + UI.fn(b.balance) + '</strong>' +
+              '</div>';
+            }).join('') : '<div class="em" style="padding:20px"><p>حساب بانکی تعریف نشده است</p></div>') +
+          '</div>' +
+          /* نمایش نقدینگی آزاد (Unassigned Cash) */
+          '<div style="padding:10px 14px;background:rgba(37,99,235,.04);border-top:1px solid var(--bd)">' +
+            '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">' +
+              '<span style="font-size:0.78rem;font-weight:700;color:var(--txm)"><i class="bi bi-cash-stack" style="color:var(--p)"></i> نقدینگی آزاد (صندوق بدون حساب):</span>' +
+              '<strong style="font-size:0.95rem;color:' + (unassignedCash.balance >= 0 ? 'var(--ok)' : 'var(--d)') + ';font-variant-numeric:tabular-nums">' + UI.fn(unassignedCash.balance) + ' <small style="font-size:0.7rem">ریال</small></strong>' +
+            '</div>' +
+            '<div style="display:flex;justify-content:space-between;font-size:0.72rem;color:var(--txs)">' +
+              '<span>دریافت‌های بدون حساب: +' + UI.fn(unassignedCash.totalReceipts) + '</span>' +
+              '<span>پرداخت‌های بدون حساب: −' + UI.fn(unassignedCash.totalPayments) + '</span>' +
+            '</div>' +
+          '</div>' +
+          /* هشدار تراکنش‌های نامنطبق در صورت وجود */
+          (unmatchedBankTransactions.length > 0 ? (
+            '<div style="padding:10px 14px;background:rgba(245,158,11,.08);border-top:1px solid var(--bd);cursor:pointer" onclick="Dash.showUnmatchedBankModal()">' +
+              '<div style="display:flex;align-items:center;justify-content:space-between;color:var(--w);font-size:0.78rem;font-weight:700">' +
+                '<span><i class="bi bi-exclamation-triangle-fill"></i> ' + UI.fn(unmatchedBankTransactions.length) + ' تراکنش دارای حساب نامعتبر</span>' +
+                '<span style="font-size:0.7rem;text-decoration:underline">مشاهده جزئیات ←</span>' +
+              '</div>' +
+              '<div style="display:flex;justify-content:space-between;font-size:0.71rem;color:var(--txs);margin-top:4px">' +
+                '<span>دریافت نامنطبق: +' + UI.fn(unmatchedBankReceipts) + '</span>' +
+                '<span>پرداخت نامنطبق: −' + UI.fn(unmatchedBankPayments) + '</span>' +
+              '</div>' +
+            '</div>'
+          ) : '')
+        )) +
       '</div>' +
     '</div>';
 
@@ -1511,6 +1585,44 @@ var Dash = {
     } catch (err) {
       console.warn('Dashboard Chart.js render warning:', err);
     }
+  },
+
+  /* ══ مودال مشاهده جزئیات تراکنش‌های دارای شناسه حساب نامعتبر ══ */
+  showUnmatchedBankModal: function() {
+    var list = (this.lastData && this.lastData.unmatchedBankTransactions) ? this.lastData.unmatchedBankTransactions : [];
+    if (!list.length) {
+      UI.toast('هیچ تراکنش نامنطبقی یافت نشد', 'i');
+      return;
+    }
+    var rows = list.map(function(t, i) {
+      var isRec = (t.type === 'receipt');
+      var typeBadge = isRec
+        ? '<span style="color:var(--ok);font-weight:700">دریافت</span>'
+        : '<span style="color:var(--d);font-weight:700">پرداخت</span>';
+      return '<tr>' +
+        '<td>' + (i + 1) + '</td>' +
+        '<td><code>#' + esc(t.id) + '</code></td>' +
+        '<td style="color:var(--d);font-weight:700">' + esc(t.bankId || '—') + ' (نامعتبر)</td>' +
+        '<td>' + typeBadge + '</td>' +
+        '<td style="font-weight:700;font-variant-numeric:tabular-nums;text-align:left">' + UI.fn(t.amount) + '</td>' +
+        '<td>' + esc(t.date || '—') + '</td>' +
+        '<td>' + esc(t.description || (t.sourceInvoiceId ? ('فاکتور #' + t.sourceInvoiceId) : '—')) + '</td>' +
+      '</tr>';
+    }).join('');
+
+    var modalHtml = '<div style="margin-bottom:12px;font-size:0.84rem;color:var(--txs);line-height:1.7">' +
+      '<div class="hint-box" style="background:rgba(245,158,11,.08);border:1px solid var(--w);border-radius:8px;padding:10px;margin-bottom:10px">' +
+        '<i class="bi bi-info-circle-fill" style="color:var(--w)"></i> ' +
+        'این تراکنش‌ها دارای <code>bankId</code> ثبت‌شده هستند اما حساب متناظر در لیست بانک‌ها موجود نیست یا حذف شده است. ' +
+        'این مبالغ در مانده بانک‌های فعال و در نقدینگی آزاد منظور <strong>نشده‌اند</strong> تا مغایرتی ایجاد نگردد.' +
+      '</div>' +
+      '<div class="tw"><table><thead><tr>' +
+        '<th>#</th><th>شناسه</th><th>شناسه حساب</th><th>نوع</th><th style="text-align:left">مبلغ (ریال)</th><th>تاریخ</th><th>شرح</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    '</div>';
+
+    UI.open('تراکنش‌های بانکی دارای شناسه حساب نامعتبر (' + UI.fn(list.length) + ' مورد)', modalHtml,
+      '<button class="btn bo" onclick="UI.close()">بستن</button>', true);
   }
 };
 

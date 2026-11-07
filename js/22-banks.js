@@ -15,32 +15,86 @@ var Bank = {
        را هم حساب می‌کرد؛ نتیجه: عدد لیست با عدد صورت‌حساب یکی نبود.
        حالا هر دو از یک تابع واحد (Bank.balance) استفاده می‌کنند. */
     var allCalc = await Bank.allBalances();
+    Bank._lastCalc = allCalc;
     var bMap = allCalc.bankMap || {};
     var r = '',
-      totalBal = allCalc.totalBankBal || 0;
+      totalBal = allCalc.totalBankBal;
+    var isUnavailable = (allCalc.error === 'FINANCE_ENGINE_UNAVAILABLE' || totalBal === null);
+
     for (var i = 0; i < bs.length; i++) {
       var b = bs[i];
-      var accInfo = bMap[b.id] || { balance: b.openingBalance || 0 };
+      var accInfo = bMap[b.id] || { balance: null };
       var bal = accInfo.balance;
-      var bc = bal >= 0 ? 'color:var(--ok)' : 'color:var(--d)';
+      var balDisplay = '';
+      if (bal !== null && bal !== undefined) {
+        var bc = bal >= 0 ? 'color:var(--ok)' : 'color:var(--d)';
+        balDisplay = '<span style="font-weight:700;' + bc + '">' + UI.fn(bal) + '</span>';
+      } else {
+        balDisplay = '<span style="color:var(--w);font-size:0.82rem">غیرقابل محاسبه</span>';
+      }
       r += '<tr class="clk" onclick="Bank.show(' + b.id + ')">';
       r += '<td>' + (i + 1) + '</td>';
       r += '<td><strong>' + esc(b.name) + '</strong></td>';
       r += '<td>' + esc(b.bankName || '—') + '</td>';
       r += '<td>' + esc(b.accountNumber || '—') + '</td>';
-      r += '<td style="font-weight:700;' + bc + '">' + UI.fn(bal) + '</td>';
+      r += '<td>' + balDisplay + '</td>';
       r += '<td style="white-space:nowrap">';
       r += '<button class="bi2" onclick="event.stopPropagation();Bank.form(' + b.id + ')"><i class="bi bi-pencil"></i></button> ';
       r += '<button class="bi2 d" onclick="event.stopPropagation();Bank.rm(' + b.id + ')"><i class="bi bi-trash3"></i></button>';
       r += '</td></tr>';
     }
-    var tc = totalBal >= 0 ? 'color:var(--ok)' : 'color:var(--d)';
+
+    var totalDisplay = '';
+    if (totalBal !== null && totalBal !== undefined) {
+      var tc = totalBal >= 0 ? 'color:var(--ok)' : 'color:var(--d)';
+      totalDisplay = '<td style="' + tc + '">' + UI.fn(totalBal) + '</td>';
+    } else {
+      totalDisplay = '<td style="color:var(--w)">نامشخص</td>';
+    }
+
     var tf = '<tfoot><tr style="background:var(--bg);font-weight:700">' +
       '<td colspan="4">جمع ' + UI.fn(bs.length) + ' حساب</td>' +
-      '<td style="' + tc + '">' + UI.fn(totalBal) + '</td><td></td></tr></tfoot>';
-    UI.content('<div class="cd"><div class="cd-h">حساب‌های بانکی</div>' +
+      totalDisplay + '<td></td></tr></tfoot>';
+
+    var errorBanner = isUnavailable
+      ? '<div class="hint-box" style="margin-bottom:12px;background:rgba(220,38,38,.08);border:1.5px solid var(--d);border-radius:10px;padding:12px 16px;color:var(--d);font-size:.85rem;line-height:1.7">' +
+        '<i class="bi bi-exclamation-triangle-fill"></i> <strong>خطا در بارگذاری موتور مالی:</strong> ماژول محاسبات مالی (FinanceEngine) در دسترس نیست. جهت جلوگیری از نمایش اطلاعات نادرست، مانده حساب‌ها نمایش داده نمی‌شود.' +
+        '</div>'
+      : '';
+
+    var unmatchedBanner = '';
+    if (allCalc.unmatchedBankTransactions && allCalc.unmatchedBankTransactions.length > 0) {
+      unmatchedBanner = '<div class="hint-box" style="margin-top:14px;background:rgba(245,158,11,.08);border:1.5px solid var(--w);border-radius:10px;padding:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">' +
+        '<div>' +
+          '<div style="font-weight:700;color:var(--w);font-size:.9rem"><i class="bi bi-exclamation-triangle-fill"></i> هشدار ممیزی: ' + UI.fn(allCalc.unmatchedBankTransactions.length) + ' تراکنش دارای شناسه حساب نامعتبر یا حذف‌شده</div>' +
+          '<div style="font-size:.82rem;color:var(--txs);margin-top:4px">' +
+            'دریافت‌های نامنطبق: <strong>' + UI.fn(allCalc.unmatchedBankReceipts) + '</strong> ریال | ' +
+            'پرداخت‌های نامنطبق: <strong>' + UI.fn(allCalc.unmatchedBankPayments) + '</strong> ریال | ' +
+            'اثر خالص: <strong>' + UI.fn(allCalc.unmatchedBankTotal) + '</strong> ریال' +
+            '<br><span style="font-size:0.75rem;color:var(--txs)">(این مبالغ به مانده حساب‌های فعال و نقدینگی آزاد اضافه نشده‌اند و هیچ رکوردی خودکار تغییر نخواهد کرد)</span>' +
+          '</div>' +
+        '</div>' +
+        '<button class="btn bo bs" style="border-color:var(--w);color:var(--w)" onclick="Bank.showUnmatchedModal()"><i class="bi bi-list-check"></i> مشاهده جزئیات تراکنش‌ها</button>' +
+      '</div>';
+    }
+
+    var cashBanner = '';
+    if (allCalc.unassignedCash && (allCalc.unassignedCash.totalReceipts > 0 || allCalc.unassignedCash.totalPayments > 0)) {
+      cashBanner = '<div style="margin-top:10px;padding:10px 14px;background:rgba(37,99,235,.04);border:1px dashed var(--bd);border-radius:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">' +
+        '<div>' +
+          '<span style="font-size:0.82rem;font-weight:700;color:var(--txm)"><i class="bi bi-wallet2" style="color:var(--p)"></i> نقدینگی آزاد (صندوق بدون اتصال به بانک): </span>' +
+          '<strong style="font-size:0.95rem;color:' + (allCalc.unassignedCash.balance >= 0 ? 'var(--ok)' : 'var(--d)') + '">' + UI.fn(allCalc.unassignedCash.balance) + ' ریال</strong>' +
+        '</div>' +
+        '<div style="font-size:0.78rem;color:var(--txs);display:flex;gap:12px">' +
+          '<span>دریافت‌های بدون حساب: +' + UI.fn(allCalc.unassignedCash.totalReceipts) + '</span>' +
+          '<span>پرداخت‌های بدون حساب: −' + UI.fn(allCalc.unassignedCash.totalPayments) + '</span>' +
+        '</div>' +
+      '</div>';
+    }
+
+    UI.content(errorBanner + '<div class="cd"><div class="cd-h">حساب‌های بانکی</div>' +
       '<div class="tw"><table><thead><tr><th>#</th><th>نام حساب</th><th>بانک</th><th>شماره حساب</th><th>موجودی</th><th></th></tr></thead>' +
-      '<tbody>' + r + '</tbody>' + tf + '</table></div></div>');
+      '<tbody>' + r + '</tbody>' + tf + '</table></div>' + cashBanner + '</div>' + unmatchedBanner);
   },
 
   form: async function(id) {
@@ -141,14 +195,24 @@ var Bank = {
       return FinanceEngine.calculateBankBalances(bs, pays, bts);
     }
     console.error('[Bank.allBalances] خطای اساسی مالی: ماژول FinanceEngine در دسترس نیست! جهت جلوگیری از دوباره‌شماری و تناقض محاسباتی، از اجرای محاسبات موازی خودداری شد.');
-    var map = {}, total = 0, list = [];
+    var map = {}, list = [];
     bs.forEach(function(b) {
-      var ob = b.openingBalance || 0;
-      map[b.id] = { id: b.id, name: b.name, balance: ob };
-      total += ob;
-      list.push({ id: b.id, name: b.name, balance: ob });
+      map[b.id] = { id: b.id, name: b.name, balance: null, unavailable: true };
+      list.push({ id: b.id, name: b.name, balance: null, unavailable: true });
     });
-    return { bankBalances: list, bankMap: map, totalBankBal: total, totalBankBalance: total, error: 'FINANCE_ENGINE_UNAVAILABLE' };
+    return {
+      bankBalances: list,
+      bankMap: map,
+      totalBankBal: null,
+      totalBankBalance: null,
+      unassignedCash: { balance: null, totalReceipts: null, totalPayments: null },
+      unmatchedBankTransactions: [],
+      unmatchedBankReceipts: 0,
+      unmatchedBankPayments: 0,
+      unmatchedBankTotal: 0,
+      error: 'FINANCE_ENGINE_UNAVAILABLE',
+      errorMessage: 'موتور مالی (FinanceEngine) در دسترس نیست؛ مانده حساب‌ها قابل محاسبه نمی‌باشد.'
+    };
   },
 
   balance: async function(bankId) {
@@ -162,8 +226,46 @@ var Bank = {
     if (typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.calculateAccountBalance === 'function') {
       return FinanceEngine.calculateAccountBalance(bankId, [b], pays, bts);
     }
-    console.error('[Bank.balance] خطای اساسی مالی: ماژول FinanceEngine در دسترس نیست! محاسبه موازی لغو شد.');
-    return b.openingBalance || 0;
+    console.error('[Bank.balance] خطای اساسی مالی: ماژول FinanceEngine در دسترس نیست! مانده اولیه جایگزین نمی‌شود تا از نمایش داده‌های گمراه‌کننده جلوگیری گردد.');
+    return null;
+  },
+
+  showUnmatchedModal: function() {
+    var calc = this._lastCalc;
+    var list = (calc && calc.unmatchedBankTransactions) ? calc.unmatchedBankTransactions : [];
+    if (!list.length) {
+      UI.toast('هیچ تراکنش بانکی نامنطبقی یافت نشد', 'i');
+      return;
+    }
+    var rows = list.map(function(t, i) {
+      var isRec = (t.type === 'receipt');
+      var typeBadge = isRec
+        ? '<span style="color:var(--ok);font-weight:700">دریافت</span>'
+        : '<span style="color:var(--d);font-weight:700">پرداخت</span>';
+      return '<tr>' +
+        '<td>' + (i + 1) + '</td>' +
+        '<td><code>#' + esc(t.id) + '</code></td>' +
+        '<td style="color:var(--d);font-weight:700">' + esc(t.bankId || '—') + ' (نامعتبر)</td>' +
+        '<td>' + typeBadge + '</td>' +
+        '<td style="font-weight:700;font-variant-numeric:tabular-nums;text-align:left">' + UI.fn(t.amount) + '</td>' +
+        '<td>' + esc(t.date || '—') + '</td>' +
+        '<td>' + esc(t.description || (t.sourceInvoiceId ? ('فاکتور #' + t.sourceInvoiceId) : '—')) + '</td>' +
+      '</tr>';
+    }).join('');
+
+    var modalHtml = '<div style="margin-bottom:12px;font-size:0.84rem;color:var(--txs);line-height:1.7">' +
+      '<div class="hint-box" style="background:rgba(245,158,11,.08);border:1px solid var(--w);border-radius:8px;padding:10px;margin-bottom:10px">' +
+        '<i class="bi bi-info-circle-fill" style="color:var(--w)"></i> ' +
+        'این تراکنش‌ها دارای شناسه حسابی هستند که در میان حساب‌های بانکی تعریف‌شده سیستم وجود ندارد. ' +
+        'این مبالغ به هیچ حسابی اضافه یا کسر نشده‌اند و در نقدینگی آزاد نیز وارد نگردیده‌اند.' +
+      '</div>' +
+      '<div class="tw"><table><thead><tr>' +
+        '<th>#</th><th>شناسه</th><th>شناسه حساب</th><th>نوع</th><th style="text-align:left">مبلغ (ریال)</th><th>تاریخ</th><th>شرح</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    '</div>';
+
+    UI.open('تراکنش‌های دارای حساب نامعتبر (' + UI.fn(list.length) + ' مورد)', modalHtml,
+      '<button class="btn bo" onclick="UI.close()">بستن</button>', true);
   },
 
   /* توجه: نسخه قبلی دو تعریف از show داشت؛ اولی ناقص بود و فقط

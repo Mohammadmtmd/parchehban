@@ -5,6 +5,7 @@ import '../js/02b-finance.js';
 import assert from 'assert';
 
 const FinanceEngine = globalThis.FinanceEngine;
+const executedTestTracker = [];
 
 console.log('--- اجرای تست‌های موتور مالی FinanceEngine ---');
 assert(FinanceEngine, 'FinanceEngine باید لود شده باشد');
@@ -16,6 +17,7 @@ console.log(`نتیجه کلی سناریوهای پایه: ${suite.passed} از
 suite.results.forEach(r => {
   console.log(`[${r.passed ? '✓' : '✗'}] ${r.title}`);
   assert(r.passed, `تست سناریو شکست خورد: ${r.title} - ${r.actual}`);
+  executedTestTracker.push({ title: r.title, passed: r.passed });
 });
 
 assert.strictEqual(suite.passed, 10, 'باید تمام ۱۰ سناریو پاس شوند');
@@ -30,6 +32,7 @@ console.log(`نتیجه کلی آزمون‌های الزامی: ${mandatorySuit
 mandatorySuite.results.forEach(r => {
   console.log(`[${r.passed ? '✓' : '✗'}] ${r.title}`);
   assert(r.passed, `تست سناریو الزامی شکست خورد: ${r.title} - ${r.actual}`);
+  executedTestTracker.push({ title: r.title, passed: r.passed });
 });
 
 assert.strictEqual(mandatorySuite.passed, 8, 'باید تمام ۸ آزمون الزامی پاس شوند');
@@ -92,6 +95,7 @@ console.log(`  - تفکیک فروش: معتبر=${periodPL.salesWithValidBuyPri
 console.log(`  - سود قابل‌تأیید: ${periodPL.verifiedGrossProfit}`);
 console.log(`  - وضعیت دوره: ${periodPL.status} (${periodPL.statusLabel})`);
 console.log(`  - هشدار سود: ${periodPL.profitWarning}`);
+executedTestTracker.push({ title: 'آزمون مستقل ارزیابی صورت سود و زیان دوره (calculatePeriodPL)', passed: true });
 console.log('✓ تمام آزمون‌های پایه، الزامی و آزمون مستقل calculatePeriodPL با موفقیت پاس شدند.');
 
 console.log('\n--- اجرای ۸ آزمون تخصصی ثبت و تفکیک هزینه‌های عملیاتی (OpEx) و صورت سود و زیان ---');
@@ -101,6 +105,7 @@ console.log(`نتیجه کلی آزمون‌های هزینه‌های عملی�
 opExSuite.results.forEach(r => {
   console.log(`[${r.passed ? '✓' : '✗'}] ${r.title}`);
   assert(r.passed, `تست سناریو هزینه‌های عملیاتی شکست خورد: ${r.title} - ${r.actual}`);
+  executedTestTracker.push({ title: r.title, passed: r.passed });
 });
 
 assert.strictEqual(opExSuite.passed, 8, 'باید تمام ۸ آزمون هزینه‌های عملیاتی پاس شوند');
@@ -115,6 +120,7 @@ console.log(`نتیجه کلی ممیزی مرحله دوم: ${phase2Suite.passe
 phase2Suite.results.forEach(r => {
   console.log(`[${r.passed ? '✓' : '✗'}] ${r.title}`);
   assert(r.passed, `تست ممیزی مرحله دوم شکست خورد: ${r.title} - ${r.actual}`);
+  executedTestTracker.push({ title: r.title, passed: r.passed });
 });
 
 assert.strictEqual(phase2Suite.passed, 7, 'باید تمام ۷ آزمون ممیزی مرحله دوم پاس شوند');
@@ -129,6 +135,7 @@ console.log(`نتیجه کلی آزمون‌های مانده بانک: ${bankSu
 bankSuite.results.forEach(r => {
   console.log(`[${r.passed ? '✓' : '✗'}] ${r.title}`);
   assert(r.passed, `تست ممیزی مانده بانک شکست خورد: ${r.title} - ${r.actual}`);
+  executedTestTracker.push({ title: r.title, passed: r.passed });
 });
 
 assert.strictEqual(bankSuite.passed, 12, 'باید تمام ۱۲ آزمون ممیزی مانده بانک پاس شوند');
@@ -154,7 +161,7 @@ globalThis.Jalali = {
   today: function() { return '1404/01/15'; },
   addMonths: function(d, m) { return '1403/12/15'; }
 };
-globalThis.Perm = { require: function() { return true; } };
+globalThis.Perm = { require: function() { return true; }, can: function() { return true; } };
 globalThis.STATE = { yearId: 1 };
 globalThis.currentPage = '';
 globalThis.Pag = {
@@ -174,6 +181,40 @@ globalThis.Prod = {
   stockMap: async function() { return {}; }
 };
 
+globalThis.pn = function(d) {
+  if (!d) return 0;
+  var n = parseInt(String(d).replace(/\D/g, ''), 10);
+  return isNaN(n) ? 0 : n;
+};
+globalThis.elVal = function() { return ''; };
+globalThis.elNum = function() { return 0; };
+globalThis.ROUTES = {
+  profit: () => {},
+  debtors: () => {},
+  creditors: () => {},
+  banks: () => {},
+  warehouse: () => {},
+  payments: () => {},
+  settings: () => {},
+  years: () => {}
+};
+globalThis.Chk = { autoPassDueChecks: async () => {}, ll: () => {} };
+globalThis.Auth = { isDefaultAdminPass: async () => false };
+globalThis.Sync = { getConfig: () => ({ configured: false }) };
+if (!globalThis.navigator) globalThis.navigator = { onLine: true };
+if (!globalThis.window) globalThis.window = globalThis;
+if (!globalThis.document) {
+  globalThis.document = {
+    getElementById: function() { return null; },
+    body: { classList: { contains: () => false } }
+  };
+}
+if (!globalThis.getComputedStyle) {
+  globalThis.getComputedStyle = function() {
+    return { getPropertyValue: () => '' };
+  };
+}
+
 let capturedUIContent = '';
 let capturedHTML = {};
 globalThis.setHTML = function(id, html) {
@@ -183,7 +224,7 @@ globalThis.UI = {
   fn: function(n) { return (n || 0).toLocaleString('fa-IR'); },
   toast: function() {},
   close: function() {},
-  open: function() {},
+  open: function(title, body) { capturedUIContent = title + ' ' + body; },
   confirm: async function() { return true; },
   nav: function() {},
   title: function() {},
@@ -208,6 +249,7 @@ globalThis.DB = {
       const p = memStore.payments.find(x => x.id === id);
       return p ? JSON.parse(JSON.stringify(p)) : null;
     }
+    if (table === 'fiscalYears') return { id: 1, name: '۱۴۰۴', isCurrent: true, isClosed: false };
     return null;
   },
   all: async function(table) {
@@ -216,6 +258,9 @@ globalThis.DB = {
     if (table === 'banks') return Object.values(memStore.banks).map(x => JSON.parse(JSON.stringify(x)));
     if (table === 'bankTransfers') return JSON.parse(JSON.stringify(memStore.bankTransfers));
     if (table === 'contacts') return [{ id: 1, name: 'مشتری ۱' }, { id: 2, name: 'تأمین‌کننده ۲' }];
+    if (table === 'fiscalYears') return [{ id: 1, name: '۱۴۰۴', isCurrent: true, isClosed: false }];
+    if (table === 'checks') return [];
+    if (table === 'products') return [];
     return [];
   },
   add: async function(table, doc) {
@@ -255,16 +300,19 @@ globalThis.FY = {
 await import('../js/12-invoices.js');
 await import('../js/18-reports.js');
 await import('../js/22-banks.js');
+await import('../js/20-dashboard.js');
 
 const Inv = globalThis.Inv;
 const Rep = globalThis.Rep;
 const Bank = globalThis.Bank;
+const Dash = globalThis.Dash;
 
 assert(Inv && typeof Inv.syncAutoPayment === 'function', 'ماژول Inv باید در دسترس باشد');
 assert(Rep && typeof Rep.summary === 'function', 'ماژول Rep باید در دسترس باشد');
 assert(Bank && typeof Bank.balance === 'function', 'ماژول Bank باید در دسترس باشد');
+assert(Dash && typeof Dash.load === 'function', 'ماژول Dash باید در دسترس باشد');
 
-console.log('✓ محیط Mock در رم و ماژول‌های Inv، Rep و Bank با موفقیت مقداردهی شدند.');
+console.log('✓ محیط Mock در رم و ماژول‌های Inv، Rep، Bank و Dash با موفقیت مقداردهی شدند.');
 
 console.log('\n--- اجرای آزمون واقعی ۲: رفتار دقیق Inv.syncAutoPayment در ویرایش و حذف ---');
 await (async () => {
@@ -327,8 +375,9 @@ await (async () => {
   assert.strictEqual(remainingLinked.length, 1, 'تابع باید رکوردهای تکراری اضافه را پاکسازی کند');
   console.log('  [✓] گام ۴: پاکسازی اسناد تکراری و ابقای یک سند واحد توسط syncAutoPayment تأیید شد.');
 })();
+executedTestTracker.push({ title: 'گروه عملیاتی ۱: همگام‌سازی، ویرایش، حذف و پاکسازی سند خودکار فاکتور (Inv.syncAutoPayment)', passed: true });
 
-console.log('✓ آزمون واقعی ۲: همگام‌سازی، ویرایش، حذف و پاکسازی سند خودکار فاکتور با موفقیت ۱۰۰٪ تأیید شد.');
+console.log('✓ گروه عملیاتی ۱: همگام‌سازی، ویرایش، حذف و پاکسازی سند خودکار فاکتور با موفقیت ۱۰۰٪ تأیید شد.');
 
 console.log('\n--- اجرای آزمون واقعی ۳: گزارش‌های Rep.summary و Rep._ir با تفکیک مستقل ---');
 await (async () => {
@@ -379,33 +428,39 @@ await (async () => {
   assert(purchaseHtml.includes('۲٬۰۰۰٬۰۰۰') || purchaseHtml.includes('2,000,000'), 'مانده بدهی خرید باید ۲M باشد');
   console.log('  [✓] خروجی Rep.purchases بدون دوباره‌شماری با پرداخت ۱۳M و مانده ۲M تأیید شد.');
 })();
+executedTestTracker.push({ title: 'گروه عملیاتی ۲: محاسبات و خروجی گزارش‌های Rep بدون دوباره‌شماری (Rep.summary, Rep.sales, Rep.purchases)', passed: true });
 
-console.log('✓ آزمون واقعی ۳: محاسبات و خروجی گزارش‌های Rep با موفقیت ۱۰۰٪ تأیید شدند.');
+console.log('✓ گروه عملیاتی ۲: محاسبات و خروجی گزارش‌های Rep با موفقیت ۱۰۰٪ تأیید شدند.');
 
-console.log('\n--- اجرای آزمون واقعی ۴: تطابق چندلایه مانده داشبورد، فهرست بانک‌ها و جزئیات بانک ---');
+console.log('\n--- اجرای آزمون واقعی ۴: آزمون واقعی داشبورد و تطابق چندلایه با بانک‌ها و نقدینگی آزاد ---');
 await (async () => {
   const bankA = { id: 101, name: 'بانک ملت', bankName: 'ملت', accountNumber: '111', openingBalance: 12000000 };
   const bankB = { id: 102, name: 'بانک صادرات', bankName: 'صادرات', accountNumber: '222', openingBalance: 18000000 };
   memStore.banks = { 101: bankA, 102: bankB };
 
   memStore.payments = [
-    { id: 1, type: 'receipt', amount: 4000000, bankId: 101, date: '1404/01/10' },
-    { id: 2, type: 'payment', amount: 1000000, bankId: 101, date: '1404/01/11' },
-    { id: 3, type: 'receipt', amount: 6000000, bankId: 102, date: '1404/01/12' }
+    { id: 1, type: 'receipt', amount: 4000000, bankId: 101, date: '1404/01/10', description: 'دریافت بانک ۱۰۱' },
+    { id: 2, type: 'payment', amount: 1000000, bankId: 101, date: '1404/01/11', description: 'پرداخت بانک ۱۰۱' },
+    { id: 3, type: 'receipt', amount: 6000000, bankId: 102, date: '1404/01/12', description: 'دریافت بانک ۱۰۲' },
+    // نقدینگی آزاد (بدون انتساب به حساب بانکی)
+    { id: 4, type: 'receipt', amount: 3000000, bankId: null, date: '1404/01/13', description: 'دریافت نقدی صندوق آزاد' },
+    { id: 5, type: 'payment', amount: 500000, bankId: null, date: '1404/01/13', description: 'پرداخت نقدی صندوق آزاد' },
+    // تراکنش دارای شناسه حساب نامعتبر یا حذف‌شده
+    { id: 6, type: 'receipt', amount: 1500000, bankId: 999, date: '1404/01/14', description: 'دریافت با حساب نامعتبر ۹۹۹' }
   ];
 
   memStore.bankTransfers = [
-    { id: 1, fromBankId: 102, toBankId: 101, amount: 5000000, date: '1404/01/14' }
+    { id: 1, fromBankId: 102, toBankId: 101, amount: 5000000, date: '1404/01/14', notes: 'انتقال از ۱۰۲ به ۱۰۱' }
   ];
 
-  // محاسبه مستقیم از موتور مالی (استفاده‌شده در داشبورد)
+  // ۱. محاسبه مستقیم از موتور مالی (منبع واحد حقیقت)
   const dashEngine = FinanceEngine.calculateBankBalances(
     Object.values(memStore.banks),
     memStore.payments,
     memStore.bankTransfers
   );
 
-  // استخراج از متدهای واقعی بانک
+  // ۲. استخراج از متدهای Bank
   const bankAll = await Bank.allBalances();
   const balA_single = await Bank.balance(101);
   const balB_single = await Bank.balance(102);
@@ -413,34 +468,84 @@ await (async () => {
   // بررسی ریاضی:
   // بانک ۱۰۱: ۱۲M + ۴M - ۱M + ۵M = ۲۰،۰۰۰،۰۰۰ ریال
   // بانک ۱۰۲: ۱۸M + ۶M - ۵M = ۱۹،۰۰۰،۰۰۰ ریال
-  // مجموع کل: ۳۹،۰۰۰،۰۰۰ ریال
+  // مجموع کل بانک‌ها: ۳۹،۰۰۰،۰۰۰ ریال
+  // نقدینگی آزاد: ۳M - ۰.۵M = ۲،۵۰۰،۰۰۰ ریال
+  // تراکنش نامنطبق: ۱ مورد به مبلغ ۱،۵۰۰،۰۰۰ ریال
   assert.strictEqual(dashEngine.bankMap[101].balance, 20000000);
   assert.strictEqual(dashEngine.bankMap[102].balance, 19000000);
   assert.strictEqual(dashEngine.totalBankBal, 39000000);
+  assert.strictEqual(dashEngine.unassignedCash.balance, 2500000);
+  assert.strictEqual(dashEngine.unassignedCash.totalReceipts, 3000000);
+  assert.strictEqual(dashEngine.unassignedCash.totalPayments, 500000);
+  assert.strictEqual(dashEngine.unmatchedBankTransactions.length, 1);
+  assert.strictEqual(dashEngine.unmatchedBankReceipts, 1500000);
 
   // بررسی تطابق ۱۰۰٪ با Bank.allBalances
   assert.strictEqual(bankAll.bankMap[101].balance, 20000000);
   assert.strictEqual(bankAll.bankMap[102].balance, 19000000);
   assert.strictEqual(bankAll.totalBankBal, 39000000);
+  assert.strictEqual(bankAll.unassignedCash.balance, 2500000);
+  assert.strictEqual(bankAll.unmatchedBankTransactions.length, 1);
 
   // بررسی تطابق با Bank.balance تک‌تک حساب‌ها
   assert.strictEqual(balA_single, 20000000);
   assert.strictEqual(balB_single, 19000000);
 
-  // اجرای واقعی Bank.show(101) جهت بررسی تطابق صفحه جزئیات
+  // ۳. آزمون واقعی لود داشبورد
+  await Dash.load();
+  assert(Dash.lastData, 'Dash.lastData باید با اطلاعات تجمیعی داشبورد مقداردهی شود');
+  assert.strictEqual(Dash.lastData.totalBankBal, 39000000, 'مانده بانک‌های داشبورد باید ۳۹M باشد');
+  assert.strictEqual(Dash.lastData.totalBankBal, dashEngine.totalBankBal, 'مانده داشبورد باید منطبق با موتور مالی باشد');
+  assert.strictEqual(Dash.lastData.totalBankBal, bankAll.totalBankBal, 'مانده داشبورد باید منطبق با Bank.allBalances باشد');
+  assert.strictEqual(Dash.lastData.unassignedCash.balance, 2500000, 'مانده نقدینگی آزاد داشبورد باید ۲.۵M باشد');
+  assert.strictEqual(Dash.lastData.unassignedCash.totalReceipts, 3000000);
+  assert.strictEqual(Dash.lastData.unassignedCash.totalPayments, 500000);
+  assert.strictEqual(Dash.lastData.unmatchedBankTransactions.length, 1);
+  assert.strictEqual(Dash.lastData.unmatchedBankReceipts, 1500000);
+
+  // بررسی رندر در UI داشبورد
+  assert(capturedUIContent.includes('۳۹٬۰۰۰٬۰۰۰') || capturedUIContent.includes('39,000,000'), 'داشبورد باید مانده تجمیعی ۳۹M را رندر کند');
+  assert(capturedUIContent.includes('۲٬۵۰۰٬۰۰۰') || capturedUIContent.includes('2,500,000'), 'داشبورد باید نقدینگی آزاد ۲.۵M را شفاف نشان دهد');
+  assert(capturedUIContent.includes('حساب نامعتبر') || capturedUIContent.includes('نامنطبق'), 'داشبورد باید هشدار تراکنش نامنطبق را نشان دهد');
+
+  // بررسی مودال تراکنش‌های نامنطبق در داشبورد
+  Dash.showUnmatchedBankModal();
+  assert(capturedUIContent.includes('۹۹۹'), 'مودال تراکنش‌های نامنطبق باید شناسه حساب ۹۹۹ را نشان دهد');
+  assert(capturedUIContent.includes('۱٬۵۰۰٬۰۰۰') || capturedUIContent.includes('1,500,000'), 'مودال باید مبلغ ۱.۵M را نمایش دهد');
+
+  // بررسی رندر صفحه بانک‌ها و هشدار ممیزی
+  await Bank.render();
+  assert(capturedUIContent.includes('۳۹٬۰۰۰٬۰۰۰') || capturedUIContent.includes('39,000,000'), 'صفحه بانک‌ها باید مانده کل ۳۹M را نشان دهد');
+  assert(capturedUIContent.includes('هشدار ممیزی'), 'صفحه بانک‌ها باید بنر هشدار ممیزی را نشان دهد');
+
+  Bank.showUnmatchedModal();
+  assert(capturedUIContent.includes('۹۹۹'), 'مودال بانک‌ها باید تراکنش با حساب ۹۹۹ را نشان دهد');
+
+  // اجرای واقعی Bank.show(101) و Bank.show(102) جهت بررسی تطابق صفحه جزئیات
   await Bank.show(101);
   assert(capturedUIContent.includes('۲۰٬۰۰۰٬۰۰۰') || capturedUIContent.includes('20,000,000'), 'صفحه جزئیات بانک ۱۰۱ باید مانده نهایی ۲۰M را نشان دهد');
 
   await Bank.show(102);
   assert(capturedUIContent.includes('۱۹٬۰۰۰٬۰۰۰') || capturedUIContent.includes('19,000,000'), 'صفحه جزئیات بانک ۱۰۲ باید مانده نهایی ۱۹M را نشان دهد');
 
-  console.log('  [✓] تطابق ۱۰۰٪ بین خروجی داشبورد، Bank.allBalances، Bank.balance و Bank.show تأیید شد.');
+  console.log('  [✓] تطابق ۱۰۰٪ بین خروجی داشبورد، FinanceEngine، Bank.allBalances، Bank.balance و Bank.show تأیید شد.');
+  console.log('  [✓] تفکیک کامل مانده بانک‌ها (۳۹M)، نقدینگی آزاد (۲.۵M) و تراکنش نامنطبق (۱.۵M) تأیید شد.');
 })();
+executedTestTracker.push({ title: 'گروه عملیاتی ۳: آزمون واقعی داشبورد و تطابق چندلایه مانده بانک‌ها، نقدینگی آزاد و تراکنش‌های نامنطبق (Dash & Bank)', passed: true });
 
-console.log('✓ آزمون واقعی ۴: تطابق کامل تمام مسیرهای محاسبه مانده بانک با موفقیت تأیید شد.');
+console.log('✓ گروه عملیاتی ۳: تطابق کامل داشبورد، بانک‌ها، نقدینگی آزاد و تراکنش‌های نامنطبق با موفقیت تأیید شد.');
 
-const totalSystemTests = suite.total + mandatorySuite.total + opExSuite.total + phase2Suite.total + bankSuite.total + 3;
-console.log(`\n🎉 مجموع کل: ${totalSystemTests} سناریوی جامع مالی، بانکی و حسابداری پارچه‌بان با موفقیت ۱۰۰٪ پاس شدند.`);
+// استخراج داینامیک و دقیق شمارش آزمون‌ها از آرایه ردیابی
+const totalExecuted = executedTestTracker.length;
+const totalPassed = executedTestTracker.filter(t => t.passed).length;
+const totalFailed = totalExecuted - totalPassed;
+
+console.log(`\n🎉 مجموع کل: ${totalPassed} از ${totalExecuted} سناریوی جامع مالی، بانکی و حسابداری پارچه‌بان با موفقیت ۱۰۰٪ پاس شدند.`);
+
+assert.strictEqual(totalFailed, 0, 'هیچ آزمونی نباید ناموفق باشد');
+assert.strictEqual(totalPassed, 49, 'مجموع آزمون‌های موفق باید دقیقاً ۴۹ باشد');
+assert.strictEqual(totalExecuted, 49, 'تعداد کل آزمون‌های تعریف‌شده باید دقیقاً ۴۹ باشد');
+assert(executedTestTracker.every(t => t.passed), 'تمام تک‌تک آزمون‌ها باید با وضعیت passed: true تأیید شده باشند');
 
 
 

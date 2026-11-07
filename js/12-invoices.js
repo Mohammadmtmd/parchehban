@@ -143,11 +143,17 @@ var Inv = {
     });
     this._type = type;
     this.items = inv ? JSON.parse(JSON.stringify(inv.items || [])) : [];
+    this.items.forEach(function(it) {
+      if (!it.unit && it.productId && Inv.prodMap[it.productId]) {
+        it.unit = Inv.prodMap[it.productId].unit;
+      }
+    });
     if (!this.items.length) {
       this.items.push({
         productId: '',
         catalog: '',
         shade: '',
+        unit: 'متر',
         quantity: 1,
         unitPrice: 0,
         total: 0
@@ -199,6 +205,7 @@ var Inv = {
       productId: '',
       catalog: '',
       shade: '',
+      unit: 'متر',
       quantity: 0,
       unitPrice: 0,
       total: 0
@@ -218,14 +225,33 @@ var Inv = {
         var pp = this.prodMap[it.productId];
         it.catalog = pp.colorCatalog || '';
         it.shade = pp.colorShade || '';
+        it.unit = pp.unit || 'متر';
+        if (this._type === 'sale' && !it.unitPrice && pp.salePrice) {
+          it.unitPrice = pp.salePrice;
+          var uEl = document.getElementById('u' + i);
+          if (uEl) uEl.value = it.unitPrice;
+        }
+        if (this._type === 'purchase' && !it.unitPrice && pp.buyPrice) {
+          it.unitPrice = pp.buyPrice;
+          var uEl = document.getElementById('u' + i);
+          if (uEl) uEl.value = it.unitPrice;
+        }
+        if (this._type === 'sale' && pp.buyPrice) {
+          it.buyPrice = pp.buyPrice;
+          var bpEl = document.getElementById('bp' + i);
+          if (bpEl) bpEl.value = it.buyPrice;
+        }
       } else {
         it.catalog = '';
         it.shade = '';
+        it.unit = 'متر';
       }
       var catEl = document.getElementById('cat' + i);
       if (catEl) catEl.value = it.catalog || '';
       var shEl = document.getElementById('sh' + i);
       if (shEl) shEl.value = it.shade || '';
+      var unEl = document.getElementById('un' + i);
+      if (unEl) unEl.textContent = it.unit || 'متر';
     } else if (f === 'q') it.quantity = parseFloat(v) || 0;
     else if (f === 'u') it.unitPrice = numOf(v);
     else if (f === 'bp') it.buyPrice = (v !== '' && numOf(v) > 0) ? numOf(v) : null;
@@ -246,17 +272,18 @@ var Inv = {
       return;
     }
     var isSale = (this._type === 'sale' || this._type === 'proforma');
-    var h = '<table class="inv-tbl"><thead><tr><th style="width:30px">#</th><th>کالا</th><th style="width:90px">کالیته</th><th style="width:80px">شید</th><th style="width:70px">مقدار</th>';
+    var h = '<table class="inv-tbl"><thead><tr><th style="width:30px">#</th><th>کالا</th><th style="width:90px">کالیته</th><th style="width:80px">شید</th><th style="width:90px">مقدار</th>';
     if (isSale) h += '<th style="width:80px">ق.خرید</th>';
     h += '<th style="width:100px">قیمت</th><th style="width:90px">جمع</th><th style="width:30px"></th></tr></thead><tbody>';
     for (var i = 0; i < this.items.length; i++) {
       var it = this.items[i];
+      var itemUnit = it.unit || (it.productId && this.prodMap[it.productId] && this.prodMap[it.productId].unit) || 'متر';
       /* کادر جست‌وجوی تایپی به‌جای <select> (js/12b-prodpick.js).
          با فهرست‌های بلند کالا، انتخاب از select عملی نبود. */
       h += '<tr><td>' + (i + 1) + '</td><td>' + PPick.cell(i, it.productId) + '</td>';
       h += '<td><input id="cat' + i + '" type="text" value="' + esc(it.catalog || '') + '" oninput="Inv.oc(' + i + ',\'cat\',this.value)" style="text-align:center;font-size:.8rem"></td>';
       h += '<td><input id="sh' + i + '" type="text" value="' + esc(it.shade || '') + '" oninput="Inv.oc(' + i + ',\'sh\',this.value)" style="text-align:center;font-size:.8rem"></td>';
-      h += '<td><input type="number" id="q' + i + '" value="' + (it.quantity || '') + '" oninput="Inv.oc(' + i + ',\'q\',this.value)" style="text-align:center"></td>';
+      h += '<td><div style="display:flex;align-items:center;justify-content:center;gap:3px"><input type="number" id="q' + i + '" value="' + (it.quantity || '') + '" oninput="Inv.oc(' + i + ',\'q\',this.value)" style="text-align:center;min-width:48px"><span id="un' + i + '" style="font-size:.72rem;color:var(--txs);white-space:nowrap">' + esc(itemUnit) + '</span></div></td>';
       if (isSale) h += '<td><input type="number" id="bp' + i + '" value="' + (it.buyPrice || '') + '" oninput="Inv.oc(' + i + ',\'bp\',this.value)" style="text-align:center"></td>';
       h += '<td><input type="number" id="u' + i + '" value="' + (it.unitPrice || '') + '" oninput="Inv.oc(' + i + ',\'u\',this.value)" style="text-align:center"></td>';
       h += '<td class="it-total" id="t' + i + '">' + UI.fn(it.total) + '</td>';
@@ -269,10 +296,18 @@ var Inv = {
   calc: function() {
     var sub = 0;
     var totQty = 0;
+    var unitsList = [];
+    var self = this;
     this.items.forEach(function(it) {
       sub += (it.total || 0);
       totQty += (parseFloat(it.quantity) || 0);
+      var u = it.unit || (it.productId && self.prodMap && self.prodMap[it.productId] && self.prodMap[it.productId].unit) || '';
+      if (u && unitsList.indexOf(u) === -1) unitsList.push(u);
     });
+    var singleUnit = unitsList.length === 1 ? unitsList[0] : (unitsList.length === 0 ? '' : null);
+    var qtyLabel = singleUnit ? (singleUnit === 'متر' ? 'جمع متراژ' : (singleUnit === 'عدد' ? 'جمع تعداد' : 'جمع مقدار (' + singleUnit + ')')) : 'جمع کل مقادیر';
+    var qtyVal = UI.fn(totQty) + (singleUnit ? ' ' + singleUnit : '');
+
     var sh = elNum('iSh');
     var dis = elNum('iDis');
     var pd = elNum('iPd');
@@ -281,7 +316,7 @@ var Inv = {
     var rm = gr - pd;
     var el = document.getElementById('iT');
     if (!el) return;
-    var h = '<div class="inv-ti" style="border:1.5px solid var(--p)"><label style="color:var(--p);font-weight:700">جمع مقدار / متراژ</label><div class="val" style="color:var(--p);font-weight:800">' + UI.fn(totQty) + '</div></div>';
+    var h = '<div class="inv-ti" style="border:1.5px solid var(--p)"><label style="color:var(--p);font-weight:700">' + esc(qtyLabel) + '</label><div class="val" style="color:var(--p);font-weight:800">' + esc(qtyVal) + '</div></div>';
     h += '<div class="inv-ti"><label>جمع اقلام</label><div class="val">' + UI.fn(sub) + '</div></div>';
     if (sh) h += '<div class="inv-ti"><label>حمل</label><div class="val">' + UI.fn(sh) + '</div></div>';
     if (dis) h += '<div class="inv-ti"><label>تخفیف</label><div class="val g">−' + UI.fn(dis) + '</div></div>';
@@ -341,17 +376,22 @@ var Inv = {
       }
     }
     var pr = await DB.all('products'),
-      pm = {};
+      pm = {},
+      pmFull = {};
     pr.forEach(function(p) {
       pm[p.id] = p.name;
+      pmFull[p.id] = p;
     });
     var items = this.items.map(function(it) {
+      var pObj = pmFull[it.productId] || {};
+      var itemUnit = it.unit || pObj.unit || 'متر';
       return {
         productId: it.productId,
         productName: pm[it.productId] || '—',
         catalog: it.catalog || '',
         shade: it.shade || '',
         quantity: it.quantity,
+        unit: itemUnit,
         unitPrice: it.unitPrice,
         total: it.total,
         buyPrice: type === 'purchase' ? it.unitPrice : ((it.buyPrice && it.buyPrice > 0) ? it.buyPrice : null),
@@ -512,6 +552,12 @@ var Inv = {
       cMapFull[c.id] = c;
     });
 
+    var pr = await DB.all('products'),
+      prodMap = {};
+    pr.forEach(function(p) {
+      prodMap[p.id] = p;
+    });
+
     var a5 = opts.size === 'a5';
     var isLand = opts.orientation === 'landscape';
     var isS = v.type === 'sale';
@@ -534,8 +580,14 @@ var Inv = {
     var bd = 'border:1px solid #cbd5e1;padding:4px 6px;';
     var th = 'border:1px solid #cbd5e1;padding:5px 6px;background:#f1f5f9;text-align:center;font-weight:700;color:#0f172a;white-space:nowrap;';
 
+    var unitsList = [];
+    var totalQty = 0;
     var r = '';
     items.forEach(function(it, i) {
+      var itemUnit = it.unit || (it.productId && prodMap[it.productId] && prodMap[it.productId].unit) || 'متر';
+      if (itemUnit && unitsList.indexOf(itemUnit) === -1) unitsList.push(itemUnit);
+      totalQty += (parseFloat(it.quantity) || 0);
+
       r += '<tr style="border-bottom:1px solid #e2e8f0">' +
         '<td style="' + bd + 'text-align:center;width:28px">' + UI.fn(i + 1) + '</td>' +
         '<td style="' + bd + 'font-weight:600">' + esc(it.productName || '—') + '</td>';
@@ -544,13 +596,17 @@ var Inv = {
              '<td style="' + bd + 'text-align:center;width:55px">' + esc(it.shade || '—') + '</td>';
       }
       r += '<td style="' + bd + 'text-align:center;width:55px;font-weight:700">' + UI.fn(it.quantity) + '</td>' +
-           '<td style="' + bd + 'text-align:center;width:45px;color:#64748b">' + esc(it.unit || 'متر') + '</td>';
+           '<td style="' + bd + 'text-align:center;width:45px;color:#64748b">' + esc(itemUnit) + '</td>';
       if (opts.showPrices) {
         r += '<td style="' + bd + 'text-align:center;width:75px">' + UI.fn(it.unitPrice) + '</td>' +
              '<td style="' + bd + 'text-align:center;width:85px;font-weight:700">' + UI.fn(it.total) + '</td>';
       }
       r += '</tr>';
     });
+
+    var singleUnit = unitsList.length === 1 ? unitsList[0] : (unitsList.length === 0 ? 'متر' : null);
+    var totalQtyLabel = singleUnit ? (singleUnit === 'متر' ? 'جمع کل متراژ' : (singleUnit === 'عدد' ? 'جمع کل تعداد' : 'جمع کل مقدار (' + singleUnit + ')')) : 'جمع کل مقادیر';
+    var totalQtyVal = UI.fn(totalQty) + (singleUnit ? ' ' + singleUnit : '');
 
     var addRow = function(lab, val, bold, color) {
       var st = (bold ? 'background:#f8fafc;font-weight:800;' : '') + (color ? 'color:' + color + ';' : 'color:#0f172a;');
@@ -568,16 +624,16 @@ var Inv = {
         '<h1 style="font-size:' + (a5 ? '15px' : '19px') + ';margin:0;font-weight:800;color:#0f172a">' + headTitle + '</h1>' +
         '<div style="font-size:11px;color:#64748b;margin-top:2px">سیستم حسابداری و فروش پارچه‌بان</div>' +
       '</div>' +
-      '<div style="text-align:left;font-size:10.5px;color:#334155;line-height:1.6">' +
-        '<div>شماره فاکتور: <strong style="font-size:12px;color:#0f172a">' + esc(v.invoiceNumber || v.id) + '</strong></div>' +
-        '<div>تاریخ: <strong>' + esc(v.date || todayJ()) + '</strong></div>' +
+      '<div style="display:flex;flex-direction:column;align-items:flex-end;text-align:right;font-size:10.5px;color:#334155;line-height:1.9">' +
+        '<div style="display:flex;align-items:center;gap:6px"><span>شماره فاکتور:</span> <strong style="font-size:12px;color:#0f172a;direction:ltr;unicode-bidi:embed;display:inline-block">' + esc(v.invoiceNumber || v.id) + '</strong></div>' +
+        '<div style="display:flex;align-items:center;gap:6px"><span>تاریخ:</span> <strong style="direction:ltr;unicode-bidi:embed;display:inline-block">' + esc(v.date || todayJ()) + '</strong></div>' +
       '</div></div></div>';
 
     // Contact Box
     h += '<div style="margin-bottom:12px;padding:8px 12px;border:1px solid #cbd5e1;border-radius:6px;font-size:10px;background:#f8fafc;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">' +
-      '<div><strong>' + personLabel + '</strong> <span style="font-size:11.5px;font-weight:700">' + esc(custName) + '</span></div>';
-    if (custPhone) h += '<div><span style="color:#64748b">تلفن:</span> <strong>' + esc(custPhone) + '</strong></div>';
-    if (custAddress) h += '<div style="width:100%;font-size:9.5px;color:#475569"><span style="color:#64748b">نشانی:</span> ' + esc(custAddress) + '</div>';
+      '<div style="display:inline-flex;align-items:center;gap:6px"><strong>' + personLabel + '</strong> <span style="font-size:11.5px;font-weight:700">' + esc(custName) + '</span></div>';
+    if (custPhone) h += '<div style="display:inline-flex;align-items:center;gap:6px"><span style="color:#64748b">تلفن:</span> <strong style="direction:ltr;unicode-bidi:embed;display:inline-block">' + esc(custPhone) + '</strong></div>';
+    if (custAddress) h += '<div style="width:100%;font-size:9.5px;color:#475569;display:flex;gap:6px"><span style="color:#64748b;white-space:nowrap">نشانی:</span> <span>' + esc(custAddress) + '</span></div>';
     h += '</div>';
 
     // Table Header
@@ -592,20 +648,11 @@ var Inv = {
     }
     h += '</tr></thead><tbody>' + r + '</tbody></table>';
 
-    var totalQty = 0;
-    items.forEach(function(it) {
-      totalQty += (parseFloat(it.quantity) || 0);
-    });
-
     // Totals Section
     if (opts.showPrices) {
-      h += '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:12px">' +
-        '<div style="border:1.5px solid #0f172a;border-radius:6px;padding:8px 14px;background:#f8fafc;display:flex;flex-direction:column;gap:3px;min-width:140px">' +
-        '<span style="font-size:' + (a5 ? '8.5px' : '9.5px') + ';color:#475569;font-weight:700">جمع کل مقدار / متراژ:</span>' +
-        '<strong style="font-size:' + (a5 ? '13px' : '15px') + ';color:#0f172a;font-family:Vazirmatn,system-ui">' + UI.fn(totalQty) + '</strong>' +
-        '</div>' +
+      h += '<div style="display:flex;justify-content:flex-end;align-items:flex-start;margin-bottom:12px">' +
         '<table style="border-collapse:collapse;font-size:' + (a5 ? '8.5px' : '10px') + ';width:auto">' +
-        addRow('جمع کل مقدار / متراژ', UI.fn(totalQty), true, '#0f172a') +
+        addRow(totalQtyLabel, totalQtyVal, true, '#0f172a') +
         addRow('جمع اقلام', UI.fn(v.subtotal) + ' ریال', false);
       if (v.shippingCost) h += addRow('هزینه حمل', UI.fn(v.shippingCost) + ' ریال', false);
       if (v.discount) h += addRow('تخفیف', '−' + UI.fn(v.discount) + ' ریال', false, '#16a34a');
@@ -619,19 +666,18 @@ var Inv = {
       h += '</table></div>';
     } else {
       h += '<div style="display:flex;justify-content:flex-end;margin-bottom:12px">' +
-        '<div style="border:1.5px solid #0f172a;border-radius:6px;padding:8px 14px;background:#f8fafc;display:flex;flex-direction:column;gap:3px;min-width:140px">' +
-        '<span style="font-size:' + (a5 ? '8.5px' : '9.5px') + ';color:#475569;font-weight:700">جمع کل مقدار / متراژ:</span>' +
-        '<strong style="font-size:' + (a5 ? '13px' : '15px') + ';color:#0f172a;font-family:Vazirmatn,system-ui">' + UI.fn(totalQty) + '</strong>' +
-        '</div></div>';
+        '<table style="border-collapse:collapse;font-size:' + (a5 ? '8.5px' : '10px') + ';width:auto">' +
+        addRow(totalQtyLabel, totalQtyVal, true, '#0f172a') +
+        '</table></div>';
     }
 
-      // Words box
-      h += '<div style="margin-bottom:12px;padding:6px 10px;border:1px dashed #94a3b8;border-radius:6px;font-size:9.5px;background:#f8fafc;line-height:1.7">' +
-        '<div><strong>مبلغ فاکتور به حروف:</strong> ' + esc(num2fa(v.grandTotal)) + ' ریال</div>';
-      if (!isPf && Math.abs(cBal) > 0 && opts.showTotalBal) {
-        h += '<div><strong>مانده کل حساب به حروف:</strong> ' + esc(num2fa(Math.abs(cBal))) + ' ریال (' + (cBal > 0 ? 'بدهکار' : 'بستانکار') + ')</div>';
-      }
-      h += '</div>';
+    // Words box
+    h += '<div style="margin-bottom:12px;padding:6px 10px;border:1px dashed #94a3b8;border-radius:6px;font-size:9.5px;background:#f8fafc;line-height:1.7">' +
+      '<div><strong>مبلغ فاکتور به حروف:</strong> ' + esc(num2fa(v.grandTotal)) + '</div>';
+    if (!isPf && Math.abs(cBal) > 0 && opts.showTotalBal) {
+      h += '<div><strong>مانده کل حساب به حروف:</strong> ' + esc(num2fa(Math.abs(cBal))) + ' (' + (cBal > 0 ? 'بدهکار' : 'بستانکار') + ')</div>';
+    }
+    h += '</div>';
 
     // Notes
     if (opts.showNotes && v.notes) {
@@ -891,6 +937,9 @@ var Inv = {
     }
     UI.toast('در حال ساخت فایل PDF با کیفیت بالا...', 'i');
     try {
+      if (document.fonts && document.fonts.ready) {
+        try { await document.fonts.ready; } catch (e) { /* ignore */ }
+      }
       var opts = this._currentPrintOpts || {};
       var isA5 = opts.size === 'a5';
       var isLand = opts.orientation === 'landscape';
@@ -906,6 +955,17 @@ var Inv = {
             el.style.transform = 'none';
             el.style.boxShadow = 'none';
             el.style.margin = '0';
+            el.style.letterSpacing = 'normal';
+            el.style.wordSpacing = 'normal';
+
+            // جلوگیری قطعی از چسبیدن کلمات فارسی در خروجی تصویر html2canvas
+            var walker = clonedDoc.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false);
+            var node;
+            while ((node = walker.nextNode())) {
+              if (node.nodeValue && node.nodeValue.indexOf(' ') !== -1) {
+                node.nodeValue = node.nodeValue.replace(/ /g, '\u00a0');
+              }
+            }
           }
         }
       });
@@ -955,6 +1015,9 @@ var Inv = {
     }
     UI.toast('در حال ساخت عکس با وضوح بالا (JPEG)...', 'i');
     try {
+      if (document.fonts && document.fonts.ready) {
+        try { await document.fonts.ready; } catch (e) { /* ignore */ }
+      }
       var canvas = await html2canvas(paperEl, {
         scale: 2,
         useCORS: true,
@@ -966,6 +1029,17 @@ var Inv = {
             el.style.transform = 'none';
             el.style.boxShadow = 'none';
             el.style.margin = '0';
+            el.style.letterSpacing = 'normal';
+            el.style.wordSpacing = 'normal';
+
+            // جلوگیری قطعی از چسبیدن کلمات فارسی در خروجی تصویر html2canvas
+            var walker = clonedDoc.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false);
+            var node;
+            while ((node = walker.nextNode())) {
+              if (node.nodeValue && node.nodeValue.indexOf(' ') !== -1) {
+                node.nodeValue = node.nodeValue.replace(/ /g, '\u00a0');
+              }
+            }
           }
         }
       });
