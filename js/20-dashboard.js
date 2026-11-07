@@ -244,7 +244,23 @@ var Dash = {
     });
 
     /* ══ محاسبه سود و زیان (P&L) از منبع حقیقت FinanceEngine ══ */
-    var plData = FinanceEngine.calculatePeriodPL(allInvs, dashPays, startNum, endNum);
+    var hasFinanceEngine = (typeof FinanceEngine !== 'undefined');
+    var plData = (hasFinanceEngine && typeof FinanceEngine.calculatePeriodPL === 'function')
+      ? FinanceEngine.calculatePeriodPL(allInvs, dashPays, startNum, endNum)
+      : {
+          error: 'FINANCE_ENGINE_UNAVAILABLE',
+          netSales: 0,
+          cogs: 0,
+          grossProfit: 0,
+          brokerCommissions: 0,
+          netOperatingProfit: 0,
+          grossMarginPct: 0,
+          netMarginPct: 0,
+          unverifiedItemsCount: 0,
+          unverifiedRevenueTotal: 0,
+          isPeriodProfitDefinite: false,
+          profitDefinitenessWarning: 'موتور مالی (FinanceEngine) در دسترس نیست'
+        };
     var netSales = plData.netSales || 0;
     var totalCOGS = plData.cogs || 0;
     var grossProfit = plData.grossProfit || 0;
@@ -258,7 +274,7 @@ var Dash = {
     var hasUnverified = unverifiedItemsCount > 0;
 
     /* ══ محاسبه دقیق مانده نقد و بانک‌ها از منبع واحد حقیقت (FinanceEngine.calculateBankBalances) ══ */
-    var bankCalc = (typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.calculateBankBalances === 'function')
+    var bankCalc = (hasFinanceEngine && typeof FinanceEngine.calculateBankBalances === 'function')
       ? FinanceEngine.calculateBankBalances(banks, dashPays, dashBts, { startNum: startNum, endNum: endNum })
       : null;
 
@@ -295,6 +311,12 @@ var Dash = {
           unavailable: true
         });
       });
+      totalBankBal = null;
+      unassignedCash = { totalReceipts: null, totalPayments: null, balance: null, unavailable: true };
+      unmatchedBankTransactions = [];
+      unmatchedBankReceipts = 0;
+      unmatchedBankPayments = 0;
+      unmatchedBankTotal = 0;
     }
 
     /* ══ تجمیع مطالبات (بدهکاران) و بدهی‌ها (بستانکاران) از Con.allBalances ══ */
@@ -622,6 +644,18 @@ var Dash = {
       '</div>' +
     '</div>';
 
+    /* ── بنر هشدار در صورت عدم دسترسی به موتور مالی ── */
+    if (!hasFinanceEngine) {
+      h += '<div class="hint-box" style="margin-bottom:16px;background:rgba(220,38,38,.08);border:1.5px solid var(--d);border-radius:10px;padding:14px 18px;color:var(--d);font-size:.88rem;line-height:1.7">' +
+        '<div style="font-weight:700;font-size:0.95rem;display:flex;align-items:center;gap:8px">' +
+          '<i class="bi bi-exclamation-octagon-fill"></i> خطا در دسترسی به موتور مالی (FinanceEngine)' +
+        '</div>' +
+        '<div style="margin-top:4px;color:var(--txm)">' +
+          'ماژول محاسبات مالی در دسترس نیست. جهت جلوگیری از نمایش ارقام نادرست و محاسبات گمراه‌کننده، مانده حساب‌های بانکی، سود و زیان و نقدینگی محاسبه نشد و از مانده اولیه به جای مانده واقعی استفاده نگردید. سایر بخش‌های برنامه همچنان در دسترس می‌باشند.' +
+        '</div>' +
+      '</div>';
+    }
+
     /* ── بخش اول: ۸ شاخص کلیدی مالی (KPI Cards) ── */
     var profitColorClass = profitAfterBroker >= 0 ? 'green' : 'red';
     var netColorClass = netProfit >= 0 ? 'blue' : 'red';
@@ -659,9 +693,20 @@ var Dash = {
     var card3Title = hasUnverified
       ? (brokerCommissions > 0 ? 'سود قابل‌تأیید (پس از کمیسیون)' : 'سود ناخالص قابل‌تأیید')
       : (brokerCommissions > 0 ? 'سود ناخالص (پس از کمیسیون)' : 'سود ناخالص بازرگانی');
-    var card3Tooltip = hasUnverified
-      ? 'سود قابل‌تأیید بر پایه اقلام دارای بهای موثق — سود نهایی دوره قابل تعیین نیست'
-      : 'سود ناخالص بازرگانی بر پایه بهای تمام‌شده موثق';
+    var card3Tooltip = !hasFinanceEngine
+      ? 'موتور مالی در دسترس نیست'
+      : (hasUnverified
+        ? 'سود قابل‌تأیید بر پایه اقلام دارای بهای موثق — سود نهایی دوره قابل تعیین نیست'
+        : 'سود ناخالص بازرگانی بر پایه بهای تمام‌شده موثق');
+
+    var card3ValueHtml = !hasFinanceEngine
+      ? '<span style="font-size:0.95rem;color:var(--w)">غیرقابل محاسبه</span>'
+      : (UI.fn(Math.round(profitAfterBroker)) + ' <small style="font-size:0.8rem;font-weight:500">ریال</small>');
+    var card3SubHtml = !hasFinanceEngine
+      ? '<span style="color:var(--w)">⚠ خطای موتور مالی</span>'
+      : (hasUnverified
+        ? '<span style="color:var(--w);font-weight:600" title="' + unverifiedItemsCount + ' قلم فاقد قیمت خرید">⚠ سود نهایی دوره قابل تعیین نیست</span>'
+        : '<span>حاشیه سود: ' + grossMarginPct.toFixed(1) + '٪</span>');
 
     h += '<div class="erp-kpi-card" onclick="ROUTES.profit()" title="' + card3Tooltip + '">' +
       '<div class="erp-kpi-head">' +
@@ -669,21 +714,30 @@ var Dash = {
         '<div class="erp-kpi-icon ' + profitColorClass + '"><i class="bi bi-graph-up-arrow"></i></div>' +
       '</div>' +
       '<div class="erp-kpi-value" style="color:' + (profitAfterBroker >= 0 ? 'var(--ok)' : 'var(--d)') + '">' +
-        UI.fn(Math.round(profitAfterBroker)) + ' <small style="font-size:0.8rem;font-weight:500">ریال</small>' +
+        card3ValueHtml +
       '</div>' +
       '<div class="erp-kpi-sub">' +
-        (hasUnverified
-          ? '<span style="color:var(--w);font-weight:600" title="' + unverifiedItemsCount + ' قلم فاقد قیمت خرید">⚠ سود نهایی دوره قابل تعیین نیست</span>'
-          : '<span>حاشیه سود: ' + grossMarginPct.toFixed(1) + '٪</span>') +
+        card3SubHtml +
         '<span class="erp-kpi-link-hint">صورت P&L ←</span>' +
       '</div>' +
     '</div>';
 
     // ۴. سود خالص عملیاتی
     var card4Title = hasUnverified ? 'سود خالص قابل‌تأیید' : 'سود خالص عملیاتی';
-    var card4Tooltip = hasUnverified
-      ? 'سود خالص قابل‌تأیید بر پایه اقلام معتبر پس از کسر هزینه‌ها — سود نهایی دوره قابل تعیین نیست'
-      : 'سود خالص عملیاتی پس از کسر هزینه‌های جاری';
+    var card4Tooltip = !hasFinanceEngine
+      ? 'موتور مالی در دسترس نیست'
+      : (hasUnverified
+        ? 'سود خالص قابل‌تأیید بر پایه اقلام معتبر پس از کسر هزینه‌ها — سود نهایی دوره قابل تعیین نیست'
+        : 'سود خالص عملیاتی پس از کسر هزینه‌های جاری');
+
+    var card4ValueHtml = !hasFinanceEngine
+      ? '<span style="font-size:0.95rem;color:var(--w)">غیرقابل محاسبه</span>'
+      : (UI.fn(Math.round(netProfit)) + ' <small style="font-size:0.8rem;font-weight:500">ریال</small>');
+    var card4SubHtml = !hasFinanceEngine
+      ? '<span style="color:var(--w)">⚠ خطای موتور مالی</span>'
+      : (hasUnverified
+        ? '<span style="color:var(--w);font-size:11.5px">سود نهایی نامشخص (' + UI.fn(unverifiedItemsCount) + ' قلم بدون بهای خرید)</span>'
+        : '<span>حاشیه خالص: ' + netMarginPct.toFixed(1) + '٪</span>');
 
     h += '<div class="erp-kpi-card" onclick="ROUTES.profit()" title="' + card4Tooltip + '">' +
       '<div class="erp-kpi-head">' +
@@ -691,12 +745,10 @@ var Dash = {
         '<div class="erp-kpi-icon ' + netColorClass + '"><i class="bi bi-award-fill"></i></div>' +
       '</div>' +
       '<div class="erp-kpi-value" style="color:' + (netProfit >= 0 ? 'var(--p)' : 'var(--d)') + '">' +
-        UI.fn(Math.round(netProfit)) + ' <small style="font-size:0.8rem;font-weight:500">ریال</small>' +
+        card4ValueHtml +
       '</div>' +
       '<div class="erp-kpi-sub">' +
-        (hasUnverified
-          ? '<span style="color:var(--w);font-size:11.5px">سود نهایی نامشخص (' + UI.fn(unverifiedItemsCount) + ' قلم بدون بهای خرید)</span>'
-          : '<span>حاشیه خالص: ' + netMarginPct.toFixed(1) + '٪</span>') +
+        card4SubHtml +
         '<span class="erp-kpi-link-hint">جزئیات ←</span>' +
       '</div>' +
     '</div>';
@@ -727,17 +779,17 @@ var Dash = {
       '</div>' +
     '</div>';
 
-    // ۷. موجودی نقد و بانک‌ها
+    // ۷. مجموع موجودی حساب‌های بانکی (تفکیک‌شده از نقدینگی آزاد)
     var bankCardValue = (totalBankBal !== null)
       ? (UI.fn(totalBankBal) + ' <small style="font-size:0.8rem;font-weight:500">ریال</small>')
       : '<span style="font-size:0.95rem;color:var(--w)">غیرقابل محاسبه</span>';
     var bankCardSub = (totalBankBal !== null)
-      ? ('<span>' + UI.fn(banks.length) + ' حساب بانکی و صندوق</span><span class="erp-kpi-link-hint">دفتر بانک ←</span>')
+      ? ('<span>' + UI.fn(banks.length) + ' حساب بانکی' + (unassignedCash && unassignedCash.balance !== null ? ' | نقد آزاد: ' + UI.fn(unassignedCash.balance) : '') + '</span><span class="erp-kpi-link-hint">دفتر بانک ←</span>')
       : '<span style="color:var(--w)">⚠ خطا در دسترسی به موتور مالی</span>';
 
     h += '<div class="erp-kpi-card" onclick="ROUTES.banks()" title="مشاهده حساب‌های بانکی و صندوق">' +
       '<div class="erp-kpi-head">' +
-        '<span class="erp-kpi-title">مانده نقد و بانک‌ها</span>' +
+        '<span class="erp-kpi-title">موجودی حساب‌های بانکی</span>' +
         '<div class="erp-kpi-icon purple"><i class="bi bi-bank2"></i></div>' +
       '</div>' +
       '<div class="erp-kpi-value">' + bankCardValue + '</div>' +

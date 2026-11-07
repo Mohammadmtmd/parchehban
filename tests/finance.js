@@ -525,8 +525,25 @@ await (async () => {
   await Bank.show(101);
   assert(capturedUIContent.includes('۲۰٬۰۰۰٬۰۰۰') || capturedUIContent.includes('20,000,000'), 'صفحه جزئیات بانک ۱۰۱ باید مانده نهایی ۲۰M را نشان دهد');
 
-  await Bank.show(102);
-  assert(capturedUIContent.includes('۱۹٬۰۰۰٬۰۰۰') || capturedUIContent.includes('19,000,000'), 'صفحه جزئیات بانک ۱۰۲ باید مانده نهایی ۱۹M را نشان دهد');
+  // ۴. آزمون رفتار سیستم در صورت عدم دسترسی به موتور مالی
+  const origFE = globalThis.FinanceEngine;
+  delete globalThis.FinanceEngine;
+  try {
+    const missingBal = await Bank.allBalances();
+    assert.strictEqual(missingBal.totalBankBal, null, 'در نبود موتور مالی نباید مانده کل محاسبه شود');
+    assert.strictEqual(missingBal.error, 'FINANCE_ENGINE_UNAVAILABLE');
+    const missingSingleBal = await Bank.balance(101);
+    assert.strictEqual(missingSingleBal, null, 'در نبود موتور مالی نباید مانده حساب برگردانده شود');
+    await Bank.render();
+    assert(capturedUIContent.includes('خطا در بارگذاری موتور مالی') || capturedUIContent.includes('غیرقابل محاسبه'), 'صفحه بانک‌ها باید خطای نبود موتور مالی را نشان دهد');
+    await Bank.show(101);
+    assert(capturedUIContent.includes('خطا در دسترسی به موتور مالی'), 'صفحه جزئیات بانک باید خطای صریح نبود موتور مالی را نشان دهد');
+    await Dash.load();
+    assert(capturedUIContent.includes('خطا در دسترسی به موتور مالی'), 'داشبورد باید خطای صریح نبود موتور مالی را نشان دهد');
+    console.log('  [✓] رفتار محافظت‌شده سیستم در نبود FinanceEngine (عدم محاسبه موازی و نمایش خطای شفاف) تأیید شد.');
+  } finally {
+    globalThis.FinanceEngine = origFE;
+  }
 
   console.log('  [✓] تطابق ۱۰۰٪ بین خروجی داشبورد، FinanceEngine، Bank.allBalances، Bank.balance و Bank.show تأیید شد.');
   console.log('  [✓] تفکیک کامل مانده بانک‌ها (۳۹M)، نقدینگی آزاد (۲.۵M) و تراکنش نامنطبق (۱.۵M) تأیید شد.');

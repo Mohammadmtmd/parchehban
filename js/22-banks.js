@@ -49,7 +49,7 @@ var Bank = {
       var tc = totalBal >= 0 ? 'color:var(--ok)' : 'color:var(--d)';
       totalDisplay = '<td style="' + tc + '">' + UI.fn(totalBal) + '</td>';
     } else {
-      totalDisplay = '<td style="color:var(--w)">نامشخص</td>';
+      totalDisplay = '<td style="color:var(--w)">غیرقابل محاسبه</td>';
     }
 
     var tf = '<tfoot><tr style="background:var(--bg);font-weight:700">' +
@@ -325,6 +325,24 @@ var Bank = {
     UI.nav('banks');
     UI.title('bi-bank2', b.name);
     UI.act('<button class="btn bo" onclick="Bank.render()"><i class="bi bi-arrow-right"></i>بازگشت</button> <button class="btn bw" onclick="Bank.transfer(' + bankId + ')"><i class="bi bi-arrow-left-right"></i>انتقال</button>');
+
+    if (typeof FinanceEngine === 'undefined' || typeof FinanceEngine.calculateAccountBalance !== 'function') {
+      console.error('[Bank.show] خطای اساسی مالی: ماژول FinanceEngine در دسترس نیست! جهت جلوگیری از نمایش اطلاعات گمراه‌کننده، گردش و مانده حساب بدون موتور مالی محاسبه نمی‌گردد.');
+      var errHtml = '<div class="hint-box" style="margin:20px 0;background:rgba(220,38,38,.08);border:1.5px solid var(--d);border-radius:10px;padding:16px 20px;color:var(--d);font-size:.9rem;line-height:1.7">' +
+        '<div style="font-weight:700;font-size:1rem;display:flex;align-items:center;gap:8px">' +
+          '<i class="bi bi-exclamation-octagon-fill"></i> خطا در دسترسی به موتور مالی (FinanceEngine)' +
+        '</div>' +
+        '<div style="margin-top:6px;color:var(--txm)">' +
+          'ماژول محاسبات مالی در دسترس نیست. جهت جلوگیری از نمایش ارقام نادرست و عدم استفاده از مانده اولیه به جای مانده واقعی، گردش و مانده این حساب قابل نمایش نمی‌باشد.' +
+        '</div>' +
+        '<div style="margin-top:14px">' +
+          '<button class="btn bo" onclick="Bank.render()"><i class="bi bi-arrow-right"></i> بازگشت به لیست حساب‌ها</button>' +
+        '</div>' +
+      '</div>';
+      UI.content(errHtml);
+      return;
+    }
+
     var bs = await DB.all('banks');
     var pays = await FY.byYear('payments');
     var bts = await DB.all('bankTransfers');
