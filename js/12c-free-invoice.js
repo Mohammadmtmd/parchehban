@@ -1032,16 +1032,6 @@ var FreeInv = {
             el.style.transform = 'none';
             el.style.boxShadow = 'none';
             el.style.margin = '0';
-            el.style.letterSpacing = 'normal';
-            el.style.wordSpacing = 'normal';
-
-            var walker = clonedDoc.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false);
-            var node;
-            while ((node = walker.nextNode())) {
-              if (node.nodeValue && node.nodeValue.indexOf(' ') !== -1) {
-                node.nodeValue = node.nodeValue.replace(/ /g, '\u00a0');
-              }
-            }
           }
           // مخفی‌سازی دکمه‌های کنترلی درون برگه
           var noP = clonedDoc.querySelectorAll('.no-print');
@@ -1103,16 +1093,6 @@ var FreeInv = {
             el.style.transform = 'none';
             el.style.boxShadow = 'none';
             el.style.margin = '0';
-            el.style.letterSpacing = 'normal';
-            el.style.wordSpacing = 'normal';
-
-            var walker = clonedDoc.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false);
-            var node;
-            while ((node = walker.nextNode())) {
-              if (node.nodeValue && node.nodeValue.indexOf(' ') !== -1) {
-                node.nodeValue = node.nodeValue.replace(/ /g, '\u00a0');
-              }
-            }
           }
           var noP = clonedDoc.querySelectorAll('.no-print');
           noP.forEach(function(np) { np.style.display = 'none'; });

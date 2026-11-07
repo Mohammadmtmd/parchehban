@@ -955,17 +955,6 @@ var Inv = {
             el.style.transform = 'none';
             el.style.boxShadow = 'none';
             el.style.margin = '0';
-            el.style.letterSpacing = 'normal';
-            el.style.wordSpacing = 'normal';
-
-            // جلوگیری قطعی از چسبیدن کلمات فارسی در خروجی تصویر html2canvas
-            var walker = clonedDoc.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false);
-            var node;
-            while ((node = walker.nextNode())) {
-              if (node.nodeValue && node.nodeValue.indexOf(' ') !== -1) {
-                node.nodeValue = node.nodeValue.replace(/ /g, '\u00a0');
-              }
-            }
           }
         }
       });
@@ -1029,17 +1018,6 @@ var Inv = {
             el.style.transform = 'none';
             el.style.boxShadow = 'none';
             el.style.margin = '0';
-            el.style.letterSpacing = 'normal';
-            el.style.wordSpacing = 'normal';
-
-            // جلوگیری قطعی از چسبیدن کلمات فارسی در خروجی تصویر html2canvas
-            var walker = clonedDoc.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false);
-            var node;
-            while ((node = walker.nextNode())) {
-              if (node.nodeValue && node.nodeValue.indexOf(' ') !== -1) {
-                node.nodeValue = node.nodeValue.replace(/ /g, '\u00a0');
-              }
-            }
           }
         }
       });
