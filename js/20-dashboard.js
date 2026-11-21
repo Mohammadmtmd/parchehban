@@ -287,6 +287,8 @@ var Dash = {
     var unmatchedBankReceipts = 0;
     var unmatchedBankPayments = 0;
     var unmatchedBankTotal = 0;
+    var unmatchedTransfers = [];
+    var unmatchedTransfersTotal = 0;
 
     if (bankCalc) {
       bankBalances = bankCalc.bankBalances || [];
@@ -298,6 +300,8 @@ var Dash = {
       unmatchedBankReceipts = bankCalc.unmatchedBankReceipts || 0;
       unmatchedBankPayments = bankCalc.unmatchedBankPayments || 0;
       unmatchedBankTotal = bankCalc.unmatchedBankTotal || 0;
+      unmatchedTransfers = bankCalc.unmatchedTransfers || [];
+      unmatchedTransfersTotal = bankCalc.unmatchedTransfersTotal || unmatchedTransfers.reduce(function(sum, ut) { return sum + (ut && ut.amount ? ut.amount : 0); }, 0);
     } else {
       console.error('[Dashboard] خطای اساسی مالی: ماژول FinanceEngine بارگذاری نشده است! جهت جلوگیری از نمایش اطلاعات گمراه‌کننده، مانده اولیه حساب‌ها به عنوان مانده واقعی تلقی نشد و محاسبات موازی لغو گردید.');
       banks.forEach(function(b) {
@@ -317,6 +321,8 @@ var Dash = {
       unmatchedBankReceipts = 0;
       unmatchedBankPayments = 0;
       unmatchedBankTotal = 0;
+      unmatchedTransfers = [];
+      unmatchedTransfersTotal = 0;
     }
 
     /* ══ تجمیع مطالبات (بدهکاران) و بدهی‌ها (بستانکاران) از Con.allBalances ══ */
@@ -541,6 +547,8 @@ var Dash = {
       unmatchedBankReceipts: unmatchedBankReceipts,
       unmatchedBankPayments: unmatchedBankPayments,
       unmatchedBankTotal: unmatchedBankTotal,
+      unmatchedTransfers: unmatchedTransfers,
+      unmatchedTransfersTotal: unmatchedTransfersTotal,
       totalDebtors: totalDebtors,
       debtorCount: debtorCount,
       top5Debtors: top5Debtors,
@@ -784,7 +792,7 @@ var Dash = {
       ? (UI.fn(totalBankBal) + ' <small style="font-size:0.8rem;font-weight:500">ریال</small>')
       : '<span style="font-size:0.95rem;color:var(--w)">غیرقابل محاسبه</span>';
     var bankCardSub = (totalBankBal !== null)
-      ? ('<span>' + UI.fn(banks.length) + ' حساب بانکی' + (unassignedCash && unassignedCash.balance !== null ? ' | نقد آزاد: ' + UI.fn(unassignedCash.balance) : '') + '</span><span class="erp-kpi-link-hint">دفتر بانک ←</span>')
+      ? ('<span>' + UI.fn(banks.length) + ' حساب بانکی' + (unassignedCash && unassignedCash.balance !== null ? ' | نقد آزاد: ' + UI.fn(unassignedCash.balance) : '') + (unmatchedTransfers.length > 0 ? ' · <span style="color:var(--w)">⚠ ' + UI.fn(unmatchedTransfers.length) + ' انتقال نامنطبق</span>' : '') + '</span><span class="erp-kpi-link-hint">دفتر بانک ←</span>')
       : '<span style="color:var(--w)">⚠ خطا در دسترسی به موتور مالی</span>';
 
     h += '<div class="erp-kpi-card" onclick="ROUTES.banks()" title="مشاهده حساب‌های بانکی و صندوق">' +
@@ -890,6 +898,17 @@ var Dash = {
           'دریافت‌های نامنطبق: ' + UI.fn(unmatchedBankReceipts) + ' ریال | پرداخت‌های نامنطبق: ' + UI.fn(unmatchedBankPayments) + ' ریال (جهت بررسی و مشاهده جزئیات کلیک کنید).' +
         '</div>' +
         '<button class="btn bo bs" style="color:var(--w);border-color:var(--w)" onclick="event.stopPropagation();Dash.showUnmatchedBankModal()">مشاهده جزئیات</button>' +
+      '</div>';
+    }
+
+    if (unmatchedTransfers && unmatchedTransfers.length > 0) {
+      alertItemsHtml += '<div class="erp-alert-item" style="border-right:3px solid var(--d);cursor:pointer" onclick="Dash.showUnmatchedBankModal()">' +
+        '<div class="erp-alert-lead">' +
+          '<span class="erp-alert-badge danger"><i class="bi bi-exclamation-triangle-fill"></i> انتقال نامنطبق</span>' +
+          '<strong>' + UI.fn(unmatchedTransfers.length) + ' انتقال بین‌بانکی دارای حساب مبدأ یا مقصد نامعتبر/حذف‌شده:</strong> ' +
+          'جمع مبلغ: ' + UI.fn(unmatchedTransfersTotal) + ' ریال (مانده حساب‌های مرتبط تا زمان بررسی قطعی تلقی نشود).' +
+        '</div>' +
+        '<button class="btn bo bs" style="color:var(--d);border-color:var(--d)" onclick="event.stopPropagation();Dash.showUnmatchedBankModal()">پیگیری انتقال‌ها</button>' +
       '</div>';
     }
 
@@ -1104,6 +1123,7 @@ var Dash = {
             '<div style="font-size:0.78rem;color:var(--txs)">موجودی نقدی تجمیعی حساب‌های بانکی:</div>' +
             '<div style="font-size:1.3rem;font-weight:800;color:var(--ok);font-variant-numeric:tabular-nums">' +
               UI.fn(totalBankBal) + ' <small style="font-size:0.75rem">ریال</small>' +
+              (unmatchedTransfers.length > 0 ? ' <span style="font-size:0.72rem;color:var(--w);font-weight:600">(⚠ دارای انتقال نامنطبق — غیرقطعی)</span>' : '') +
             '</div>' +
             '<div style="margin-top:4px;font-size:0.74rem;color:var(--txs);display:flex;justify-content:space-between">' +
               '<span>گردش دریافت دوره: +' + UI.fn(bankReceiptsPeriod) + '</span>' +
@@ -1112,8 +1132,9 @@ var Dash = {
           '</div>' +
           '<div class="erp-mini-list">' +
             (bankBalances.length ? bankBalances.map(function(b) {
+              var hasUt = unmatchedTransfers.some(function(ut) { return ut && (ut.fromBankId === b.id || ut.toBankId === b.id); });
               return '<div class="erp-mini-item" onclick="Bank.show(' + b.id + ')" title="مشاهده گردش حساب">' +
-                '<div><strong>' + esc(b.name) + '</strong><div style="font-size:0.72rem;color:var(--txs)">' + esc(b.bankName || b.accountNumber || '—') + '</div></div>' +
+                '<div><strong>' + esc(b.name) + '</strong>' + (hasUt ? ' <span style="color:var(--w);font-size:0.7rem">⚠ انتقال نامنطبق</span>' : '') + '<div style="font-size:0.72rem;color:var(--txs)">' + esc(b.bankName || b.accountNumber || '—') + '</div></div>' +
                 '<strong style="color:' + (b.balance >= 0 ? 'var(--ok)' : 'var(--d)') + ';font-variant-numeric:tabular-nums">' + UI.fn(b.balance) + '</strong>' +
               '</div>';
             }).join('') : '<div class="em" style="padding:20px"><p>حساب بانکی تعریف نشده است</p></div>') +
@@ -1139,6 +1160,18 @@ var Dash = {
               '<div style="display:flex;justify-content:space-between;font-size:0.71rem;color:var(--txs);margin-top:4px">' +
                 '<span>دریافت نامنطبق: +' + UI.fn(unmatchedBankReceipts) + '</span>' +
                 '<span>پرداخت نامنطبق: −' + UI.fn(unmatchedBankPayments) + '</span>' +
+              '</div>' +
+            '</div>'
+          ) : '') +
+          /* هشدار انتقال‌های بین‌بانکی نامنطبق در صورت وجود */
+          (unmatchedTransfers.length > 0 ? (
+            '<div style="padding:10px 14px;background:rgba(220,38,38,.06);border-top:1px solid var(--bd);cursor:pointer" onclick="Dash.showUnmatchedBankModal()">' +
+              '<div style="display:flex;align-items:center;justify-content:space-between;color:var(--d);font-size:0.78rem;font-weight:700">' +
+                '<span><i class="bi bi-exclamation-triangle-fill"></i> ' + UI.fn(unmatchedTransfers.length) + ' انتقال بانکی با حساب نامعتبر</span>' +
+                '<span style="font-size:0.7rem;text-decoration:underline">مشاهده جزئیات ←</span>' +
+              '</div>' +
+              '<div style="font-size:0.71rem;color:var(--txs);margin-top:4px">' +
+                'جمع مبلغ: ' + UI.fn(unmatchedTransfersTotal) + ' ریال (مانده غیرقطعی تا رفع مغایرت)' +
               '</div>' +
             '</div>'
           ) : '')
@@ -1639,41 +1672,81 @@ var Dash = {
     }
   },
 
-  /* ══ مودال مشاهده جزئیات تراکنش‌های دارای شناسه حساب نامعتبر ══ */
+  /* ══ مودال مشاهده جزئیات تراکنش‌ها و انتقال‌های دارای شناسه حساب نامعتبر ══ */
   showUnmatchedBankModal: function() {
     var list = (this.lastData && this.lastData.unmatchedBankTransactions) ? this.lastData.unmatchedBankTransactions : [];
-    if (!list.length) {
-      UI.toast('هیچ تراکنش نامنطبقی یافت نشد', 'i');
+    var transfers = (this.lastData && this.lastData.unmatchedTransfers) ? this.lastData.unmatchedTransfers : [];
+    if (!list.length && !transfers.length) {
+      UI.toast('هیچ تراکنش یا انتقال نامنطبقی یافت نشد', 'i');
       return;
     }
-    var rows = list.map(function(t, i) {
-      var isRec = (t.type === 'receipt');
-      var typeBadge = isRec
-        ? '<span style="color:var(--ok);font-weight:700">دریافت</span>'
-        : '<span style="color:var(--d);font-weight:700">پرداخت</span>';
-      return '<tr>' +
-        '<td>' + (i + 1) + '</td>' +
-        '<td><code>#' + esc(t.id) + '</code></td>' +
-        '<td style="color:var(--d);font-weight:700">' + esc(t.bankId || '—') + ' (نامعتبر)</td>' +
-        '<td>' + typeBadge + '</td>' +
-        '<td style="font-weight:700;font-variant-numeric:tabular-nums;text-align:left">' + UI.fn(t.amount) + '</td>' +
-        '<td>' + esc(t.date || '—') + '</td>' +
-        '<td>' + esc(t.description || (t.sourceInvoiceId ? ('فاکتور #' + t.sourceInvoiceId) : '—')) + '</td>' +
-      '</tr>';
-    }).join('');
 
-    var modalHtml = '<div style="margin-bottom:12px;font-size:0.84rem;color:var(--txs);line-height:1.7">' +
-      '<div class="hint-box" style="background:rgba(245,158,11,.08);border:1px solid var(--w);border-radius:8px;padding:10px;margin-bottom:10px">' +
-        '<i class="bi bi-info-circle-fill" style="color:var(--w)"></i> ' +
-        'این تراکنش‌ها دارای <code>bankId</code> ثبت‌شده هستند اما حساب متناظر در لیست بانک‌ها موجود نیست یا حذف شده است. ' +
-        'این مبالغ در مانده بانک‌های فعال و در نقدینگی آزاد منظور <strong>نشده‌اند</strong> تا مغایرتی ایجاد نگردد.' +
-      '</div>' +
-      '<div class="tw"><table><thead><tr>' +
-        '<th>#</th><th>شناسه</th><th>شناسه حساب</th><th>نوع</th><th style="text-align:left">مبلغ (ریال)</th><th>تاریخ</th><th>شرح</th>' +
-      '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
-    '</div>';
+    var bMap = {};
+    if (this.lastData && Array.isArray(this.lastData.banks)) {
+      this.lastData.banks.forEach(function(b) { if (b) bMap[b.id] = b; });
+    }
 
-    UI.open('تراکنش‌های بانکی دارای شناسه حساب نامعتبر (' + UI.fn(list.length) + ' مورد)', modalHtml,
+    var modalHtml = '<div style="margin-bottom:12px;font-size:0.84rem;color:var(--txs);line-height:1.7">';
+
+    if (list.length) {
+      var rows = list.map(function(t, i) {
+        var isRec = (t.type === 'receipt');
+        var typeBadge = isRec
+          ? '<span style="color:var(--ok);font-weight:700">دریافت</span>'
+          : '<span style="color:var(--d);font-weight:700">پرداخت</span>';
+        return '<tr>' +
+          '<td>' + (i + 1) + '</td>' +
+          '<td><code>#' + esc(t.id) + '</code></td>' +
+          '<td style="color:var(--d);font-weight:700">' + esc(t.bankId || '—') + ' (نامعتبر)</td>' +
+          '<td>' + typeBadge + '</td>' +
+          '<td style="font-weight:700;font-variant-numeric:tabular-nums;text-align:left">' + UI.fn(t.amount) + '</td>' +
+          '<td>' + esc(t.date || '—') + '</td>' +
+          '<td>' + esc(t.description || (t.sourceInvoiceId ? ('فاکتور #' + t.sourceInvoiceId) : '—')) + '</td>' +
+        '</tr>';
+      }).join('');
+
+      modalHtml += '<div class="hint-box" style="background:rgba(245,158,11,.08);border:1px solid var(--w);border-radius:8px;padding:10px;margin-bottom:10px">' +
+          '<i class="bi bi-info-circle-fill" style="color:var(--w)"></i> ' +
+          'این تراکنش‌ها دارای <code>bankId</code> ثبت‌شده هستند اما حساب متناظر در لیست بانک‌ها موجود نیست یا حذف شده است. ' +
+          'این مبالغ در مانده بانک‌های فعال و در نقدینگی آزاد منظور <strong>نشده‌اند</strong> تا مغایرتی ایجاد نگردد.' +
+        '</div>' +
+        '<div class="tw" style="margin-bottom:16px"><table><thead><tr>' +
+          '<th>#</th><th>شناسه</th><th>شناسه حساب</th><th>نوع</th><th style="text-align:left">مبلغ (ریال)</th><th>تاریخ</th><th>شرح</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+    }
+
+    if (transfers.length) {
+      var trRows = transfers.map(function(ut, i) {
+        var fromLabel = ut.validFrom && bMap[ut.fromBankId]
+          ? esc(bMap[ut.fromBankId].name) + ' (<code>#' + esc(ut.fromBankId) + '</code>)'
+          : '<span style="color:var(--d);font-weight:700">' + esc(ut.fromBankId != null ? ut.fromBankId : '—') + ' (نامعتبر / حذف‌شده)</span>';
+        var toLabel = ut.validTo && bMap[ut.toBankId]
+          ? esc(bMap[ut.toBankId].name) + ' (<code>#' + esc(ut.toBankId) + '</code>)'
+          : '<span style="color:var(--d);font-weight:700">' + esc(ut.toBankId != null ? ut.toBankId : '—') + ' (نامعتبر / حذف‌شده)</span>';
+        return '<tr>' +
+          '<td>' + (i + 1) + '</td>' +
+          '<td><code>#' + esc(ut.id || '—') + '</code></td>' +
+          '<td>' + fromLabel + '</td>' +
+          '<td>' + toLabel + '</td>' +
+          '<td style="font-weight:700;font-variant-numeric:tabular-nums;text-align:left">' + UI.fn(ut.amount) + '</td>' +
+          '<td>' + esc(ut.date || '—') + '</td>' +
+          '<td>' + esc(ut.notes || 'انتقال بین بانکی') + '</td>' +
+        '</tr>';
+      }).join('');
+
+      modalHtml += '<div class="hint-box" style="background:rgba(220,38,38,.06);border:1px solid var(--d);border-radius:8px;padding:10px;margin-bottom:10px">' +
+          '<i class="bi bi-exclamation-triangle-fill" style="color:var(--d)"></i> ' +
+          '<strong>انتقال‌های بین‌بانکی نامنطبق (' + UI.fn(transfers.length) + ' مورد):</strong> ' +
+          'حساب مبدأ یا مقصد این انتقال‌ها حذف شده یا نامعتبر است. مانده حساب‌های مرتبط نباید بدون هشدار و ممیزی به عنوان مانده قطعی تلقی گردد.' +
+        '</div>' +
+        '<div class="tw"><table><thead><tr>' +
+          '<th>#</th><th>شناسه</th><th>حساب مبدأ</th><th>حساب مقصد</th><th style="text-align:left">مبلغ (ریال)</th><th>تاریخ</th><th>شرح</th>' +
+        '</tr></thead><tbody>' + trRows + '</tbody></table></div>';
+    }
+
+    modalHtml += '</div>';
+    var totalCount = list.length + transfers.length;
+    UI.open('ممیزی تراکنش‌ها و انتقال‌های بانکی نامنطبق (' + UI.fn(totalCount) + ' مورد)', modalHtml,
       '<button class="btn bo" onclick="UI.close()">بستن</button>', true);
   }
 };

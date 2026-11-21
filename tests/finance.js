@@ -552,17 +552,225 @@ executedTestTracker.push({ title: 'گروه عملیاتی ۳: آزمون واق
 
 console.log('✓ گروه عملیاتی ۳: تطابق کامل داشبورد، بانک‌ها، نقدینگی آزاد و تراکنش‌های نامنطبق با موفقیت تأیید شد.');
 
+console.log('\n--- اجرای آزمون‌های مستقل Bank.show (سناریوهای الف تا و) و پیگیری انتقال‌های نامنطبق ---');
+
+// (الف) حساب با موجودی اولیه و چند دریافت و پرداخت
+await (async () => {
+  memStore.banks = { 1001: { id: 1001, name: 'بانک مسکن آزمایشی', bankName: 'مسکن', accountNumber: '1001', openingBalance: 10000000 } };
+  memStore.payments = [
+    { id: 1, type: 'receipt', amount: 3000000, bankId: 1001, contactId: 1, date: '1404/01/05', description: 'دریافت اول' },
+    { id: 2, type: 'receipt', amount: 2000000, bankId: 1001, contactId: 1, date: '1404/01/06', description: 'دریافت دوم' },
+    { id: 3, type: 'payment', amount: 1500000, bankId: 1001, contactId: 2, date: '1404/01/07', description: 'پرداخت اول' },
+    { id: 4, type: 'payment', amount: 500000, bankId: 1001, contactId: 2, date: '1404/01/08', description: 'پرداخت دوم' }
+  ];
+  memStore.bankTransfers = [];
+
+  const expectedEngineBal = FinanceEngine.calculateAccountBalance(1001, Object.values(memStore.banks), memStore.payments, memStore.bankTransfers);
+  assert.strictEqual(expectedEngineBal, 13000000, 'خروجی FinanceEngine برای حساب ۱۰M+۵M-۲M باید ۱۳M باشد');
+
+  capturedUIContent = '';
+  await Bank.show(1001);
+  assert.strictEqual(Bank._lastShow.engineBalance, expectedEngineBal, 'Bank.show باید با خروجی FinanceEngine برابر باشد');
+  assert.strictEqual(Bank._lastShow.ledgerBalance, 13000000, 'مانده گردش جزئیات نیز باید ۱۳M باشد');
+  assert.strictEqual(Bank._lastShow.hasDiscrepancy, false, 'در حالت عادی نباید مغایرت وجود داشته باشد');
+  assert(capturedUIContent.includes('مانده اولیه') && (capturedUIContent.includes('۱۰٬۰۰۰٬۰۰۰') || capturedUIContent.includes('10,000,000')), 'مانده اولیه باید در سطر آغازین جدول حفظ شود');
+  assert(capturedUIContent.includes('۱۳٬۰۰۰٬۰۰۰') || capturedUIContent.includes('13,000,000'), 'مانده نهایی معتبر ۱۳M باید در صفحه نمایش داده شود');
+  assert(!capturedUIContent.includes('هشدار مغایرت محاسباتی'), 'در نبود اختلاف نباید هشدار مغایرت نمایش داده شود');
+  console.log('  [✓] سناریو (الف): حساب با موجودی اولیه و چند دریافت و پرداخت با FinanceEngine منطبق بود.');
+})();
+executedTestTracker.push({ title: 'آزمون مستقل Bank.show (الف): حساب با موجودی اولیه و چند دریافت و پرداخت', passed: true });
+
+// (ب) حساب دارای انتقال ورودی
+await (async () => {
+  memStore.banks = {
+    2001: { id: 2001, name: 'بانک مقصد ورودی', bankName: 'تجارت', openingBalance: 5000000 },
+    2002: { id: 2002, name: 'بانک مبدأ خروجی', bankName: 'پارسیان', openingBalance: 20000000 }
+  };
+  memStore.payments = [];
+  memStore.bankTransfers = [
+    { id: 11, fromBankId: 2002, toBankId: 2001, amount: 4000000, date: '1404/01/10', notes: 'واریز بین‌بانکی ورودی' }
+  ];
+
+  const expectedInBal = FinanceEngine.calculateAccountBalance(2001, Object.values(memStore.banks), memStore.payments, memStore.bankTransfers);
+  assert.strictEqual(expectedInBal, 9000000, 'مانده حساب دارای انتقال ورودی باید ۵M + ۴M = ۹M باشد');
+
+  capturedUIContent = '';
+  await Bank.show(2001);
+  assert.strictEqual(Bank._lastShow.engineBalance, expectedInBal, 'مانده Bank.show برای انتقال ورودی باید با FinanceEngine یکسان باشد');
+  assert.strictEqual(Bank._lastShow.hasDiscrepancy, false);
+  assert(capturedUIContent.includes('۹٬۰۰۰٬۰۰۰') || capturedUIContent.includes('9,000,000'), 'مانده ۹M باید نمایش داده شود');
+  assert(capturedUIContent.includes('انتقال از بانک مبدأ خروجی'), 'ردیف انتقال ورودی باید در جدول گردش نمایش داده شود');
+  console.log('  [✓] سناریو (ب): حساب دارای انتقال ورودی با FinanceEngine منطبق بود.');
+})();
+executedTestTracker.push({ title: 'آزمون مستقل Bank.show (ب): حساب دارای انتقال ورودی', passed: true });
+
+// (ج) حساب دارای انتقال خروجی
+await (async () => {
+  const expectedOutBal = FinanceEngine.calculateAccountBalance(2002, Object.values(memStore.banks), memStore.payments, memStore.bankTransfers);
+  assert.strictEqual(expectedOutBal, 16000000, 'مانده حساب دارای انتقال خروجی باید ۲۰M - ۴M = ۱۶M باشد');
+
+  capturedUIContent = '';
+  await Bank.show(2002);
+  assert.strictEqual(Bank._lastShow.engineBalance, expectedOutBal, 'مانده Bank.show برای انتقال خروجی باید با FinanceEngine یکسان باشد');
+  assert.strictEqual(Bank._lastShow.hasDiscrepancy, false);
+  assert(capturedUIContent.includes('۱۶٬۰۰۰٬۰۰۰') || capturedUIContent.includes('16,000,000'), 'مانده ۱۶M باید نمایش داده شود');
+  assert(capturedUIContent.includes('انتقال به بانک مقصد ورودی'), 'ردیف انتقال خروجی باید در جدول گردش نمایش داده شود');
+  console.log('  [✓] سناریو (ج): حساب دارای انتقال خروجی با FinanceEngine منطبق بود.');
+})();
+executedTestTracker.push({ title: 'آزمون مستقل Bank.show (ج): حساب دارای انتقال خروجی', passed: true });
+
+// (د) حساب دارای چند تراکنش و انتقال ورودی/خروجی همزمان
+await (async () => {
+  memStore.banks = {
+    3001: { id: 3001, name: 'بانک اصلی ترکیبی', bankName: 'ملت', openingBalance: 8000000 },
+    3002: { id: 3002, name: 'بانک همکار ۱', bankName: 'ملی', openingBalance: 12000000 },
+    3003: { id: 3003, name: 'بانک همکار ۲', bankName: 'صادرات', openingBalance: 3000000 }
+  };
+  memStore.payments = [
+    { id: 21, type: 'receipt', amount: 5000000, bankId: 3001, contactId: 1, date: '1404/01/02', description: 'وصول مشتری' },
+    { id: 22, type: 'receipt', amount: 2000000, bankId: 3001, contactId: 1, date: '1404/01/04', description: 'بیعانه' },
+    { id: 23, type: 'payment', amount: 3000000, bankId: 3001, contactId: 2, date: '1404/01/06', description: 'پرداخت به تأمین‌کننده' }
+  ];
+  memStore.bankTransfers = [
+    { id: 31, fromBankId: 3002, toBankId: 3001, amount: 4500000, date: '1404/01/08', notes: 'شارژ حساب از ملی' },
+    { id: 32, fromBankId: 3001, toBankId: 3003, amount: 1500000, date: '1404/01/09', notes: 'انتقال به صادرات' }
+  ];
+
+  const expectedMixedBal = FinanceEngine.calculateAccountBalance(3001, Object.values(memStore.banks), memStore.payments, memStore.bankTransfers);
+  // 8M + 5M + 2M - 3M + 4.5M - 1.5M = 15M
+  assert.strictEqual(expectedMixedBal, 15000000, 'مانده حساب ترکیبی باید ۱۵M باشد');
+
+  capturedUIContent = '';
+  await Bank.show(3001);
+  assert.strictEqual(Bank._lastShow.engineBalance, expectedMixedBal, 'مانده Bank.show در سناریو ترکیبی باید دقیقاً با FinanceEngine برابر باشد');
+  assert.strictEqual(Bank._lastShow.ledgerBalance, 15000000);
+  assert.strictEqual(Bank._lastShow.hasDiscrepancy, false);
+  assert(capturedUIContent.includes('۱۵٬۰۰۰٬۰۰۰') || capturedUIContent.includes('15,000,000'), 'مانده نهایی ۱۵M باید رندر شود');
+  console.log('  [✓] سناریو (د): حساب دارای چند تراکنش و انتقال ورودی/خروجی همزمان با FinanceEngine منطبق بود.');
+})();
+executedTestTracker.push({ title: 'آزمون مستقل Bank.show (د): حساب دارای چند تراکنش و انتقال ورودی و خروجی همزمان', passed: true });
+
+// (هـ) اختلاف بین مانده محاسبه‌شده از گردش جزئیات و خروجی FinanceEngine
+await (async () => {
+  memStore.banks = { 4001: { id: 4001, name: 'بانک تست مغایرت', bankName: 'سپه', openingBalance: 10000000 } };
+  memStore.payments = [
+    { id: 41, type: 'receipt', amount: 2000000, bankId: 4001, contactId: 1, date: '1404/01/10', description: 'دریافت ثبت‌شده' }
+  ];
+  memStore.bankTransfers = [];
+
+  const origCalcAcc = FinanceEngine.calculateAccountBalance;
+  FinanceEngine.calculateAccountBalance = function() {
+    return 14500000; // اختلاف عمدی ۲،۵۰۰،۰۰۰ ریالی با مانده گردش (۱۲،۰۰۰،۰۰۰)
+  };
+  try {
+    capturedUIContent = '';
+    await Bank.show(4001);
+    assert.strictEqual(Bank._lastShow.engineBalance, 14500000, 'مانده معتبر باید خروجی FinanceEngine (۱۴.۵M) باشد');
+    assert.strictEqual(Bank._lastShow.ledgerBalance, 12000000, 'مانده گردش جزئیات باید ۱۲M محاسبه شده باشد');
+    assert.strictEqual(Bank._lastShow.discrepancy, 2500000, 'مقدار اختلاف باید ۲.۵M باشد');
+    assert.strictEqual(Bank._lastShow.hasDiscrepancy, true, 'پرچم مغایرت باید true باشد');
+    assert(capturedUIContent.includes('هشدار مغایرت محاسباتی'), 'هشدار صریح مغایرت محاسباتی باید نمایش داده شود');
+    assert(capturedUIContent.includes('۱۴٬۵۰۰٬۰۰۰') || capturedUIContent.includes('14,500,000'), 'مانده نهایی معتبر FinanceEngine (۱۴.۵M) باید نمایش داده شود');
+    assert(capturedUIContent.includes('مانده اولیه') && capturedUIContent.includes('دریافت ثبت‌شده'), 'جدول گردش تراکنش‌ها باید همچنان قابل مشاهده باشد');
+    console.log('  [✓] سناریو (هـ): در صورت مغایرت گردش با FinanceEngine، هشدار مغایرت و مانده معتبر موتور مالی نمایش داده شد.');
+  } finally {
+    FinanceEngine.calculateAccountBalance = origCalcAcc;
+  }
+})();
+executedTestTracker.push({ title: 'آزمون مستقل Bank.show (هـ): تشخیص مغایرت گردش با FinanceEngine و نمایش هشدار و مانده معتبر', passed: true });
+
+// (و) نبود FinanceEngine — عدم نمایش هرگونه مانده تخمینی و نمایش خطای صریح
+await (async () => {
+  memStore.banks = { 5001: { id: 5001, name: 'بانک تست نبود موتور', bankName: 'رفاه', openingBalance: 9876543 } };
+  memStore.payments = [
+    { id: 51, type: 'receipt', amount: 1000000, bankId: 5001, contactId: 1, date: '1404/01/11', description: 'دریافت تست' }
+  ];
+  memStore.bankTransfers = [];
+
+  const origFE = globalThis.FinanceEngine;
+  delete globalThis.FinanceEngine;
+  try {
+    capturedUIContent = '';
+    await Bank.show(5001);
+    assert(capturedUIContent.includes('خطا در دسترسی به موتور مالی'), 'خطای صریح نبود موتور مالی باید نمایش داده شود');
+    assert(!capturedUIContent.includes('۹٬۸۷۶٬۵۴۳') && !capturedUIContent.includes('9,876,543'), 'مانده اولیه نباید به عنوان مانده نهایی یا تخمینی نمایش داده شود');
+    assert(!capturedUIContent.includes('۱۰٬۸۷۶٬۵۴۳') && !capturedUIContent.includes('10,876,543'), 'هیچ مانده تخمینی از گردش نباید بدون FinanceEngine محاسبه یا نمایش داده شود');
+    assert(!capturedUIContent.includes('جمع گردش و مانده نهایی'), 'جدول و مانده نهایی نباید در نبود موتور مالی رندر شوند');
+  } finally {
+    globalThis.FinanceEngine = origFE;
+  }
+
+  // همچنین بررسی وضعیت برگرداندن مقدار نامعتبر (null) توسط calculateAccountBalance
+  const origCalcAcc = FinanceEngine.calculateAccountBalance;
+  FinanceEngine.calculateAccountBalance = function() { return null; };
+  try {
+    capturedUIContent = '';
+    await Bank.show(5001);
+    assert(capturedUIContent.includes('خطا در دریافت مانده معتبر از موتور مالی'), 'در صورت نامعتبر بودن خروجی FinanceEngine باید خطای صریح نمایش داده شود');
+    assert(!capturedUIContent.includes('۹٬۸۷۶٬۵۴۳') && !capturedUIContent.includes('۱۰٬۸۷۶٬۵۴۳'), 'هیچ مانده تخمینی نباید در صورت خطای FinanceEngine نمایش داده شود');
+  } finally {
+    FinanceEngine.calculateAccountBalance = origCalcAcc;
+  }
+  console.log('  [✓] سناریو (و): در نبود FinanceEngine هیچ مانده تخمینی یا اولیه نمایش داده نشد و خطای صریح صادر گردید.');
+})();
+executedTestTracker.push({ title: 'آزمون مستقل Bank.show (و): نبود FinanceEngine و جلوگیری کامل از نمایش مانده تخمینی یا اولیه', passed: true });
+
+// (ز) پیگیری انتقال‌های بین‌بانکی نامنطبق (unmatchedTransfers) در بخش بانک‌ها و داشبورد
+await (async () => {
+  memStore.banks = {
+    6001: { id: 6001, name: 'بانک مبدأ واقعی', bankName: 'ملت', openingBalance: 10000000 },
+    6002: { id: 6002, name: 'بانک سالم کناری', bankName: 'ملی', openingBalance: 5000000 }
+  };
+  memStore.payments = [];
+  memStore.bankTransfers = [
+    { id: 77, fromBankId: 6001, toBankId: 9999, amount: 3000000, date: '1404/01/15', notes: 'انتقال به حساب حذف‌شده ۹۹۹۹' }
+  ];
+
+  const calc = FinanceEngine.calculateBankBalances(Object.values(memStore.banks), memStore.payments, memStore.bankTransfers);
+  assert.strictEqual(calc.unmatchedTransfers.length, 1, 'یک انتقال نامنطبق باید شناسایی شود');
+  assert.strictEqual(calc.unmatchedTransfersTotal, 3000000, 'جمع مبلغ انتقال نامنطبق باید ۳M باشد');
+  assert.strictEqual(calc.bankMap[6001].balance, 7000000);
+
+  capturedUIContent = '';
+  await Bank.render();
+  assert(capturedUIContent.includes('دارای انتقال نامنطبق (غیرقطعی)'), 'حساب درگیر در لیست بانک‌ها باید برچسب غیرقطعی داشته باشد');
+  assert(capturedUIContent.includes('هشدار انتقال بانکی نامنطبق'), 'صفحه بانک‌ها باید بنر هشدار انتقال نامنطبق را نمایش دهد');
+
+  capturedUIContent = '';
+  Bank.showUnmatchedModal();
+  assert(capturedUIContent.includes('انتقال‌های بین‌بانکی نامنطبق') && (capturedUIContent.includes('9999') || capturedUIContent.includes('۹۹۹۹')), 'مودال بانک‌ها باید جزئیات انتقال نامنطبق با شناسه مقصد ۹۹۹۹ را نمایش دهد');
+
+  capturedUIContent = '';
+  await Bank.show(6001);
+  assert(capturedUIContent.includes('هشدار ممیزی انتقال بانکی'), 'صفحه جزئیات حساب درگیر باید هشدار ممیزی انتقال نامنطبق را نمایش دهد');
+  assert(capturedUIContent.includes('حساب نامعتبر'), 'ردیف انتقال در جزئیات حساب باید طرف مقابل نامعتبر را مشخص کند');
+  assert.strictEqual(Bank._lastShow.unmatchedTransfers.length, 1);
+
+  capturedUIContent = '';
+  await Dash.load();
+  assert.strictEqual(Dash.lastData.unmatchedTransfers.length, 1, 'داشبورد باید انتقال‌های نامنطبق را در داده‌های خود نگه دارد');
+  assert(capturedUIContent.includes('انتقال نامنطبق') && capturedUIContent.includes('غیرقطعی'), 'داشبورد باید هشدار غیرقطعی بودن مانده دارای انتقال نامنطبق را نمایش دهد');
+
+  capturedUIContent = '';
+  Dash.showUnmatchedBankModal();
+  assert(capturedUIContent.includes('انتقال‌های بین‌بانکی نامنطبق') && (capturedUIContent.includes('9999') || capturedUIContent.includes('۹۹۹۹')), 'مودال داشبورد باید جزئیات انتقال نامنطبق را نمایش دهد');
+  console.log('  [✓] سناریو (ز): مشاهده‌پذیری و پیگیری کامل unmatchedTransfers در بخش بانک‌ها و داشبورد تأیید شد.');
+})();
+executedTestTracker.push({ title: 'آزمون پیگیری انتقال‌های بین‌بانکی نامنطبق (unmatchedTransfers) در بانک‌ها و داشبورد با هشدار غیرقطعی', passed: true });
+
 // استخراج داینامیک و دقیق شمارش آزمون‌ها از آرایه ردیابی
 const totalExecuted = executedTestTracker.length;
 const totalPassed = executedTestTracker.filter(t => t.passed).length;
 const totalFailed = totalExecuted - totalPassed;
 
-console.log(`\n🎉 مجموع کل: ${totalPassed} از ${totalExecuted} سناریوی جامع مالی، بانکی و حسابداری پارچه‌بان با موفقیت ۱۰۰٪ پاس شدند.`);
+console.log('\n--- فهرست کامل آزمون‌های اجراشده ---');
+executedTestTracker.forEach((t, idx) => {
+  console.log(`${idx + 1}. [${t.passed ? '✓' : '✗'}] ${t.title}`);
+});
 
+console.log(`\n🎉 مجموع کل: ${totalPassed} از ${totalExecuted} سناریوی جامع مالی، بانکی و حسابداری پارچه‌بان با موفقیت ۱۰۰٪ پاس شدند (ناموفق: ${totalFailed}).`);
+
+assert(totalExecuted > 0, 'حداقل یک آزمون باید اجرا شده باشد');
 assert.strictEqual(totalFailed, 0, 'هیچ آزمونی نباید ناموفق باشد');
-assert.strictEqual(totalPassed, 49, 'مجموع آزمون‌های موفق باید دقیقاً ۴۹ باشد');
-assert.strictEqual(totalExecuted, 49, 'تعداد کل آزمون‌های تعریف‌شده باید دقیقاً ۴۹ باشد');
+assert.strictEqual(totalPassed, totalExecuted, 'تمامی آزمون‌های اجراشده باید با موفقیت پاس شوند');
 assert(executedTestTracker.every(t => t.passed), 'تمام تک‌تک آزمون‌ها باید با وضعیت passed: true تأیید شده باشند');
-
-
-

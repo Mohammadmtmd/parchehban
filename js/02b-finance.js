@@ -1566,6 +1566,7 @@ var FinanceEngine = (function() {
     // پردازش حواله‌ها و نقل و انتقالات بین‌بانکی
     var totalTransfersVolume = 0;
     var unmatchedTransfers = [];
+    var unmatchedTransfersTotal = 0;
     btList.forEach(function(bt) {
       if (!bt) return;
       var amt = safeNum(bt.amount);
@@ -1585,12 +1586,14 @@ var FinanceEngine = (function() {
       }
 
       if (!validFrom || !validTo) {
+        unmatchedTransfersTotal += amt;
         unmatchedTransfers.push({
           id: bt.id,
           fromBankId: bt.fromBankId,
           toBankId: bt.toBankId,
           amount: amt,
           date: bt.date,
+          notes: bt.notes || bt.description || '',
           validFrom: !!validFrom,
           validTo: !!validTo
         });
@@ -1620,6 +1623,7 @@ var FinanceEngine = (function() {
       unmatchedBankPayments: unmatchedBankPayments,
       unmatchedBankTotal: unmatchedBankTotal,
       unmatchedTransfers: unmatchedTransfers,
+      unmatchedTransfersTotal: unmatchedTransfersTotal,
       totalLiquidity: totalBankBal + unassignedCash.balance,
       totalTransfersVolume: totalTransfersVolume
     };
