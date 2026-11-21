@@ -114,8 +114,16 @@ var Rep = {
       return;
     }
     var rows = g.rows.slice();
-    if (this._c === 'profit' && this._lastPL && !this._lastPL.isComplete) {
-      rows.unshift(['هشدار مهم اعتبار سود:', 'سود نهایی دوره قابل تعیین نیست', 'سود نمایش‌داده‌شده صرفاً «سود قابل‌تأیید» بر پایه اقلام دارای بهای موثق است', 'وضعیت: ناقص']);
+    if (this._c === 'profit' && this._lastPL) {
+      if (this._lastPL.purchaseShippingSummary && this._lastPL.purchaseShippingSummary.unallocatedInvoicesCount > 0) {
+        rows.unshift(['هشدار تخصیص حمل خرید:', this._lastPL.purchaseShippingSummary.unallocatedInvoicesCount + ' فاکتور خرید دارای هزینه حمل تخصیص‌نیافته یا نیازمند بررسی است', 'مبلغ تخصیص‌نیافته: ' + (this._lastPL.purchaseShippingSummary.unallocatedShipping || 0) + ' ریال', 'نیازمند بررسی']);
+      }
+      if (this._lastPL.hasDuplicateShippingWarning && this._lastPL.duplicateShippingWarnings) {
+        rows.unshift(['هشدار ثبت مضاعف هزینه حمل خرید:', 'تعداد ' + this._lastPL.duplicateShippingWarnings.length + ' مورد هم‌زمانی حمل فاکتور خرید و پرداخت مستقل «هزینه حمل» شناسایی شد', 'بدون حذف خودکار اسناد — جهت جلوگیری از دوباره‌شماری بررسی شود', 'نیازمند بررسی']);
+      }
+      if (!this._lastPL.isComplete) {
+        rows.unshift(['هشدار مهم اعتبار سود:', 'سود نهایی دوره قابل تعیین نیست', 'سود نمایش‌داده‌شده صرفاً «سود قابل‌تأیید» بر پایه اقلام دارای بهای موثق است', 'وضعیت: ناقص']);
+      }
     }
     if (g.foot) rows.push(g.foot);
     var t = this._titles[this._c] || 'گزارش';
@@ -131,17 +139,30 @@ var Rep = {
       return;
     }
     var t = this._titles[this._c] || 'گزارش';
-    var sum = null;
-    if (this._c === 'profit' && this._lastPL && !this._lastPL.isComplete) {
-      sum = '<div style="background:#fff3cd;border:1.5px solid #ffeeba;color:#856404;padding:12px 16px;border-radius:6px;margin-bottom:14px;font-size:12px;line-height:1.8">' +
-        '<strong>⚠ هشدار مهم مالی: سود نهایی دوره قابل تعیین نیست.</strong><br>' +
-        'در این دوره، تعداد <strong>' + (this._lastPL.unverifiedItemsCount || 0) + ' قلم کالا</strong> در فاکتورهای فروش فاقد بهای خرید معتبر هستند (مجموع فروش این اقلام: ' + UI.fn(this._lastPL.unverifiedRevenueTotal || 0) + ' ریال). مبالغ سود نمایش‌داده‌شده در این گزارش صرفاً <strong>«سود قابل‌تأیید»</strong> اقلام دارای بهای موثق است و نباید به عنوان سود قطعی کل دوره تلقی گردد.' +
-        '</div>';
+    var sum = '';
+    if (this._c === 'profit' && this._lastPL) {
+      if (!this._lastPL.isComplete) {
+        sum += '<div style="background:#fff3cd;border:1.5px solid #ffeeba;color:#856404;padding:12px 16px;border-radius:6px;margin-bottom:10px;font-size:12px;line-height:1.8">' +
+          '<strong>⚠ هشدار مهم مالی: سود نهایی دوره قابل تعیین نیست.</strong><br>' +
+          'در این دوره، تعداد <strong>' + (this._lastPL.unverifiedItemsCount || 0) + ' قلم کالا</strong> در فاکتورهای فروش فاقد بهای خرید معتبر هستند (مجموع فروش این اقلام: ' + UI.fn(this._lastPL.unverifiedRevenueTotal || 0) + ' ریال). مبالغ سود نمایش‌داده‌شده در این گزارش صرفاً <strong>«سود قابل‌تأیید»</strong> اقلام دارای بهای موثق است و نباید به عنوان سود قطعی کل دوره تلقی گردد.' +
+          '</div>';
+      }
+      if (this._lastPL.hasDuplicateShippingWarning && this._lastPL.duplicateShippingWarnings && this._lastPL.duplicateShippingWarnings.length) {
+        sum += '<div style="background:#fff3cd;border:1.5px solid #f59e0b;color:#92400e;padding:10px 14px;border-radius:6px;margin-bottom:10px;font-size:11.5px;line-height:1.75">' +
+          '<strong>⚠ هشدار احتمال ثبت مضاعف هزینه حمل خرید:</strong><br>' +
+          this._lastPL.duplicateShippingWarnings.map(function(w) { return esc(w.warning); }).join('<br>') +
+          '</div>';
+      }
+      if (this._lastPL.purchaseShippingSummary && this._lastPL.purchaseShippingSummary.unallocatedInvoicesCount > 0) {
+        sum += '<div style="background:#fef2f2;border:1.5px solid #fca5a5;color:#991b1b;padding:10px 14px;border-radius:6px;margin-bottom:10px;font-size:11.5px;line-height:1.75">' +
+          '<strong>⚠ هشدار تخصیص هزینه حمل خرید:</strong> تعداد ' + UI.fn(this._lastPL.purchaseShippingSummary.unallocatedInvoicesCount) + ' فاکتور خرید دارای هزینه حمل تخصیص‌نیافته یا نیازمند بررسی است.' +
+          '</div>';
+      }
     }
     var titleSuffix = (this._c === 'profit' && this._lastPL && !this._lastPL.isComplete) ? ' (سود قابل‌تأیید — وضعیت: ناقص)' : '';
     var rows = g.rows.slice();
     if (g.foot) rows.push(g.foot);
-    EXP.pdf(t + ' — ' + todayJ() + titleSuffix, g.head, rows, sum);
+    EXP.pdf(t + ' — ' + todayJ() + titleSuffix, g.head, rows, sum || null);
   },
   summary: async function() {
     var invs = await FY.byYear('invoices'),
@@ -315,6 +336,25 @@ var Rep = {
         '</div>';
     }
 
+    if (plData.hasDuplicateShippingWarning && plData.duplicateShippingWarnings && plData.duplicateShippingWarnings.length) {
+      h += '<div class="hint-box" style="margin-bottom:18px;background:rgba(217,119,6,.08);border:1.5px solid var(--w);padding:14px 18px;border-radius:10px;display:flex;align-items:flex-start;gap:12px">' +
+        '<i class="bi bi-truck" style="color:var(--w);font-size:1.45rem;flex-shrink:0;margin-top:2px"></i>' +
+        '<div style="font-size:.84rem;line-height:1.75">' +
+        '<strong style="color:var(--w);font-size:.92rem">هشدار ممیزی هزینه حمل خرید: احتمال ثبت مضاعف هزینه حمل (' + UI.fn(plData.duplicateShippingWarnings.length) + ' مورد)</strong><br>' +
+        plData.duplicateShippingWarnings.map(function(w) { return '• ' + esc(w.warning); }).join('<br>') +
+        '</div>' +
+        '</div>';
+    }
+
+    if (plData.purchaseShippingSummary && plData.purchaseShippingSummary.unallocatedInvoicesCount > 0) {
+      h += '<div class="hint-box" style="margin-bottom:18px;background:rgba(220,38,38,.06);border:1.5px solid var(--d);padding:12px 16px;border-radius:10px;display:flex;align-items:center;gap:12px">' +
+        '<i class="bi bi-exclamation-circle-fill" style="color:var(--d);font-size:1.3rem;flex-shrink:0"></i>' +
+        '<div style="font-size:.84rem;line-height:1.7">' +
+        '<strong style="color:var(--d)">هشدار تخصیص هزینه حمل خرید:</strong> تعداد ' + UI.fn(plData.purchaseShippingSummary.unallocatedInvoicesCount) + ' فاکتور خرید دارای هزینه حمل تخصیص‌نیافته یا نیازمند بررسی است (مبلغ تخصیص‌نیافته: ' + UI.fn(plData.purchaseShippingSummary.unallocatedShipping) + ' ریال).' +
+        '</div>' +
+        '</div>';
+    }
+
     /* کارت‌های خلاصه آماری P&L */
     var profitAfterBroker = grossProfit - brokerCommissions;
     var marginAfterBrokerPct = netSales > 0 ? (profitAfterBroker / netSales) * 100 : 0;
@@ -356,7 +396,7 @@ var Rep = {
       h += '<tr style="font-size:12.5px;color:var(--w);background:rgba(217,119,6,.04)"><td style="padding-inline-start:28px">• فروش اقلام فاقد بهای معتبر (سود نامشخص / نیازمند تکمیل اطلاعات)</td><td style="text-align:left">' + UI.fn(plData.salesWithoutValidBuyPrice) + '</td><td></td><td style="text-align:center">' + (netSales > 0 ? ((plData.salesWithoutValidBuyPrice / netSales) * 100).toFixed(1) : 0) + '٪</td></tr>';
     }
 
-    h += '<tr style="color:var(--w)"><td style="padding-inline-start:28px">کسر می‌شود: بهای تمام‌شده کالای فروش‌رفته (بر پایه buyPrice صریح اقلام معتبر)</td><td style="text-align:left">(' + UI.fn(Math.round(totalCOGS)) + ')</td><td></td><td style="text-align:center">−' + (netSales > 0 ? ((totalCOGS / netSales) * 100).toFixed(1) : 0) + '٪</td></tr>';
+    h += '<tr style="color:var(--w)"><td style="padding-inline-start:28px">کسر می‌شود: بهای تمام‌شده کالای فروش‌رفته (بر پایه بهای تمام‌شده واحد شامل سهم حمل خرید)</td><td style="text-align:left">(' + UI.fn(Math.round(totalCOGS)) + ')</td><td></td><td style="text-align:center">−' + (netSales > 0 ? ((totalCOGS / netSales) * 100).toFixed(1) : 0) + '٪</td></tr>';
     var grossProfitLabel = isComplete
       ? '= سود ناخالص عملیاتی بازرگانی (Gross Profit)'
       : '= سود ناخالص قابل‌تأیید (سود نهایی دوره قابل تعیین نیست)';

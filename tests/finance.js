@@ -758,6 +758,584 @@ await (async () => {
 })();
 executedTestTracker.push({ title: 'آزمون پیگیری انتقال‌های بین‌بانکی نامنطبق (unmatchedTransfers) در بانک‌ها و داشبورد با هشدار غیرقطعی', passed: true });
 
+console.log('\n--- اجرای ۲۰ آزمون تخصصی مرحله چهارم: تخصیص هزینه حمل خرید به بهای تمام‌شده و پیشنهاد قیمت در فروش ---');
+
+// اطمینان از وجود ماک‌های کمکی مورد نیاز برای رندر و محاسبات گزارش/فاکتور
+if (!globalThis.PPick) {
+  globalThis.PPick = { cell: function(i, pid) { return '<input id="pp' + i + '" data-pid="' + (pid || '') + '">'; } };
+}
+if (!globalThis.num2fa) {
+  globalThis.num2fa = function(n) { return String(n || 0); };
+}
+if (!globalThis.getPeriodStart) {
+  globalThis.getPeriodStart = function() { return 0; };
+}
+if (!globalThis.EXP) {
+  globalThis.EXP = { csv: function() {}, pdf: function() {} };
+}
+if (!globalThis.ROUTES.purchase) globalThis.ROUTES.purchase = () => {};
+if (!globalThis.ROUTES.sales) globalThis.ROUTES.sales = () => {};
+
+function runPhase4Test(title, fn) {
+  fn();
+  console.log(`  [✓] ${title}`);
+  executedTestTracker.push({ title, passed: true });
+}
+
+async function runPhase4AsyncTest(title, fn) {
+  await fn();
+  console.log(`  [✓] ${title}`);
+  executedTestTracker.push({ title, passed: true });
+}
+
+// ۱. فاکتور خرید تک‌قلمی با هزینه حمل
+runPhase4Test('مرحله ۴ — آزمون ۱: فاکتور خرید تک‌قلمی با هزینه حمل', () => {
+  const inv = {
+    id: 4001,
+    type: 'purchase',
+    shippingCost: 100000,
+    items: [{ productId: 10, productName: 'پوپلین', quantity: 100, unitPrice: 50000 }]
+  };
+  const alloc = FinanceEngine.allocatePurchaseShipping(inv);
+  assert.strictEqual(alloc.status, 'allocated');
+  assert.strictEqual(alloc.allocatedShippingTotal, 100000);
+  assert.strictEqual(alloc.items[0].itemGrossAmount, 5000000);
+  assert.strictEqual(alloc.items[0].itemShippingShare, 100000);
+  assert.strictEqual(alloc.items[0].itemShippingPerUnit, 1000);
+  assert.strictEqual(alloc.items[0].landedUnitCost, 51000);
+  assert.strictEqual(alloc.allocationMatchesShipping, true);
+});
+
+// ۲. فاکتور خرید دو قلمی با مبلغ مساوی
+runPhase4Test('مرحله ۴ — آزمون ۲: فاکتور خرید دو قلمی با مبلغ ناخالص مساوی', () => {
+  const inv = {
+    id: 4002,
+    type: 'purchase',
+    shippingCost: 200000,
+    items: [
+      { productId: 11, productName: 'کالا الف', quantity: 50, unitPrice: 100000 },
+      { productId: 12, productName: 'کالا ب', quantity: 100, unitPrice: 50000 }
+    ]
+  };
+  const alloc = FinanceEngine.allocatePurchaseShipping(inv);
+  assert.strictEqual(alloc.invoiceItemsSubtotal, 10000000);
+  assert.strictEqual(alloc.items[0].itemShippingShare, 100000);
+  assert.strictEqual(alloc.items[1].itemShippingShare, 100000);
+  assert.strictEqual(alloc.items[0].landedUnitCost, 102000);
+  assert.strictEqual(alloc.items[1].landedUnitCost, 51000);
+});
+
+// ۳. فاکتور خرید سه‌قلمی با مبالغ نامساوی (تخصیص تناسبی)
+runPhase4Test('مرحله ۴ — آزمون ۳: فاکتور خرید سه‌قلمی با مبالغ نامساوی (نسبت مبلغ خرید)', () => {
+  const inv = {
+    id: 4003,
+    type: 'purchase',
+    shippingCost: 1000000,
+    items: [
+      { productId: 21, productName: 'الف', quantity: 10, unitPrice: 100000 }, // 1M (10%)
+      { productId: 22, productName: 'ب', quantity: 30, unitPrice: 100000 },   // 3M (30%)
+      { productId: 23, productName: 'ج', quantity: 60, unitPrice: 100000 }    // 6M (60%)
+    ]
+  };
+  const alloc = FinanceEngine.allocatePurchaseShipping(inv);
+  assert.strictEqual(alloc.invoiceItemsSubtotal, 10000000);
+  assert.strictEqual(alloc.items[0].itemShippingShare, 100000);
+  assert.strictEqual(alloc.items[1].itemShippingShare, 300000);
+  assert.strictEqual(alloc.items[2].itemShippingShare, 600000);
+  assert.strictEqual(alloc.items[0].landedUnitCost, 110000);
+  assert.strictEqual(alloc.items[1].landedUnitCost, 110000);
+  assert.strictEqual(alloc.items[2].landedUnitCost, 110000);
+});
+
+// ۴. فاکتور خرید با هزینه حمل صفر
+runPhase4Test('مرحله ۴ — آزمون ۴: فاکتور خرید با هزینه حمل صفر', () => {
+  const inv = {
+    id: 4004,
+    type: 'purchase',
+    shippingCost: 0,
+    items: [{ productId: 10, productName: 'پوپلین', quantity: 20, unitPrice: 75000 }]
+  };
+  const alloc = FinanceEngine.allocatePurchaseShipping(inv);
+  assert.strictEqual(alloc.status, 'allocated');
+  assert.strictEqual(alloc.shippingCost, 0);
+  assert.strictEqual(alloc.items[0].itemShippingShare, 0);
+  assert.strictEqual(alloc.items[0].itemShippingPerUnit, 0);
+  assert.strictEqual(alloc.items[0].landedUnitCost, 75000);
+});
+
+// ۵. فاکتور خرید دارای تخفیف و هزینه حمل (مبنا: مبلغ ناخالص قبل از تخفیف)
+runPhase4Test('مرحله ۴ — آزمون ۵: فاکتور خرید دارای تخفیف و هزینه حمل (مبنای مبلغ ناخالص قبل از تخفیف)', () => {
+  const inv = {
+    id: 4005,
+    type: 'purchase',
+    discount: 500000,
+    shippingCost: 300000,
+    items: [
+      { productId: 31, productName: 'کالا ۱', quantity: 10, unitPrice: 100000 }, // 1M
+      { productId: 32, productName: 'کالا ۲', quantity: 20, unitPrice: 100000 }  // 2M
+    ]
+  };
+  const alloc = FinanceEngine.allocatePurchaseShipping(inv);
+  assert.strictEqual(alloc.invoiceItemsSubtotal, 3000000);
+  assert.strictEqual(alloc.items[0].itemShippingShare, 100000);
+  assert.strictEqual(alloc.items[1].itemShippingShare, 200000);
+  assert.strictEqual(alloc.items[0].landedUnitCost, 110000);
+  assert.strictEqual(alloc.items[1].landedUnitCost, 110000);
+});
+
+// ۶. تست باقیمانده گرد کردن (تطابق دقیق مجموع سهم حمل اقلام با کل هزینه حمل فاکتور)
+runPhase4Test('مرحله ۴ — آزمون ۶: تطابق دقیق باقیمانده گرد کردن با کل هزینه حمل فاکتور', () => {
+  const inv = {
+    id: 4006,
+    type: 'purchase',
+    shippingCost: 100,
+    items: [
+      { productId: 41, productName: 'کالا ۱', quantity: 1, unitPrice: 1000 },
+      { productId: 42, productName: 'کالا ۲', quantity: 1, unitPrice: 1000 },
+      { productId: 43, productName: 'کالا ۳', quantity: 1, unitPrice: 1000 }
+    ]
+  };
+  const alloc = FinanceEngine.allocatePurchaseShipping(inv);
+  const sumShare = alloc.items.reduce((s, it) => s + it.itemShippingShare, 0);
+  assert.strictEqual(sumShare, 100);
+  assert.strictEqual(alloc.allocatedShippingTotal, 100);
+  assert.strictEqual(alloc.items[0].itemShippingShare, 33);
+  assert.strictEqual(alloc.items[1].itemShippingShare, 33);
+  assert.strictEqual(alloc.items[2].itemShippingShare, 34); // باقیمانده به آخرین قلم واجد شرایط
+  assert.strictEqual(alloc.allocationMatchesShipping, true);
+});
+
+// ۷. پیشنهاد بهای تمام‌شده با حمل هنگام انتخاب کالا در فاکتور فروش جدید
+runPhase4Test('مرحله ۴ — آزمون ۷: پیشنهاد خودکار بهای تمام‌شده واحد با حمل در فروش جدید', () => {
+  const invoices = [
+    {
+      id: 4100,
+      invoiceNumber: 'خ-۰۱۰۰',
+      type: 'purchase',
+      date: '1404/01/05',
+      shippingCost: 200000,
+      items: [{ productId: 50, productName: 'فلامنت', quantity: 100, unitPrice: 40000 }]
+    }
+  ];
+  const sug = FinanceEngine.suggestSaleBuyPrice(50, invoices, { id: 50, buyPrice: 35000 });
+  assert.strictEqual(sug.found, true);
+  assert.strictEqual(sug.baseBuyPrice, 40000);
+  assert.strictEqual(sug.allocatedShippingPerUnit, 2000);
+  assert.strictEqual(sug.landedUnitCost, 42000);
+  assert.strictEqual(sug.buyPrice, 42000);
+  assert.strictEqual(sug.buyPriceStatus, 'auto_suggested');
+  assert.strictEqual(sug.sourcePurchaseInvoiceId, 4100);
+  assert.strictEqual(sug.sourcePurchaseInvoiceNumber, 'خ-۰۱۰۰');
+});
+
+// ۸. دو خرید با تاریخ و هزینه حمل متفاوت -> انتخاب آخرین خرید معتبر و ممنوعیت میانگین موزون
+runPhase4Test('مرحله ۴ — آزمون ۸: دو خرید متوالی و انتخاب آخرین خرید معتبر (بدون میانگین موزون)', () => {
+  const invoices = [
+    {
+      id: 4101,
+      invoiceNumber: 'خ-۰۱۰۱',
+      type: 'purchase',
+      date: '1404/01/02',
+      shippingCost: 100000,
+      items: [{ productId: 51, quantity: 100, unitPrice: 30000 }] // landed: 31,000
+    },
+    {
+      id: 4102,
+      invoiceNumber: 'خ-۰۱۰۲',
+      type: 'purchase',
+      date: '1404/01/12',
+      shippingCost: 300000,
+      items: [{ productId: 51, quantity: 100, unitPrice: 50000 }] // landed: 53,000
+    }
+  ];
+  const sug = FinanceEngine.suggestSaleBuyPrice(51, invoices, { id: 51, buyPrice: 40000 });
+  assert.strictEqual(sug.sourcePurchaseInvoiceId, 4102);
+  assert.strictEqual(sug.baseBuyPrice, 50000);
+  assert.strictEqual(sug.allocatedShippingPerUnit, 3000);
+  assert.strictEqual(sug.buyPrice, 53000);
+  assert.notStrictEqual(sug.buyPrice, 42000); // میانگین موزون نیست
+});
+
+// ۹. اصلاح دستی قیمت خرید در فاکتور فروش و محاسبه سود بر پایه مقدار ویرایش‌شده
+runPhase4Test('مرحله ۴ — آزمون ۹: اصلاح دستی قیمت خرید در فاکتور فروش و ثبت منشأ manual_override', () => {
+  Inv._type = 'sale';
+  Inv._editId = null;
+  Inv._allInvoices = [
+    {
+      id: 4103,
+      invoiceNumber: 'خ-۰۱۰۳',
+      type: 'purchase',
+      date: '1404/01/10',
+      shippingCost: 100000,
+      items: [{ productId: 52, quantity: 50, unitPrice: 80000 }] // landed = 82000
+    }
+  ];
+  Inv.prodMap = { 52: { id: 52, name: 'کدری', unit: 'متر', salePrice: 120000, buyPrice: 70000 } };
+  Inv.items = [{ productId: 52, quantity: 10, unitPrice: 120000, total: 1200000 }];
+
+  Inv.oc(0, 'p', '52');
+  assert.strictEqual(Inv.items[0].buyPrice, 82000);
+  assert.strictEqual(Inv.items[0].buyPriceStatus, 'auto_suggested');
+
+  // اصلاح دستی توسط کاربر به 90000
+  Inv.oc(0, 'bp', '90000');
+  assert.strictEqual(Inv.items[0].buyPrice, 90000);
+  assert.strictEqual(Inv.items[0].buyPriceStatus, 'manual_override');
+  assert.strictEqual(Inv.items[0].buyPriceSource, 'اصلاح دستی');
+  assert.strictEqual(Inv.items[0].landedBuyPrice, 82000); // حفظ مرجع پیشنهادی قبلی
+
+  const calc = FinanceEngine.calculateInvoiceProfit({
+    subtotal: 1200000,
+    discount: 0,
+    shippingCost: 0,
+    brokerCommission: 0,
+    items: Inv.items
+  });
+  assert.strictEqual(calc.verifiedCOGS, 900000);
+  assert.strictEqual(calc.verifiedGrossProfit, 300000);
+});
+
+// ۱۰. کالای فاقد سابقه خرید معتبر (عدم قیمت‌سازی جعلی و صدور هشدار)
+runPhase4Test('مرحله ۴ — آزمون ۱۰: کالای فاقد سابقه خرید معتبر (هشدار و عدم قیمت‌سازی جعلی)', () => {
+  const sugNoDefault = FinanceEngine.suggestSaleBuyPrice(9991, [], { id: 9991, name: 'بدون سابقه' });
+  assert.strictEqual(sugNoDefault.found, false);
+  assert.strictEqual(sugNoDefault.buyPrice, null);
+  assert.strictEqual(sugNoDefault.buyPriceStatus, 'missing_purchase');
+  assert(sugNoDefault.warning && sugNoDefault.warning.includes('سابقه خرید معتبر'));
+
+  const sugFallback = FinanceEngine.suggestSaleBuyPrice(9992, [], { id: 9992, buyPrice: 45000 });
+  assert.strictEqual(sugFallback.found, false);
+  assert.strictEqual(sugFallback.hasFallback, true);
+  assert.strictEqual(sugFallback.buyPrice, 45000);
+  assert.strictEqual(sugFallback.buyPriceStatus, 'unverified_fallback');
+  assert(sugFallback.warning && sugFallback.warning.includes('قابل تأیید نیست'));
+});
+
+// ۱۱. فاکتور فروش دارای هزینه حمل (درآمد خدمات حمل، بدون تداخل با هزینه حمل خرید)
+runPhase4Test('مرحله ۴ — آزمون ۱۱: فاکتور فروش با هزینه حمل (درآمد حمل، عدم اجرای تخصیص خرید)', () => {
+  const saleInv = {
+    id: 4200,
+    type: 'sale',
+    date: '1404/01/15',
+    shippingCost: 150000,
+    discount: 0,
+    brokerCommission: 0,
+    subtotal: 1000000,
+    grandTotal: 1150000,
+    items: [{ productId: 50, quantity: 10, unitPrice: 100000, buyPrice: 60000 }]
+  };
+  const alloc = FinanceEngine.allocatePurchaseShipping(saleInv);
+  assert.strictEqual(alloc.applicable, false);
+  assert.strictEqual(alloc.status, 'not_applicable');
+
+  const pl = FinanceEngine.calculatePeriodPL([saleInv], [], 0, 0);
+  assert.strictEqual(pl.netSales, 1150000);
+  assert.strictEqual(pl.verifiedCOGS, 600000);
+  assert.strictEqual(pl.verifiedGrossProfit, 550000);
+});
+
+// ۱۲. هزینه حمل فاکتور خرید + پرداخت خودکار فاکتور -> عدم کسر مجدد در OpEx
+runPhase4Test('مرحله ۴ — آزمون ۱۲: عدم کسر مجدد هزینه حمل خرید در OpEx هنگام تسویه فاکتور خرید', () => {
+  const invoices = [
+    {
+      id: 4300,
+      invoiceNumber: 'خ-۰۳۰۰',
+      type: 'purchase',
+      date: '1404/01/05',
+      shippingCost: 200000,
+      grandTotal: 2200000,
+      paidAmount: 2200000,
+      items: [{ productId: 60, quantity: 20, unitPrice: 100000 }] // landed = 110,000
+    },
+    {
+      id: 4301,
+      invoiceNumber: 'ف-۰۳۰۱',
+      type: 'sale',
+      date: '1404/01/10',
+      shippingCost: 0,
+      grandTotal: 3000000,
+      items: [{ productId: 60, quantity: 20, unitPrice: 150000, buyPrice: 110000 }]
+    }
+  ];
+  const payments = [
+    { id: 801, type: 'payment', amount: 2200000, date: '1404/01/05', sourceInvoiceId: 4300, auto: true, category: 'هزینه حمل' }
+  ];
+  const pl = FinanceEngine.calculatePeriodPL(invoices, payments, 0, 0);
+  assert.strictEqual(pl.verifiedCOGS, 2200000);
+  assert.strictEqual(pl.classifiedOpEx, 0);
+  assert.strictEqual(pl.supplierSettlements, 2200000);
+  assert.strictEqual(pl.netOperatingProfit, 800000);
+  assert.strictEqual(pl.hasDuplicateShippingWarning, false);
+});
+
+// ۱۳. هزینه حمل فاکتور خرید + پرداخت مستقل واقعی «هزینه حمل» غیرمرتبط (عدم هشدار کاذب و ثبت در OpEx)
+runPhase4Test('مرحله ۴ — آزمون ۱۳: پرداخت مستقل واقعی هزینه حمل ارسال بار (باقی ماندن در OpEx بدون هشدار کاذب)', () => {
+  const invoices = [
+    {
+      id: 4310,
+      invoiceNumber: 'خ-۰۳۱۰',
+      type: 'purchase',
+      date: '1404/01/02',
+      contactId: 2,
+      shippingCost: 200000,
+      items: [{ productId: 60, quantity: 20, unitPrice: 100000 }]
+    }
+  ];
+  const payments = [
+    { id: 802, type: 'payment', amount: 75000, date: '1404/01/14', contactId: 9, category: 'هزینه حمل', description: 'کرایه ارسال سفارش مشتری تهران' }
+  ];
+  const pl = FinanceEngine.calculatePeriodPL(invoices, payments, 0, 0);
+  assert.strictEqual(pl.classifiedOpEx, 75000);
+  assert.strictEqual(pl.hasDuplicateShippingWarning, false);
+});
+
+// ۱۴. تشخیص ثبت مضاعف هزینه حمل خرید (فاکتور خرید + پرداخت مستقل هم‌نام/هم‌مبلغ «هزینه حمل»)
+runPhase4Test('مرحله ۴ — آزمون ۱۴: تشخیص و هشدار احتمال ثبت مضاعف هزینه حمل خرید بدون حذف سند', () => {
+  const invoices = [
+    {
+      id: 4320,
+      invoiceNumber: 'خ-۰۳۲۰',
+      type: 'purchase',
+      date: '1404/01/08',
+      contactId: 2,
+      shippingCost: 350000,
+      items: [{ productId: 60, quantity: 10, unitPrice: 100000 }]
+    }
+  ];
+  const payments = [
+    { id: 803, type: 'payment', amount: 350000, date: '1404/01/08', contactId: 2, category: 'هزینه حمل', description: 'کرایه بار فاکتور خ-۰۳۲۰' }
+  ];
+  const pl = FinanceEngine.calculatePeriodPL(invoices, payments, 0, 0);
+  assert.strictEqual(pl.hasDuplicateShippingWarning, true);
+  assert.strictEqual(pl.duplicateShippingWarnings.length, 1);
+  assert.strictEqual(pl.duplicateShippingWarnings[0].purchaseInvoiceId, 4320);
+  assert.strictEqual(pl.duplicateShippingWarnings[0].paymentId, 803);
+  assert(pl.duplicateShippingWarnings[0].warning.includes('ثبت مضاعف'));
+  assert.strictEqual(payments.length, 1); // عدم حذف یا دستکاری سند
+});
+
+// ۱۵. فاکتور خرید با مبلغ اقلام صفر و هزینه حمل مثبت (وضعیت تخصیص‌نیافته و نیازمند بررسی)
+runPhase4Test('مرحله ۴ — آزمون ۱۵: فاکتور خرید با جمع اقلام صفر و هزینه حمل مثبت (unallocated)', () => {
+  const inv = {
+    id: 4330,
+    type: 'purchase',
+    shippingCost: 150000,
+    items: [{ productId: 70, productName: 'نمونه رایگان', quantity: 10, unitPrice: 0 }]
+  };
+  const alloc = FinanceEngine.allocatePurchaseShipping(inv);
+  assert.strictEqual(alloc.status, 'unallocated');
+  assert.strictEqual(alloc.needsReview, true);
+  assert.strictEqual(alloc.unallocatedShipping, 150000);
+  assert(alloc.warning && alloc.warning.includes('نیازمند بررسی'));
+});
+
+// ۱۶. فاکتور خرید با هزینه حمل منفی یا نامعتبر
+runPhase4Test('مرحله ۴ — آزمون ۱۶: فاکتور خرید با هزینه حمل منفی یا نامعتبر (نیازمند بررسی)', () => {
+  const negInv = {
+    id: 4340,
+    type: 'purchase',
+    shippingCost: -50000,
+    items: [{ productId: 70, quantity: 10, unitPrice: 100000 }]
+  };
+  const allocNeg = FinanceEngine.allocatePurchaseShipping(negInv);
+  assert.strictEqual(allocNeg.status, 'invalid_negative_shipping');
+  assert.strictEqual(allocNeg.needsReview, true);
+  assert.strictEqual(allocNeg.hasInvalidShipping, true);
+
+  const badInv = {
+    id: 4341,
+    type: 'purchase',
+    shippingCost: 'abc',
+    items: [{ productId: 70, quantity: 10, unitPrice: 100000 }]
+  };
+  const allocBad = FinanceEngine.allocatePurchaseShipping(badInv);
+  assert.strictEqual(allocBad.status, 'invalid_shipping');
+  assert.strictEqual(allocBad.needsReview, true);
+});
+
+// ۱۷. عدم بازنویسی یا تغییر خودکار فاکتورهای فروش قبلی هنگام ثبت خرید جدید یا باز کردن فرم ویرایش
+await runPhase4AsyncTest('مرحله ۴ — آزمون ۱۷: عدم تغییر خودکار فاکتورهای فروش قدیمی هنگام ثبت خرید جدید یا ویرایش', async () => {
+  const oldSale = {
+    id: 4401,
+    invoiceNumber: 'ف-۴۴۰۱',
+    type: 'sale',
+    date: '1404/01/03',
+    contactId: 1,
+    subtotal: 1000000,
+    grandTotal: 1000000,
+    items: [{ productId: 80, productName: 'کرپ', quantity: 10, unitPrice: 100000, buyPrice: 60000, total: 1000000 }]
+  };
+  const newerPurchase = {
+    id: 4402,
+    invoiceNumber: 'خ-۴۴۰۲',
+    type: 'purchase',
+    date: '1404/01/14',
+    shippingCost: 500000,
+    items: [{ productId: 80, productName: 'کرپ', quantity: 10, unitPrice: 90000 }] // landed = 140,000
+  };
+  memStore.invoices = { 4401: oldSale, 4402: newerPurchase };
+  memStore.products = [{ id: 80, name: 'کرپ', unit: 'متر', buyPrice: 55000, salePrice: 100000 }];
+
+  const origDbAll = DB.all;
+  const origDbGet = DB.get;
+  DB.all = async (table) => table === 'products' ? JSON.parse(JSON.stringify(memStore.products)) : origDbAll(table);
+  DB.get = async (table, id) => table === 'products' ? (memStore.products.find(x => x.id === id) || null) : origDbGet(table, id);
+  try {
+    await Inv.showF('sale', 4401);
+    assert.strictEqual(Inv.items[0].buyPrice, 60000, 'هنگام باز کردن فاکتور فروش قدیمی، buyPrice قبلی نباید بازنویسی شود');
+    assert.strictEqual(memStore.invoices[4401].items[0].buyPrice, 60000);
+  } finally {
+    DB.all = origDbAll;
+    DB.get = origDbGet;
+  }
+});
+
+// ۱۸. عدم تغییر خودکار رکوردهای فاکتور خرید و جدول products
+runPhase4Test('مرحله ۴ — آزمون ۱۸: حفظ کامل عدم تغییر فاکتورهای خرید و رکورد کالاها در توابع موتور مالی', () => {
+  const purSnapshot = {
+    id: 4501,
+    type: 'purchase',
+    date: '1404/01/10',
+    shippingCost: 120000,
+    items: [{ productId: 90, quantity: 12, unitPrice: 50000 }]
+  };
+  const prodSnapshot = { id: 90, name: 'ساتن', buyPrice: 48000 };
+  const beforePur = JSON.stringify(purSnapshot);
+  const beforeProd = JSON.stringify(prodSnapshot);
+
+  FinanceEngine.allocatePurchaseShipping(purSnapshot);
+  FinanceEngine.suggestSaleBuyPrice(90, [purSnapshot], prodSnapshot);
+  FinanceEngine.calculatePeriodPL([purSnapshot], [], 0, 0);
+
+  assert.strictEqual(JSON.stringify(purSnapshot), beforePur);
+  assert.strictEqual(JSON.stringify(prodSnapshot), beforeProd);
+});
+
+// ۱۹. یکپارچگی فرم فاکتور (Inv.save و Inv._html): ذخیره متادیتای حسابرسی در فروش و رندر جزئیات تخصیص حمل در چاپ/PDF خرید
+await runPhase4AsyncTest('مرحله ۴ — آزمون ۱۹: ذخیره متادیتای بهای تمام‌شده در Inv.save و رندر تخصیص حمل در Inv._html', async () => {
+  const purInv = {
+    id: 4601,
+    invoiceNumber: 'خ-۴۶۰۱',
+    type: 'purchase',
+    date: '1404/01/05',
+    contactId: 2,
+    subtotal: 2000000,
+    shippingCost: 200000,
+    grandTotal: 2200000,
+    paidAmount: 0,
+    items: [
+      { productId: 95, productName: 'مخمل', quantity: 10, unitPrice: 100000, total: 1000000 },
+      { productId: 96, productName: 'حریر', quantity: 20, unitPrice: 50000, total: 1000000 }
+    ]
+  };
+  memStore.invoices = { 4601: purInv };
+  memStore.payments = [];
+  memStore.products = [
+    { id: 95, name: 'مخمل', unit: 'متر', buyPrice: 90000, salePrice: 150000 },
+    { id: 96, name: 'حریر', unit: 'متر', buyPrice: 45000, salePrice: 80000 }
+  ];
+
+  const origDbAll = DB.all;
+  const origDbGet = DB.get;
+  const origElVal = globalThis.elVal;
+  const origElNum = globalThis.elNum;
+  DB.all = async (table) => table === 'products' ? JSON.parse(JSON.stringify(memStore.products)) : origDbAll(table);
+  DB.get = async (table, id) => table === 'products' ? (memStore.products.find(x => x.id === id) || null) : origDbGet(table, id);
+  try {
+    // چاپ/PDF فاکتور خرید باید جدول تخصیص حمل را نمایش دهد
+    const purHtml = await Inv._html(purInv, { showPrices: true });
+    assert(purHtml.includes('هزینه حمل خرید'), 'عنوان هزینه حمل خرید باید در خروجی چاپ وجود داشته باشد');
+    assert(purHtml.includes('جزئیات تخصیص هزینه حمل خرید'), 'جدول جزئیات تخصیص حمل باید در چاپ فاکتور خرید نمایش داده شود');
+
+    // شبیه‌سازی ثبت فاکتور فروش جدید با انتخاب کالا و ذخیره
+    await Inv.showF('sale');
+    Inv.oc(0, 'p', '95');
+    Inv.oc(0, 'q', '5');
+    assert.strictEqual(Inv.items[0].buyPrice, 110000); // 100000 + 10000 سهم حمل
+    assert.strictEqual(Inv.items[0].allocatedShippingPerUnit, 10000);
+    assert.strictEqual(Inv.items[0].buyPriceStatus, 'auto_suggested');
+
+    globalThis.elVal = (fid) => {
+      if (fid === 'iCt') return '1';
+      if (fid === 'iDt') return '1404/01/15';
+      if (fid === 'iNm') return 'ف-۴۶۰۲';
+      if (fid === 'iPrt') return 'a4';
+      return '';
+    };
+    globalThis.elNum = () => 0;
+
+    await Inv.save('sale', null);
+    const savedSale = Object.values(memStore.invoices).find(x => x.invoiceNumber === 'ف-۴۶۰۲');
+    assert(savedSale, 'فاکتور فروش جدید باید در حافظه ثبت شود');
+    assert.strictEqual(savedSale.items[0].buyPrice, 110000);
+    assert.strictEqual(savedSale.items[0].baseBuyPrice, 100000);
+    assert.strictEqual(savedSale.items[0].allocatedShippingPerUnit, 10000);
+    assert.strictEqual(savedSale.items[0].landedBuyPrice, 110000);
+    assert.strictEqual(savedSale.items[0].sourcePurchaseInvoiceId, 4601);
+    assert.strictEqual(savedSale.items[0].buyPriceMethod, 'purchase_shipping_ratio');
+    assert.strictEqual(savedSale.items[0].buyPriceStatus, 'auto_suggested');
+  } finally {
+    DB.all = origDbAll;
+    DB.get = origDbGet;
+    globalThis.elVal = origElVal;
+    globalThis.elNum = origElNum;
+  }
+});
+
+// ۲۰. یکپارچگی گزارش سود و زیان (Rep.profit) و داشبورد (Dash.load) در ارزش‌گذاری انبار با حمل و هشدار حمل مضاعف
+await runPhase4AsyncTest('مرحله ۴ — آزمون ۲۰: گزارش سود و زیان (Rep.profit) و ارزش موجودی داشبورد با بهای با حمل و هشدار حمل مضاعف', async () => {
+  memStore.banks = { 1: { id: 1, name: 'ملت', openingBalance: 10000000 } };
+  memStore.invoices = {
+    4701: {
+      id: 4701,
+      invoiceNumber: 'خ-۴۷۰۱',
+      type: 'purchase',
+      date: '1404/01/05',
+      contactId: 2,
+      subtotal: 1000000,
+      shippingCost: 100000,
+      grandTotal: 1100000,
+      items: [{ productId: 98, productName: 'کتان', quantity: 10, unitPrice: 100000 }] // landed = 110,000
+    },
+    4702: {
+      id: 4702,
+      invoiceNumber: 'ف-۴۷۰۲',
+      type: 'sale',
+      date: '1404/01/12',
+      contactId: 1,
+      subtotal: 600000,
+      shippingCost: 0,
+      grandTotal: 600000,
+      items: [{ productId: 98, productName: 'کتان', quantity: 4, unitPrice: 150000, buyPrice: 110000 }]
+    }
+  };
+  memStore.payments = [
+    { id: 8801, type: 'payment', amount: 100000, date: '1404/01/05', contactId: 2, category: 'هزینه حمل', description: 'کرایه خ-۴۷۰۱' }
+  ];
+  memStore.bankTransfers = [];
+  memStore.products = [{ id: 98, name: 'کتان', unit: 'متر', buyPrice: 90000 }];
+
+  const origDbAll = DB.all;
+  const origStockMap = Prod.stockMap;
+  DB.all = async (table) => table === 'products' ? JSON.parse(JSON.stringify(memStore.products)) : origDbAll(table);
+  Prod.stockMap = async () => ({ 98: 6 }); // 10 خرید - 4 فروش = 6 متر مانده
+  try {
+    await Rep.profit('all');
+    const repHtml = capturedHTML['rC'] || '';
+    assert(repHtml.includes('احتمال ثبت مضاعف هزینه حمل'), 'گزارش P&L باید هشدار ثبت مضاعف هزینه حمل را نمایش دهد');
+    assert(repHtml.includes('شامل سهم حمل خرید'), 'شرح COGS باید شامل سهم حمل خرید باشد');
+
+    capturedUIContent = '';
+    await Dash.load();
+    // 6 متر × 110,000 (شامل سهم حمل خرید) = 660,000 ریال
+    assert.strictEqual(Dash.lastData.estimatedInvValue, 660000, 'ارزش موجودی انبار داشبورد باید بر پایه بهای تمام‌شده با حمل (۶۶۰٬۰۰۰) باشد');
+    assert(capturedUIContent.includes('حمل مضاعف'), 'داشبورد باید هشدار حمل مضاعف را در مرکز توجه نمایش دهد');
+  } finally {
+    DB.all = origDbAll;
+    Prod.stockMap = origStockMap;
+  }
+});
+
 // استخراج داینامیک و دقیق شمارش آزمون‌ها از آرایه ردیابی
 const totalExecuted = executedTestTracker.length;
 const totalPassed = executedTestTracker.filter(t => t.passed).length;

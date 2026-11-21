@@ -72,8 +72,9 @@ var Inv = {
     ft += '<td>' + UI.fn(tGrand) + '</td><td>' + UI.fn(tPaid) + '</td><td>' + UI.fn(tRem) + '</td>';
     ft += '<td colspan="2"></td></tr></tfoot>';
     var title = type === 'proforma' ? 'پیش فاکتور' : type === 'sale' ? 'فروش' : 'خرید';
+    var shipColTitle = type === 'purchase' ? 'هزینه حمل خرید' : 'حمل';
     var h = '<div class="cd"><div class="cd-h"><span>' + title + '</span><span class="tg tg-b" style="font-size:12px"><i class="bi bi-box-seam" style="margin-inline-end:4px"></i>جمع مقدار / متراژ کل: ' + UI.fn(tQty) + '</span></div>';
-    h += '<div class="tw"><table><thead><tr><th>#</th><th>شماره</th><th>تاریخ</th><th>شخص</th><th>جمع</th><th>حمل</th><th>تخفیف</th><th>نهایی</th><th>پرداختی</th><th>مانده</th><th>وضعیت</th><th></th></tr></thead>';
+    h += '<div class="tw"><table><thead><tr><th>#</th><th>شماره</th><th>تاریخ</th><th>شخص</th><th>جمع</th><th>' + shipColTitle + '</th><th>تخفیف</th><th>نهایی</th><th>پرداختی</th><th>مانده</th><th>وضعیت</th><th></th></tr></thead>';
     h += '<tbody>' + r + '</tbody>' + ft + '</table></div>';
     h += Pag.html(pk);
     h += '</div>';
@@ -142,6 +143,8 @@ var Inv = {
       bO += '<option value="' + c.id + '"' + (inv && inv.brokerId === c.id ? ' selected' : '') + '>' + esc(c.name) + '</option>';
     });
     this._type = type;
+    this._editId = id || null;
+    this._allInvoices = (await DB.all('invoices')) || [];
     this.items = inv ? JSON.parse(JSON.stringify(inv.items || [])) : [];
     this.items.forEach(function(it) {
       if (!it.unit && it.productId && Inv.prodMap[it.productId]) {
@@ -162,14 +165,15 @@ var Inv = {
     var iN = inv ? inv.invoiceNumber : await this.nn(type),
       td = todayJ();
     var ft = inv ? (isP ? 'ویرایش پیش فاکتور' : 'ویرایش فاکتور') : (isP ? 'پیش فاکتور جدید' : 'فاکتور جدید');
+    var shipInputLabel = type === 'purchase' ? 'هزینه حمل خرید' : 'حمل';
     var h = '<div class="fr mb"><div class="fg"><label>شماره</label><input class="fc" id="iNm" value="' + esc(iN) + '" readonly style="background:var(--bg)"></div><div class="fg"><label>تاریخ</label><input class="fc" id="iDt" value="' + esc(inv ? inv.date : td) + '"></div></div>';
-    h += '<div class="fr mb"><div class="fg"><label>' + (isP || isS ? 'مشتری' : 'تأمین‌کننده') + '</label><select class="fc" id="iCt" onchange="Inv.showBal()">' + cO + '</select></div><div class="fg"><label>حمل</label><input class="fc" id="iSh" type="number" value="' + (inv ? (inv.shippingCost || 0) : 0) + '" dir="ltr" oninput="Inv.calc()"></div></div>';
+    h += '<div class="fr mb"><div class="fg"><label>' + (isP || isS ? 'مشتری' : 'تأمین‌کننده') + '</label><select class="fc" id="iCt" onchange="Inv.showBal()">' + cO + '</select></div><div class="fg"><label>' + shipInputLabel + '</label><input class="fc" id="iSh" type="number" value="' + (inv ? (inv.shippingCost || 0) : 0) + '" dir="ltr" oninput="Inv.calc()"></div></div>';
     h += '<div id="iBal" style="font-size:.82rem;color:var(--txs);margin-bottom:10px"></div>';
     if (!isP) {
       h += '<div class="sec-div" onclick="var e=document.getElementById(\'iBs\');e.style.display=e.style.display===\'none\'?\'block\':\'none\'"><i class="bi bi-chevron-down"></i>واسطه و حق کمیسیون</div>';
       h += '<div id="iBs" style="display:' + (inv && (inv.brokerId || inv.brokerCommission) ? 'block' : 'none') + ';padding:16px 0"><div class="fr"><div class="fg"><label>شخص واسطه</label><select class="fc" id="iBr" onchange="Inv.calc()">' + bO + '</select></div><div class="fg"><label>مبلغ کمیسیون (ریال)</label><input class="fc" id="iCm" type="number" value="' + (inv ? (inv.brokerCommission || 0) : 0) + '" dir="ltr" oninput="Inv.calc()"></div></div></div>';
     }
-    h += '<div class="cd mb"><div class="cd-h">اقلام <button class="btn bs bo" onclick="Inv.ai()" style="margin-right:auto">+</button></div><div id="iW"></div></div>';
+    h += '<div class="cd mb"><div class="cd-h">اقلام <button class="btn bs bo" onclick="Inv.ai()" style="margin-right:auto">+</button></div><div id="iW"></div><div id="iShipAlloc" style="margin-top:10px"></div></div>';
     var banks = await DB.all('banks');
     var bankO = '<option value="">— انتخاب حساب —</option>';
     banks.forEach(function(b) {
@@ -217,8 +221,84 @@ var Inv = {
     this.ri();
     this.calc();
   },
+  _buyPriceHintHtml: function(it) {
+    if (!it || !it.productId) return '';
+    if (it.buyPriceStatus === 'auto_suggested') {
+      var invLbl = it.sourcePurchaseInvoiceNumber ? ('فاکتور ' + esc(it.sourcePurchaseInvoiceNumber)) : 'آخرین خرید';
+      var baseLbl = UI.fn(Math.round(it.baseBuyPrice || 0));
+      var shipLbl = UI.fn(Math.round(it.allocatedShippingPerUnit || 0));
+      var landedLbl = UI.fn(Math.round(it.landedBuyPrice || it.buyPrice || 0));
+      return '<span style="color:var(--ok);font-weight:600">' + invLbl + '</span> | خرید: ' + baseLbl + ' + حمل: ' + shipLbl + ' = <strong>' + landedLbl + '</strong>';
+    }
+    if (it.buyPriceStatus === 'manual_override') {
+      var sugTxt = (it.landedBuyPrice && it.landedBuyPrice > 0) ? (' (پیشنهاد با حمل: ' + UI.fn(Math.round(it.landedBuyPrice)) + ')') : '';
+      return '<span style="color:var(--p);font-weight:600">اصلاح دستی</span>' + sugTxt;
+    }
+    if (it.buyPriceStatus === 'unverified_fallback') {
+      return '<span style="color:var(--w);font-weight:600"><i class="bi bi-exclamation-triangle"></i> سهم حمل قابل تأیید نیست (پیش‌فرض کالا)</span>';
+    }
+    if (it.buyPriceStatus === 'missing_purchase') {
+      return '<span style="color:var(--w);font-weight:600"><i class="bi bi-exclamation-triangle"></i> فاقد سابقه خرید معتبر — بررسی شود</span>';
+    }
+    return '';
+  },
+
+  _applySuggestedBuyPrice: function(i, pid, pp) {
+    var it = this.items[i];
+    if (!it) return;
+    if (!pid) {
+      it.buyPrice = null;
+      it.baseBuyPrice = null;
+      it.allocatedShippingPerUnit = null;
+      it.landedBuyPrice = null;
+      it.sourcePurchaseInvoiceId = null;
+      it.sourcePurchaseInvoiceNumber = null;
+      it.buyPriceMethod = null;
+      it.buyPriceStatus = null;
+      it.buyPriceStatusLabel = null;
+      it.buyPriceWarning = null;
+      it.buyPriceSource = null;
+      return;
+    }
+
+    if (typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.suggestSaleBuyPrice === 'function') {
+      var sug = FinanceEngine.suggestSaleBuyPrice(pid, this._allInvoices || [], pp, {
+        excludeInvoiceId: this._editId || null
+      });
+      it.buyPrice = sug.buyPrice;
+      it.baseBuyPrice = sug.baseBuyPrice;
+      it.allocatedShippingPerUnit = sug.allocatedShippingPerUnit;
+      it.landedBuyPrice = sug.landedUnitCost;
+      it.sourcePurchaseInvoiceId = sug.sourcePurchaseInvoiceId;
+      it.sourcePurchaseInvoiceNumber = sug.sourcePurchaseInvoiceNumber;
+      it.buyPriceMethod = sug.buyPriceMethod;
+      it.buyPriceStatus = sug.buyPriceStatus;
+      it.buyPriceStatusLabel = sug.buyPriceStatusLabel;
+      it.buyPriceWarning = sug.warning || null;
+      it.buyPriceSource = sug.buyPriceStatusLabel;
+    } else if (pp && pp.buyPrice) {
+      it.buyPrice = pp.buyPrice;
+      it.baseBuyPrice = pp.buyPrice;
+      it.allocatedShippingPerUnit = null;
+      it.landedBuyPrice = null;
+      it.sourcePurchaseInvoiceId = null;
+      it.sourcePurchaseInvoiceNumber = null;
+      it.buyPriceMethod = 'product_default_unverified';
+      it.buyPriceStatus = 'unverified_fallback';
+      it.buyPriceStatusLabel = 'پیش‌فرض کالا (سهم حمل قابل تأیید نیست)';
+      it.buyPriceWarning = 'موتور مالی در دسترس نیست؛ قیمت پیش‌فرض کالا بدون تأیید سهم حمل است.';
+      it.buyPriceSource = it.buyPriceStatusLabel;
+    } else {
+      it.buyPrice = null;
+      it.buyPriceStatus = 'missing_purchase';
+      it.buyPriceStatusLabel = 'فاقد سابقه خرید معتبر';
+      it.buyPriceWarning = 'سابقه خرید معتبری برای این کالا یافت نشد.';
+    }
+  },
+
   oc: function(i, f, v) {
     var it = this.items[i];
+    if (!it) return;
     if (f === 'p') {
       it.productId = intOf(v) || '';
       if (it.productId && this.prodMap[it.productId]) {
@@ -226,7 +306,7 @@ var Inv = {
         it.catalog = pp.colorCatalog || '';
         it.shade = pp.colorShade || '';
         it.unit = pp.unit || 'متر';
-        if (this._type === 'sale' && !it.unitPrice && pp.salePrice) {
+        if ((this._type === 'sale' || this._type === 'proforma') && !it.unitPrice && pp.salePrice) {
           it.unitPrice = pp.salePrice;
           var uEl = document.getElementById('u' + i);
           if (uEl) uEl.value = it.unitPrice;
@@ -236,15 +316,41 @@ var Inv = {
           var uEl = document.getElementById('u' + i);
           if (uEl) uEl.value = it.unitPrice;
         }
-        if (this._type === 'sale' && pp.buyPrice) {
-          it.buyPrice = pp.buyPrice;
+        if (this._type === 'sale' || this._type === 'proforma') {
+          this._applySuggestedBuyPrice(i, it.productId, pp);
           var bpEl = document.getElementById('bp' + i);
-          if (bpEl) bpEl.value = it.buyPrice;
+          if (bpEl) bpEl.value = it.buyPrice != null ? it.buyPrice : '';
+          var bpInfoEl = document.getElementById('bpInfo' + i);
+          if (bpInfoEl) bpInfoEl.innerHTML = this._buyPriceHintHtml(it);
+
+          if (!this._allInvoices && typeof DB !== 'undefined' && typeof DB.all === 'function') {
+            var self = this;
+            var targetPid = it.productId;
+            DB.all('invoices').then(function(allInvs) {
+              self._allInvoices = allInvs || [];
+              if (self.items[i] === it && it.productId === targetPid && it.buyPriceStatus !== 'manual_override') {
+                self._applySuggestedBuyPrice(i, targetPid, pp);
+                it.profit = (it.buyPrice && it.buyPrice > 0) ? (it.quantity * (it.unitPrice - it.buyPrice)) : null;
+                var bEl = document.getElementById('bp' + i);
+                if (bEl) bEl.value = it.buyPrice != null ? it.buyPrice : '';
+                var bInfo = document.getElementById('bpInfo' + i);
+                if (bInfo) bInfo.innerHTML = self._buyPriceHintHtml(it);
+                self.calc();
+              }
+            }).catch(function() {});
+          }
         }
       } else {
         it.catalog = '';
         it.shade = '';
         it.unit = 'متر';
+        if (this._type === 'sale' || this._type === 'proforma') {
+          this._applySuggestedBuyPrice(i, null, null);
+          var bpElClr = document.getElementById('bp' + i);
+          if (bpElClr) bpElClr.value = '';
+          var bpInfoClr = document.getElementById('bpInfo' + i);
+          if (bpInfoClr) bpInfoClr.innerHTML = '';
+        }
       }
       var catEl = document.getElementById('cat' + i);
       if (catEl) catEl.value = it.catalog || '';
@@ -254,7 +360,17 @@ var Inv = {
       if (unEl) unEl.textContent = it.unit || 'متر';
     } else if (f === 'q') it.quantity = parseFloat(v) || 0;
     else if (f === 'u') it.unitPrice = numOf(v);
-    else if (f === 'bp') it.buyPrice = (v !== '' && numOf(v) > 0) ? numOf(v) : null;
+    else if (f === 'bp') {
+      var parsedBp = (v !== '' && v !== null && v !== undefined && numOf(v) > 0) ? numOf(v) : null;
+      it.buyPrice = parsedBp;
+      it.buyPriceStatus = 'manual_override';
+      it.buyPriceStatusLabel = 'اصلاح دستی';
+      it.buyPriceSource = 'اصلاح دستی';
+      it.buyPriceMethod = 'manual_override';
+      it.buyPriceWarning = parsedBp ? null : 'بهای تمام‌شده وارد نشده است';
+      var bpInfoMan = document.getElementById('bpInfo' + i);
+      if (bpInfoMan) bpInfoMan.innerHTML = this._buyPriceHintHtml(it);
+    }
     else if (f === 'cat') it.catalog = v;
     else if (f === 'sh') it.shade = v;
     it.total = it.quantity * it.unitPrice;
@@ -273,7 +389,7 @@ var Inv = {
     }
     var isSale = (this._type === 'sale' || this._type === 'proforma');
     var h = '<table class="inv-tbl"><thead><tr><th style="width:30px">#</th><th>کالا</th><th style="width:90px">کالیته</th><th style="width:80px">شید</th><th style="width:90px">مقدار</th>';
-    if (isSale) h += '<th style="width:80px">ق.خرید</th>';
+    if (isSale) h += '<th style="width:135px">بهای تمامشده واحد (با حمل)</th>';
     h += '<th style="width:100px">قیمت</th><th style="width:90px">جمع</th><th style="width:30px"></th></tr></thead><tbody>';
     for (var i = 0; i < this.items.length; i++) {
       var it = this.items[i];
@@ -284,13 +400,67 @@ var Inv = {
       h += '<td><input id="cat' + i + '" type="text" value="' + esc(it.catalog || '') + '" oninput="Inv.oc(' + i + ',\'cat\',this.value)" style="text-align:center;font-size:.8rem"></td>';
       h += '<td><input id="sh' + i + '" type="text" value="' + esc(it.shade || '') + '" oninput="Inv.oc(' + i + ',\'sh\',this.value)" style="text-align:center;font-size:.8rem"></td>';
       h += '<td><div style="display:flex;align-items:center;justify-content:center;gap:3px"><input type="number" id="q' + i + '" value="' + (it.quantity || '') + '" oninput="Inv.oc(' + i + ',\'q\',this.value)" style="text-align:center;min-width:48px"><span id="un' + i + '" style="font-size:.72rem;color:var(--txs);white-space:nowrap">' + esc(itemUnit) + '</span></div></td>';
-      if (isSale) h += '<td><input type="number" id="bp' + i + '" value="' + (it.buyPrice || '') + '" oninput="Inv.oc(' + i + ',\'bp\',this.value)" style="text-align:center"></td>';
+      if (isSale) {
+        h += '<td><input type="number" step="any" id="bp' + i + '" value="' + (it.buyPrice != null ? it.buyPrice : '') + '" oninput="Inv.oc(' + i + ',\'bp\',this.value)" style="text-align:center"><div id="bpInfo' + i + '" style="font-size:.68rem;color:var(--txs);margin-top:3px;line-height:1.35">' + this._buyPriceHintHtml(it) + '</div></td>';
+      }
       h += '<td><input type="number" id="u' + i + '" value="' + (it.unitPrice || '') + '" oninput="Inv.oc(' + i + ',\'u\',this.value)" style="text-align:center"></td>';
       h += '<td class="it-total" id="t' + i + '">' + UI.fn(it.total) + '</td>';
       h += '<td style="text-align:center"><button class="bi2 d" onclick="Inv.ri2(' + i + ')" style="width:28px;height:28px"><i class="bi bi-x" style="font-size:.8rem"></i></button></td></tr>';
     }
     h += '</tbody></table>';
     w.innerHTML = h;
+  },
+
+  _renderPurchaseShippingAlloc: function() {
+    var box = document.getElementById('iShipAlloc');
+    if (!box) return;
+    if (this._type !== 'purchase' || typeof FinanceEngine === 'undefined' || typeof FinanceEngine.allocatePurchaseShipping !== 'function') {
+      box.innerHTML = '';
+      return;
+    }
+    var shInput = document.getElementById('iSh');
+    var rawSh = shInput ? shInput.value : 0;
+    var self = this;
+    var mappedItems = this.items.map(function(it) {
+      var pObj = (it.productId && self.prodMap && self.prodMap[it.productId]) ? self.prodMap[it.productId] : null;
+      return {
+        productId: it.productId,
+        productName: (pObj && pObj.name) || it.productName || '—',
+        quantity: it.quantity,
+        unitPrice: it.unitPrice
+      };
+    });
+    var alloc = FinanceEngine.allocatePurchaseShipping({
+      type: 'purchase',
+      shippingCost: rawSh,
+      items: mappedItems
+    });
+    if (!(alloc.shippingCost > 0) && !alloc.needsReview) {
+      box.innerHTML = '';
+      return;
+    }
+    var h = '';
+    if (alloc.warning) {
+      h += '<div class="hint-box" style="margin-bottom:8px;background:rgba(217,119,6,.08);border:1px solid var(--w);color:var(--w);font-size:.78rem">' +
+        '<i class="bi bi-exclamation-triangle-fill"></i> ' + esc(alloc.warning) + '</div>';
+    }
+    h += '<div style="padding:10px 12px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);font-size:.78rem">';
+    h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:6px">' +
+      '<strong><i class="bi bi-truck"></i> پیش‌نمایش تخصیص هزینه حمل خرید به بهای تمام‌شده اقلام</strong>' +
+      '<span class="tg ' + (alloc.needsReview ? 'tg-o' : 'tg-g') + '">' + esc(alloc.statusLabel) + '</span></div>';
+    if (alloc.items.length) {
+      h += '<div class="tw"><table><thead><tr><th>کالا</th><th>مبلغ خرید قلم</th><th>سهم حمل قلم</th><th>سهم حمل هر واحد</th><th>بهای تمام‌شده واحد (با حمل)</th></tr></thead><tbody>';
+      alloc.items.forEach(function(ai) {
+        h += '<tr><td>' + esc(ai.productName) + '</td>' +
+          '<td>' + UI.fn(Math.round(ai.itemGrossAmount)) + '</td>' +
+          '<td>' + (ai.isEligible ? UI.fn(Math.round(ai.itemShippingShare)) : '<span style="color:var(--w)">—</span>') + '</td>' +
+          '<td>' + (ai.itemShippingPerUnit !== null ? UI.fn(Math.round(ai.itemShippingPerUnit)) : '<span style="color:var(--w)">نامعتبر</span>') + '</td>' +
+          '<td style="font-weight:700;color:var(--ok)">' + (ai.landedUnitCost !== null ? UI.fn(Math.round(ai.landedUnitCost)) : '<span style="color:var(--w)">' + esc(ai.reason || 'نیازمند بررسی') + '</span>') + '</td></tr>';
+      });
+      h += '</tbody><tfoot><tr style="font-weight:700;background:rgba(0,0,0,.02)"><td>جمع تخصیص</td><td>' + UI.fn(Math.round(alloc.invoiceItemsSubtotal)) + '</td><td>' + UI.fn(Math.round(alloc.allocatedShippingTotal)) + '</td><td colspan="2">هزینه حمل کل فاکتور: ' + UI.fn(alloc.shippingCost) + '</td></tr></tfoot></table></div>';
+    }
+    h += '</div>';
+    box.innerHTML = h;
   },
 
   calc: function() {
@@ -315,32 +485,35 @@ var Inv = {
     var gr = Math.max(0, sub + sh - dis);
     var rm = gr - pd;
     var el = document.getElementById('iT');
-    if (!el) return;
-    var h = '<div class="inv-ti" style="border:1.5px solid var(--p)"><label style="color:var(--p);font-weight:700">' + esc(qtyLabel) + '</label><div class="val" style="color:var(--p);font-weight:800">' + esc(qtyVal) + '</div></div>';
-    h += '<div class="inv-ti"><label>جمع اقلام</label><div class="val">' + UI.fn(sub) + '</div></div>';
-    if (sh) h += '<div class="inv-ti"><label>حمل</label><div class="val">' + UI.fn(sh) + '</div></div>';
-    if (dis) h += '<div class="inv-ti"><label>تخفیف</label><div class="val g">−' + UI.fn(dis) + '</div></div>';
-    if (cm > 0) h += '<div class="inv-ti"><label>کمیسیون واسطه</label><div class="val r">−' + UI.fn(cm) + '</div></div>';
-    h += '<div class="inv-ti"><label>نهایی</label><div class="val g">' + UI.fn(gr) + '</div></div>';
-    h += '<div class="inv-ti"><label>پرداختی</label><div class="val">' + UI.fn(pd) + '</div></div>';
-    if (this._type === 'sale' || this._type === 'proforma') {
-      var invProfitCalc = FinanceEngine.calculateInvoiceProfit({
-        subtotal: sub,
-        discount: dis,
-        shippingCost: sh,
-        brokerCommission: cm,
-        items: this.items
-      });
-      if (invProfitCalc.salesWithValidBuyPrice > 0) {
-        var finalProfit = invProfitCalc.profitAfterBroker;
-        var badge = invProfitCalc.hasUnverifiedItems ? ' <span class="tg tg-o" style="font-size:10px" title="' + invProfitCalc.unverifiedCount + ' قلم فاقد قیمت خرید">ناقص</span>' : '';
-        h += '<div class="inv-ti"><label>سود فاکتور (با کسر کمیسیون)' + badge + '</label><div class="val ' + (finalProfit >= 0 ? 'g' : 'r') + '">' + UI.fn(Math.round(finalProfit)) + '</div></div>';
-      } else if (invProfitCalc.hasUnverifiedItems) {
-        h += '<div class="inv-ti"><label>سود فاکتور</label><div class="val" style="color:var(--w);font-size:11px">ناقص / نیازمند بهای خرید</div></div>';
+    if (el) {
+      var shipLabel = this._type === 'purchase' ? 'هزینه حمل خرید' : 'حمل';
+      var h = '<div class="inv-ti" style="border:1.5px solid var(--p)"><label style="color:var(--p);font-weight:700">' + esc(qtyLabel) + '</label><div class="val" style="color:var(--p);font-weight:800">' + esc(qtyVal) + '</div></div>';
+      h += '<div class="inv-ti"><label>جمع اقلام</label><div class="val">' + UI.fn(sub) + '</div></div>';
+      if (sh) h += '<div class="inv-ti"><label>' + shipLabel + '</label><div class="val">' + UI.fn(sh) + '</div></div>';
+      if (dis) h += '<div class="inv-ti"><label>تخفیف</label><div class="val g">−' + UI.fn(dis) + '</div></div>';
+      if (cm > 0) h += '<div class="inv-ti"><label>کمیسیون واسطه</label><div class="val r">−' + UI.fn(cm) + '</div></div>';
+      h += '<div class="inv-ti"><label>نهایی</label><div class="val g">' + UI.fn(gr) + '</div></div>';
+      h += '<div class="inv-ti"><label>پرداختی</label><div class="val">' + UI.fn(pd) + '</div></div>';
+      if (this._type === 'sale' || this._type === 'proforma') {
+        var invProfitCalc = FinanceEngine.calculateInvoiceProfit({
+          subtotal: sub,
+          discount: dis,
+          shippingCost: sh,
+          brokerCommission: cm,
+          items: this.items
+        });
+        if (invProfitCalc.salesWithValidBuyPrice > 0) {
+          var finalProfit = invProfitCalc.profitAfterBroker;
+          var badge = invProfitCalc.hasUnverifiedItems ? ' <span class="tg tg-o" style="font-size:10px" title="' + invProfitCalc.unverifiedCount + ' قلم فاقد قیمت خرید">ناقص</span>' : '';
+          h += '<div class="inv-ti"><label>سود فاکتور (با کسر کمیسیون)' + badge + '</label><div class="val ' + (finalProfit >= 0 ? 'g' : 'r') + '">' + UI.fn(Math.round(finalProfit)) + '</div></div>';
+        } else if (invProfitCalc.hasUnverifiedItems) {
+          h += '<div class="inv-ti"><label>سود فاکتور</label><div class="val" style="color:var(--w);font-size:11px">ناقص / نیازمند بهای خرید</div></div>';
+        }
       }
+      h += '<div class="inv-ti"><label>مانده</label><div class="val ' + (rm > 0 ? 'r' : 'g') + '">' + UI.fn(rm) + '</div></div>';
+      el.innerHTML = h;
     }
-    h += '<div class="inv-ti"><label>مانده</label><div class="val ' + (rm > 0 ? 'r' : 'g') + '">' + UI.fn(rm) + '</div></div>';
-    el.innerHTML = h;
+    this._renderPurchaseShippingAlloc();
   },
 
   save: async function(type, id) {
@@ -385,7 +558,7 @@ var Inv = {
     var items = this.items.map(function(it) {
       var pObj = pmFull[it.productId] || {};
       var itemUnit = it.unit || pObj.unit || 'متر';
-      return {
+      var row = {
         productId: it.productId,
         productName: pm[it.productId] || '—',
         catalog: it.catalog || '',
@@ -397,6 +570,19 @@ var Inv = {
         buyPrice: type === 'purchase' ? it.unitPrice : ((it.buyPrice && it.buyPrice > 0) ? it.buyPrice : null),
         profit: type === 'purchase' ? 0 : ((it.buyPrice && it.buyPrice > 0) ? it.quantity * (it.unitPrice - it.buyPrice) : null)
       };
+      if (type !== 'purchase') {
+        if (it.baseBuyPrice !== undefined) row.baseBuyPrice = it.baseBuyPrice;
+        if (it.allocatedShippingPerUnit !== undefined) row.allocatedShippingPerUnit = it.allocatedShippingPerUnit;
+        if (it.landedBuyPrice !== undefined) row.landedBuyPrice = it.landedBuyPrice;
+        if (it.sourcePurchaseInvoiceId !== undefined) row.sourcePurchaseInvoiceId = it.sourcePurchaseInvoiceId;
+        if (it.sourcePurchaseInvoiceNumber !== undefined) row.sourcePurchaseInvoiceNumber = it.sourcePurchaseInvoiceNumber;
+        if (it.buyPriceMethod !== undefined) row.buyPriceMethod = it.buyPriceMethod;
+        if (it.buyPriceStatus !== undefined) row.buyPriceStatus = it.buyPriceStatus;
+        if (it.buyPriceStatusLabel !== undefined) row.buyPriceStatusLabel = it.buyPriceStatusLabel;
+        if (it.buyPriceWarning !== undefined) row.buyPriceWarning = it.buyPriceWarning;
+        if (it.buyPriceSource !== undefined) row.buyPriceSource = it.buyPriceSource;
+      }
+      return row;
     });
     var sub = 0;
     items.forEach(function(it) {
@@ -654,7 +840,7 @@ var Inv = {
         '<table style="border-collapse:collapse;font-size:' + (a5 ? '8.5px' : '10px') + ';width:auto">' +
         addRow(totalQtyLabel, totalQtyVal, true, '#0f172a') +
         addRow('جمع اقلام', UI.fn(v.subtotal) + ' ریال', false);
-      if (v.shippingCost) h += addRow('هزینه حمل', UI.fn(v.shippingCost) + ' ریال', false);
+      if (v.shippingCost) h += addRow(v.type === 'purchase' ? 'هزینه حمل خرید' : 'هزینه حمل', UI.fn(v.shippingCost) + ' ریال', false);
       if (v.discount) h += addRow('تخفیف', '−' + UI.fn(v.discount) + ' ریال', false, '#16a34a');
       h += addRow('مبلغ قابل پرداخت', UI.fn(v.grandTotal) + ' ریال', true);
       if (v.paidAmount && !isPf && opts.showPayment) h += addRow('مبلغ پرداخت شده', UI.fn(v.paidAmount) + ' ریال', false, '#16a34a');
@@ -664,6 +850,35 @@ var Inv = {
         h += addRow('مانده حساب کل (' + balLabel + ')', UI.fn(Math.abs(cBal)) + ' ریال', true, cBal > 0 ? '#dc2626' : '#16a34a');
       }
       h += '</table></div>';
+
+      if (v.type === 'purchase' && typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.allocatePurchaseShipping === 'function') {
+        var purAlloc = FinanceEngine.allocatePurchaseShipping(v);
+        if (purAlloc && (purAlloc.shippingCost > 0 || purAlloc.needsReview)) {
+          h += '<div style="margin-bottom:12px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;font-size:' + (a5 ? '8px' : '9.5px') + '">';
+          h += '<div style="font-weight:700;margin-bottom:6px;color:#0f172a">جزئیات تخصیص هزینه حمل خرید به بهای تمام‌شده اقلام</div>';
+          if (purAlloc.warning) {
+            h += '<div style="margin-bottom:6px;padding:4px 8px;border:1px solid #f59e0b;border-radius:4px;background:#fffbeb;color:#92400e">' + esc(purAlloc.warning) + '</div>';
+          }
+          h += '<table style="width:100%;border-collapse:collapse;font-size:' + (a5 ? '8px' : '9px') + '"><thead><tr>' +
+            '<th style="' + th + '">#</th><th style="' + th + '">شرح کالا</th><th style="' + th + '">مبلغ خرید قلم</th><th style="' + th + '">سهم هزینه حمل</th><th style="' + th + '">سهم حمل واحد</th><th style="' + th + '">بهای تمام‌شده واحد (با حمل)</th></tr></thead><tbody>';
+          purAlloc.items.forEach(function(ai, idx) {
+            h += '<tr>' +
+              '<td style="' + bd + 'text-align:center">' + UI.fn(idx + 1) + '</td>' +
+              '<td style="' + bd + '">' + esc(ai.productName || '—') + '</td>' +
+              '<td style="' + bd + 'text-align:center">' + UI.fn(Math.round(ai.itemGrossAmount)) + '</td>' +
+              '<td style="' + bd + 'text-align:center">' + (ai.isEligible ? UI.fn(Math.round(ai.itemShippingShare)) : '—') + '</td>' +
+              '<td style="' + bd + 'text-align:center">' + (ai.itemShippingPerUnit !== null ? UI.fn(Math.round(ai.itemShippingPerUnit)) : 'نامعتبر') + '</td>' +
+              '<td style="' + bd + 'text-align:center;font-weight:700">' + (ai.landedUnitCost !== null ? UI.fn(Math.round(ai.landedUnitCost)) : esc(ai.reason || 'نیازمند بررسی')) + '</td>' +
+              '</tr>';
+          });
+          h += '</tbody><tfoot><tr style="background:#f1f5f9;font-weight:700">' +
+            '<td colspan="2" style="' + bd + '">جمع تخصیص</td>' +
+            '<td style="' + bd + 'text-align:center">' + UI.fn(Math.round(purAlloc.invoiceItemsSubtotal)) + ' ریال</td>' +
+            '<td style="' + bd + 'text-align:center">' + UI.fn(Math.round(purAlloc.allocatedShippingTotal)) + ' ریال</td>' +
+            '<td colspan="2" style="' + bd + 'text-align:center">هزینه حمل خرید فاکتور: ' + UI.fn(purAlloc.shippingCost) + ' ریال</td>' +
+            '</tr></tfoot></table></div>';
+        }
+      }
     } else {
       h += '<div style="display:flex;justify-content:flex-end;margin-bottom:12px">' +
         '<table style="border-collapse:collapse;font-size:' + (a5 ? '8.5px' : '10px') + ';width:auto">' +

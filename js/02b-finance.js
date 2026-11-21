@@ -50,6 +50,479 @@ var FinanceEngine = (function() {
     return typeof n === 'number' && !isNaN(n) && isFinite(n) && n > 0;
   }
 
+  function normalizeNumericString(val) {
+    return String(val)
+      .replace(/[۰-۹]/g, function(d) { return String.fromCharCode(d.charCodeAt(0) - 1728); })
+      .replace(/[٠-٩]/g, function(d) { return String.fromCharCode(d.charCodeAt(0) - 1584); })
+      .replace(/,/g, '')
+      .trim();
+  }
+
+  function parseStrictNonNegative(val) {
+    if (val === null || val === undefined || val === '') {
+      return { valid: true, value: 0, negative: false };
+    }
+    if (typeof val === 'number') {
+      if (!isFinite(val) || isNaN(val)) return { valid: false, value: 0, negative: false };
+      if (val < 0) return { valid: false, value: val, negative: true };
+      return { valid: true, value: val, negative: false };
+    }
+    var cleaned = normalizeNumericString(val);
+    if (cleaned === '') return { valid: true, value: 0, negative: false };
+    if (!/^-?\d+(\.\d+)?$/.test(cleaned)) {
+      return { valid: false, value: 0, negative: false };
+    }
+    var n = parseFloat(cleaned);
+    if (!isFinite(n) || isNaN(n)) return { valid: false, value: 0, negative: false };
+    if (n < 0) return { valid: false, value: n, negative: true };
+    return { valid: true, value: n, negative: false };
+  }
+
+  function parseStrictPositive(val) {
+    var check = parseStrictNonNegative(val);
+    if (val === null || val === undefined || val === '' || (typeof val === 'string' && val.trim() === '')) {
+      return { valid: false, value: 0 };
+    }
+    if (!check.valid || check.value <= 0) {
+      return { valid: false, value: check.value };
+    }
+    return { valid: true, value: check.value };
+  }
+
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════
+   * تخصیص هزینه حمل خرید به اقلام فاکتور خرید (Pure & Read-Only)
+   * ══════════════════════════════════════════════════════════════════════════════
+   * فرمول:
+   * - itemGrossAmount = quantity * unitPrice (قبل از تخفیف)
+   * - invoiceItemsSubtotal = sum(itemGrossAmount)
+   * - itemShippingShare = shippingCost * (itemGrossAmount / invoiceItemsSubtotal)
+   * - itemShippingPerUnit = itemShippingShare / quantity
+   * - landedUnitCost = unitPrice + itemShippingPerUnit
+   * باقیمانده گرد کردن به آخرین قلم واجد شرایط اختصاص داده می‌شود تا جمع سهم‌ها
+   * دقیقاً برابر shippingCost فاکتور باشد.
+   */
+  function allocatePurchaseShipping(invoice) {
+    var inv = invoice || {};
+    var invType = inv.type || '';
+    var rawItems = Array.isArray(inv.items) ? inv.items : [];
+
+    // فقط فاکتورهای خرید مشمول این تخصیص هستند
+    if (invType !== 'purchase') {
+      return {
+        isPurchase: false,
+        applicable: false,
+        status: 'not_applicable',
+        statusLabel: 'غیرمشمول (فقط فاکتور خرید)',
+        needsReview: false,
+        hasInvalidShipping: false,
+        hasInvalidItems: false,
+        shippingCost: 0,
+        rawShippingCost: inv.shippingCost,
+        invoiceItemsSubtotal: 0,
+        allocatedShippingTotal: 0,
+        unallocatedShipping: 0,
+        roundingRemainder: 0,
+        allocationMatchesShipping: true,
+        warning: null,
+        items: rawItems.map(function(it, idx) {
+          var row = it || {};
+          return {
+            index: idx,
+            productId: row.productId || null,
+            productName: row.productName || row.name || '—',
+            quantity: safeNum(row.quantity),
+            unitPrice: safeNum(row.unitPrice),
+            itemGrossAmount: 0,
+            isEligible: false,
+            itemShippingShare: 0,
+            itemShippingPerUnit: null,
+            landedUnitCost: null,
+            reason: 'غیرمشمول (فاکتور غیرخرید)'
+          };
+        })
+      };
+    }
+
+    var shipCheck = parseStrictNonNegative(inv.shippingCost);
+    var shippingCost = shipCheck.valid ? shipCheck.value : 0;
+    var hasInvalidShipping = !shipCheck.valid;
+
+    var itemEntries = [];
+    var eligibleIndices = [];
+    var invoiceItemsSubtotal = 0;
+    var hasInvalidItems = false;
+
+    for (var i = 0; i < rawItems.length; i++) {
+      var it = rawItems[i] || {};
+      var qCheck = parseStrictPositive(it.quantity);
+      var pCheck = parseStrictPositive(it.unitPrice);
+      var isEligible = qCheck.valid && pCheck.valid;
+      var itemGross = isEligible ? (qCheck.value * pCheck.value) : 0;
+
+      var invalidReason = null;
+      if (!qCheck.valid && !pCheck.valid) {
+        invalidReason = 'مقدار و قیمت واحد نامعتبر یا صفر';
+      } else if (!qCheck.valid) {
+        invalidReason = 'مقدار نامعتبر یا صفر';
+      } else if (!pCheck.valid) {
+        invalidReason = 'قیمت واحد نامعتبر یا صفر';
+      }
+
+      if (isEligible) {
+        eligibleIndices.push(i);
+        invoiceItemsSubtotal += itemGross;
+      } else {
+        hasInvalidItems = true;
+      }
+
+      itemEntries.push({
+        index: i,
+        productId: it.productId || null,
+        productName: it.productName || it.name || '—',
+        quantity: qCheck.valid ? qCheck.value : safeNum(it.quantity),
+        unitPrice: pCheck.valid ? pCheck.value : safeNum(it.unitPrice),
+        hasValidQuantity: qCheck.valid,
+        hasValidUnitPrice: pCheck.valid,
+        itemGrossAmount: itemGross,
+        isEligible: isEligible,
+        itemShippingShare: 0,
+        itemShippingPerUnit: null,
+        landedUnitCost: null,
+        reason: invalidReason
+      });
+    }
+
+    // حالت ۱: هزینه حمل منفی یا نامعتبر
+    if (hasInvalidShipping) {
+      return {
+        isPurchase: true,
+        applicable: true,
+        status: shipCheck.negative ? 'invalid_negative_shipping' : 'invalid_shipping',
+        statusLabel: 'هزینه حمل نامعتبر — نیازمند بررسی',
+        needsReview: true,
+        hasInvalidShipping: true,
+        hasInvalidItems: hasInvalidItems,
+        shippingCost: 0,
+        rawShippingCost: inv.shippingCost,
+        invoiceItemsSubtotal: invoiceItemsSubtotal,
+        allocatedShippingTotal: 0,
+        unallocatedShipping: 0,
+        roundingRemainder: 0,
+        allocationMatchesShipping: false,
+        warning: shipCheck.negative
+          ? 'هزینه حمل خرید منفی (' + shipCheck.value + ') نامعتبر است؛ تخصیص حمل انجام نشد و نیازمند بررسی است.'
+          : 'مقدار هزینه حمل خرید نامعتبر است؛ تخصیص حمل انجام نشد و نیازمند بررسی است.',
+        items: itemEntries
+      };
+    }
+
+    // حالت ۲: جمع مبلغ اقلام معتبر صفر یا نامعتبر ولی هزینه حمل مثبت
+    if (shippingCost > 0 && (invoiceItemsSubtotal <= 0 || eligibleIndices.length === 0)) {
+      return {
+        isPurchase: true,
+        applicable: true,
+        status: 'unallocated',
+        statusLabel: 'تخصیص‌نیافته — نیازمند بررسی',
+        needsReview: true,
+        hasInvalidShipping: false,
+        hasInvalidItems: true,
+        shippingCost: shippingCost,
+        rawShippingCost: inv.shippingCost,
+        invoiceItemsSubtotal: invoiceItemsSubtotal,
+        allocatedShippingTotal: 0,
+        unallocatedShipping: shippingCost,
+        roundingRemainder: 0,
+        allocationMatchesShipping: false,
+        warning: 'جمع مبلغ ناخالص اقلام معتبر صفر یا نامعتبر است؛ هزینه حمل خرید (' + shippingCost + ') تخصیص نیافت و وضعیت نیازمند بررسی است.',
+        items: itemEntries
+      };
+    }
+
+    // حالت ۳: هزینه حمل صفر
+    if (shippingCost === 0) {
+      for (var z = 0; z < eligibleIndices.length; z++) {
+        var eIdx = eligibleIndices[z];
+        itemEntries[eIdx].itemShippingShare = 0;
+        itemEntries[eIdx].itemShippingPerUnit = 0;
+        itemEntries[eIdx].landedUnitCost = itemEntries[eIdx].unitPrice;
+      }
+      return {
+        isPurchase: true,
+        applicable: true,
+        status: hasInvalidItems ? 'partial_invalid_items' : 'allocated',
+        statusLabel: hasInvalidItems ? 'تخصیص ناقص (اقلام نامعتبر)' : 'تخصیص کامل (حمل صفر)',
+        needsReview: hasInvalidItems,
+        hasInvalidShipping: false,
+        hasInvalidItems: hasInvalidItems,
+        shippingCost: 0,
+        rawShippingCost: inv.shippingCost,
+        invoiceItemsSubtotal: invoiceItemsSubtotal,
+        allocatedShippingTotal: 0,
+        unallocatedShipping: 0,
+        roundingRemainder: 0,
+        allocationMatchesShipping: true,
+        warning: hasInvalidItems ? 'برخی اقلام دارای مقدار یا قیمت واحد نامعتبر هستند و بهای تمام‌شده برای آن‌ها محاسبه نشد.' : null,
+        items: itemEntries
+      };
+    }
+
+    // حالت ۴: هزینه حمل مثبت و جمع اقلام معتبر مثبت
+    var lastEligibleIdx = eligibleIndices[eligibleIndices.length - 1];
+    var isIntShipping = Math.abs(shippingCost - Math.round(shippingCost)) < 1e-9;
+    var runningAllocated = 0;
+    var lastExactShare = 0;
+
+    for (var k = 0; k < eligibleIndices.length; k++) {
+      var idx = eligibleIndices[k];
+      var entry = itemEntries[idx];
+      var exactShare = shippingCost * (entry.itemGrossAmount / invoiceItemsSubtotal);
+      var share;
+
+      if (idx !== lastEligibleIdx) {
+        share = isIntShipping ? Math.round(exactShare) : (Math.round(exactShare * 100) / 100);
+        if (runningAllocated + share > shippingCost) {
+          share = isIntShipping ? Math.floor(exactShare) : (Math.floor(exactShare * 100) / 100);
+        }
+        if (runningAllocated + share > shippingCost) {
+          share = isIntShipping ? (shippingCost - runningAllocated) : Number((shippingCost - runningAllocated).toFixed(6));
+        }
+        if (share < 0) share = 0;
+        runningAllocated += share;
+      } else {
+        lastExactShare = exactShare;
+        share = isIntShipping
+          ? (Math.round(shippingCost) - runningAllocated)
+          : Number((shippingCost - runningAllocated).toFixed(6));
+        runningAllocated += share;
+      }
+
+      var perUnit = share / entry.quantity;
+      var landed = entry.unitPrice + perUnit;
+
+      entry.itemShippingShare = share;
+      entry.itemShippingPerUnit = perUnit;
+      entry.landedUnitCost = landed;
+    }
+
+    var roundingRemainder = lastExactShare ? (itemEntries[lastEligibleIdx].itemShippingShare - lastExactShare) : 0;
+    var unallocatedShipping = shippingCost - runningAllocated;
+    if (Math.abs(unallocatedShipping) < 1e-9) unallocatedShipping = 0;
+    var matches = Math.abs(runningAllocated - shippingCost) < 1e-6;
+
+    return {
+      isPurchase: true,
+      applicable: true,
+      status: hasInvalidItems ? 'partial_invalid_items' : 'allocated',
+      statusLabel: hasInvalidItems ? 'تخصیص انجام شد (دارای ردیف نامعتبر)' : 'تخصیص کامل و منطبق',
+      needsReview: hasInvalidItems || !matches,
+      hasInvalidShipping: false,
+      hasInvalidItems: hasInvalidItems,
+      shippingCost: shippingCost,
+      rawShippingCost: inv.shippingCost,
+      invoiceItemsSubtotal: invoiceItemsSubtotal,
+      allocatedShippingTotal: runningAllocated,
+      unallocatedShipping: unallocatedShipping,
+      roundingRemainder: roundingRemainder,
+      allocationMatchesShipping: matches,
+      warning: hasInvalidItems ? 'تخصیص حمل فقط بین اقلام دارای مقدار و قیمت واحد معتبر انجام شد؛ اقلام نامعتبر نیازمند بررسی هستند.' : null,
+      items: itemEntries
+    };
+  }
+
+  /**
+   * یافتن آخرین فاکتور خرید معتبر یک کالا و محاسبه بهای تمام‌شده واحد با حمل (Pure)
+   * نکته: این متد صرفاً جهت پیشنهاد قیمت استفاده می‌شود و ردیابی بچ یا FIFO نیست.
+   */
+  function findLatestValidPurchaseForProduct(productId, invoices, options) {
+    if (productId === null || productId === undefined || productId === '') return null;
+    var targetPid = Number(productId);
+    var invList = Array.isArray(invoices) ? invoices : [];
+    var opts = options || {};
+    var excludeId = opts.excludeInvoiceId || null;
+
+    var candidates = [];
+    for (var i = 0; i < invList.length; i++) {
+      var inv = invList[i];
+      if (!inv || inv.type !== 'purchase') continue;
+      if (excludeId && inv.id === excludeId) continue;
+
+      var alloc = allocatePurchaseShipping(inv);
+      if (alloc.hasInvalidShipping) continue;
+
+      var matchedItem = null;
+      for (var j = 0; j < alloc.items.length; j++) {
+        var it = alloc.items[j];
+        if (it && it.productId !== null && it.productId !== undefined && Number(it.productId) === targetPid && it.isEligible && it.landedUnitCost !== null && it.landedUnitCost > 0) {
+          matchedItem = it;
+        }
+      }
+      if (!matchedItem) continue;
+
+      candidates.push({
+        invoice: inv,
+        alloc: alloc,
+        itemAlloc: matchedItem,
+        dateNum: parseDateNum(inv.date),
+        idNum: safeNum(inv.id),
+        orderIdx: i
+      });
+    }
+
+    if (!candidates.length) return null;
+
+    candidates.sort(function(a, b) {
+      if (b.dateNum !== a.dateNum) return b.dateNum - a.dateNum;
+      if (b.idNum !== a.idNum) return b.idNum - a.idNum;
+      return b.orderIdx - a.orderIdx;
+    });
+
+    var best = candidates[0];
+    return {
+      found: true,
+      productId: productId,
+      sourcePurchaseInvoiceId: best.invoice.id || null,
+      sourcePurchaseInvoiceNumber: best.invoice.invoiceNumber || (best.invoice.id != null ? String(best.invoice.id) : '—'),
+      sourcePurchaseDate: best.invoice.date || '',
+      baseBuyPrice: best.itemAlloc.unitPrice,
+      allocatedShippingShare: best.itemAlloc.itemShippingShare,
+      allocatedShippingPerUnit: best.itemAlloc.itemShippingPerUnit,
+      landedUnitCost: best.itemAlloc.landedUnitCost,
+      buyPrice: best.itemAlloc.landedUnitCost,
+      buyPriceMethod: 'purchase_shipping_ratio',
+      buyPriceStatus: 'auto_suggested',
+      buyPriceStatusLabel: 'پیشنهاد خودکار از آخرین فاکتور خرید (با سهم حمل)',
+      warning: null
+    };
+  }
+
+  /**
+   * پیشنهاد بهای تمام‌شده واحد برای قلم فاکتور فروش جدید (Pure)
+   */
+  function suggestSaleBuyPrice(productId, invoices, product, options) {
+    var latest = findLatestValidPurchaseForProduct(productId, invoices, options);
+    if (latest) return latest;
+
+    var prod = product || null;
+    if (prod && isValidBuyPrice(prod.buyPrice)) {
+      var fallbackPrice = safeNum(prod.buyPrice);
+      return {
+        found: false,
+        hasFallback: true,
+        productId: productId,
+        sourcePurchaseInvoiceId: null,
+        sourcePurchaseInvoiceNumber: null,
+        sourcePurchaseDate: null,
+        baseBuyPrice: fallbackPrice,
+        allocatedShippingShare: null,
+        allocatedShippingPerUnit: null,
+        landedUnitCost: null,
+        buyPrice: fallbackPrice,
+        buyPriceMethod: 'product_default_unverified',
+        buyPriceStatus: 'unverified_fallback',
+        buyPriceStatusLabel: 'پیش‌فرض کالا (سهم حمل قابل تأیید نیست)',
+        warning: 'سابقه خرید معتبری برای این کالا یافت نشد؛ قیمت پیش‌فرض کالا بدون سهم حمل است و قابل تأیید نیست. لطفاً قیمت را بررسی کنید.'
+      };
+    }
+
+    return {
+      found: false,
+      hasFallback: false,
+      productId: productId,
+      sourcePurchaseInvoiceId: null,
+      sourcePurchaseInvoiceNumber: null,
+      sourcePurchaseDate: null,
+      baseBuyPrice: null,
+      allocatedShippingShare: null,
+      allocatedShippingPerUnit: null,
+      landedUnitCost: null,
+      buyPrice: null,
+      buyPriceMethod: 'missing_purchase',
+      buyPriceStatus: 'missing_purchase',
+      buyPriceStatusLabel: 'فاقد سابقه خرید معتبر',
+      warning: 'سابقه خرید معتبری برای این کالا یافت نشد؛ قیمت خرید و سهم حمل قابل تأیید نیست. لطفاً بهای تمام‌شده را بررسی و وارد کنید.'
+    };
+  }
+
+  /**
+   * تشخیص و هشدار احتمال ثبت مضاعف هزینه حمل خرید (بدون حذف یا تغییر خودکار اسناد)
+   */
+  function detectDuplicatePurchaseShipping(invoices, payments, startNum, endNum) {
+    var invList = Array.isArray(invoices) ? invoices : [];
+    var payList = Array.isArray(payments) ? payments : [];
+    var sNum = startNum || 0;
+    var eNum = endNum || 0;
+
+    var purchaseShippingInvs = [];
+    for (var i = 0; i < invList.length; i++) {
+      var inv = invList[i];
+      if (!inv || inv.type !== 'purchase') continue;
+      var ship = safeNum(inv.shippingCost);
+      if (ship <= 0) continue;
+      var dNum = parseDateNum(inv.date);
+      if (sNum > 0 && dNum < sNum) continue;
+      if (eNum > 0 && dNum > eNum) continue;
+      purchaseShippingInvs.push(inv);
+    }
+
+    var warnings = [];
+    if (!purchaseShippingInvs.length) return warnings;
+
+    var normShipCat = normalizePersianText('هزینه حمل');
+    for (var j = 0; j < payList.length; j++) {
+      var p = payList[j];
+      if (!p || p.type === 'receipt') continue;
+      if (p.transferId || p.transferTo || p.transferFrom) continue;
+      if (p.sourceCheckId || p.sourceInvoiceId) continue;
+
+      var catNorm = normalizePersianText(p.category || '');
+      if (catNorm !== normShipCat) continue;
+
+      var pdNum = parseDateNum(p.date);
+      if (sNum > 0 && pdNum < sNum) continue;
+      if (eNum > 0 && pdNum > eNum) continue;
+
+      var amt = safeNum(p.amount);
+      if (amt <= 0) continue;
+      var pDesc = String(p.description || p.notes || p.note || '');
+
+      for (var k = 0; k < purchaseShippingInvs.length; k++) {
+        var pinv = purchaseShippingInvs[k];
+        var invShip = safeNum(pinv.shippingCost);
+        var exactAmt = Math.abs(invShip - amt) < 1e-6;
+        var sameDate = !!(pinv.date && p.date && parseDateNum(pinv.date) === pdNum);
+        var sameContact = !!(pinv.contactId && p.contactId && pinv.contactId === p.contactId);
+        var mentionsNum = !!(pinv.invoiceNumber && pDesc.indexOf(String(pinv.invoiceNumber)) !== -1);
+
+        if (exactAmt || mentionsNum || (sameDate && sameContact)) {
+          var reasons = [];
+          if (exactAmt) reasons.push('تطابق مبلغ هزینه حمل (' + amt + ')');
+          if (sameDate) reasons.push('تاریخ یکسان (' + (p.date || '') + ')');
+          if (mentionsNum) reasons.push('اشاره به شماره فاکتور خرید ' + pinv.invoiceNumber);
+          if (sameContact) reasons.push('طرف حساب یکسان');
+
+          warnings.push({
+            paymentId: p.id || null,
+            paymentDate: p.date || '',
+            paymentAmount: amt,
+            paymentDescription: pDesc,
+            purchaseInvoiceId: pinv.id || null,
+            purchaseInvoiceNumber: pinv.invoiceNumber || (pinv.id != null ? String(pinv.id) : '—'),
+            purchaseInvoiceDate: pinv.date || '',
+            invoiceShippingCost: invShip,
+            matchReasons: reasons,
+            warning: 'احتمال ثبت مضاعف هزینه حمل خرید: مبلغ حمل در فاکتور خرید «' +
+              (pinv.invoiceNumber || pinv.id || '—') + '» لحاظ شده و همزمان پرداخت مستقلی با سرفصل «هزینه حمل» ثبت شده است (' +
+              reasons.join('، ') + '). جهت پیشگیری از دوباره‌شماری بررسی فرمایید.'
+          });
+          break;
+        }
+      }
+    }
+
+    return warnings;
+  }
+
   /**
    * محاسبه سود و بهای تمام‌شده یک قلم کالا در فاکتور فروش
    * @param {Object} item - قلم فاکتور
@@ -483,6 +956,24 @@ var FinanceEngine = (function() {
     var classifiedOpEx = expenseData.classifiedOpEx;
     var unclassifiedPayments = expenseData.unclassifiedPayments;
 
+    // بررسی غیرمخرب احتمال ثبت مضاعف هزینه حمل خرید و خلاصه تخصیص حمل فاکتورهای خرید دوره
+    var duplicateShippingWarnings = detectDuplicatePurchaseShipping(invs, payments, sNum, eNum);
+    var purchaseShippingTotal = 0;
+    var purchaseShippingAllocated = 0;
+    var purchaseShippingUnallocated = 0;
+    var unallocatedPurchaseInvoicesCount = 0;
+    invs.forEach(function(inv) {
+      if (!inv || inv.type !== 'purchase') return;
+      var dNum = parseDateNum(inv.date);
+      if (sNum > 0 && dNum < sNum) return;
+      if (eNum > 0 && dNum > eNum) return;
+      var alloc = allocatePurchaseShipping(inv);
+      purchaseShippingTotal += alloc.shippingCost;
+      purchaseShippingAllocated += alloc.allocatedShippingTotal;
+      purchaseShippingUnallocated += alloc.unallocatedShipping;
+      if (alloc.needsReview) unallocatedPurchaseInvoicesCount++;
+    });
+
     // سود خالص عملیاتی نهایی بر پایه سود موثق و قابل تأیید
     var netOperatingProfit = grossProfit - totalBrokerCommissions - classifiedOpEx;
     var netMarginPct = netSales > 0 ? (netOperatingProfit / netSales) * 100 : 0;
@@ -518,6 +1009,15 @@ var FinanceEngine = (function() {
       transfers: expenseData.transfers,
       checkSettlements: expenseData.checkSettlements,
       expenseData: expenseData,
+      // ممیزی هزینه حمل خرید (بدون دوباره‌شماری در OpEx)
+      duplicateShippingWarnings: duplicateShippingWarnings,
+      hasDuplicateShippingWarning: duplicateShippingWarnings.length > 0,
+      purchaseShippingSummary: {
+        totalShipping: purchaseShippingTotal,
+        allocatedShipping: purchaseShippingAllocated,
+        unallocatedShipping: purchaseShippingUnallocated,
+        unallocatedInvoicesCount: unallocatedPurchaseInvoicesCount
+      },
       // ۷. سود خالص عملیاتی نهایی
       netOperatingProfit: netOperatingProfit,
       netMarginPct: netMarginPct,
@@ -1924,6 +2424,10 @@ var FinanceEngine = (function() {
   // اکسپورت ماژول به دامنه سراسری پنجره
   return {
     isValidBuyPrice: isValidBuyPrice,
+    allocatePurchaseShipping: allocatePurchaseShipping,
+    findLatestValidPurchaseForProduct: findLatestValidPurchaseForProduct,
+    suggestSaleBuyPrice: suggestSaleBuyPrice,
+    detectDuplicatePurchaseShipping: detectDuplicatePurchaseShipping,
     calculateItemProfit: calculateItemProfit,
     calculateInvoiceProfit: calculateInvoiceProfit,
     filterOperatingExpenses: filterOperatingExpenses,

@@ -349,18 +349,20 @@ var Dash = {
     var top5Debtors = debtorList.slice(0, 5);
     var top5Creditors = creditorList.slice(0, 5);
 
-    /* ══ ارزش‌گذاری شفاف موجودی انبار بر اساس آخرین فاکتورهای خرید موثق ══ */
+    /* ══ ارزش‌گذاری شفاف موجودی انبار بر اساس آخرین فاکتورهای خرید موثق (با لحاظ سهم حمل خرید) ══ */
     var latestBuyPrices = {};
-    allInvs.forEach(function(inv) {
-      if (!inv || inv.type !== 'purchase') return;
-      (inv.items || []).forEach(function(it) {
-        if (it && it.productId && numOf(it.unitPrice) > 0) {
-          if (!latestBuyPrices[it.productId] || pn(inv.date) >= pn(latestBuyPrices[it.productId].date)) {
-            latestBuyPrices[it.productId] = { price: numOf(it.unitPrice), date: inv.date };
+    if (!hasFinanceEngine || typeof FinanceEngine.findLatestValidPurchaseForProduct !== 'function') {
+      allInvs.forEach(function(inv) {
+        if (!inv || inv.type !== 'purchase') return;
+        (inv.items || []).forEach(function(it) {
+          if (it && it.productId && numOf(it.unitPrice) > 0) {
+            if (!latestBuyPrices[it.productId] || pn(inv.date) >= pn(latestBuyPrices[it.productId].date)) {
+              latestBuyPrices[it.productId] = { price: numOf(it.unitPrice), date: inv.date };
+            }
           }
-        }
+        });
       });
-    });
+    }
 
     var totalStockMeters = 0;
     var estimatedInvValue = 0;
@@ -377,7 +379,12 @@ var Dash = {
       if (st > 0) {
         totalStockMeters += st;
         inStockCount++;
-        var bp = (latestBuyPrices[p.id] ? latestBuyPrices[p.id].price : 0) || numOf(p.buyPrice);
+        var landedLatest = (hasFinanceEngine && typeof FinanceEngine.findLatestValidPurchaseForProduct === 'function')
+          ? FinanceEngine.findLatestValidPurchaseForProduct(p.id, allInvs)
+          : null;
+        var bp = (landedLatest && landedLatest.landedUnitCost > 0)
+          ? landedLatest.landedUnitCost
+          : ((latestBuyPrices[p.id] ? latestBuyPrices[p.id].price : 0) || numOf(p.buyPrice));
         if (bp > 0) {
           estimatedInvValue += (st * bp);
           prodsWithVerifiedPrice++;
@@ -909,6 +916,28 @@ var Dash = {
           'جمع مبلغ: ' + UI.fn(unmatchedTransfersTotal) + ' ریال (مانده حساب‌های مرتبط تا زمان بررسی قطعی تلقی نشود).' +
         '</div>' +
         '<button class="btn bo bs" style="color:var(--d);border-color:var(--d)" onclick="event.stopPropagation();Dash.showUnmatchedBankModal()">پیگیری انتقال‌ها</button>' +
+      '</div>';
+    }
+
+    if (plData.duplicateShippingWarnings && plData.duplicateShippingWarnings.length > 0) {
+      alertItemsHtml += '<div class="erp-alert-item" style="border-right:3px solid var(--w);cursor:pointer" onclick="ROUTES.profit()">' +
+        '<div class="erp-alert-lead">' +
+          '<span class="erp-alert-badge warning" style="background:rgba(217,119,6,.15);color:var(--w)"><i class="bi bi-truck"></i> حمل مضاعف</span>' +
+          '<strong>احتمال ثبت مضاعف هزینه حمل خرید (' + UI.fn(plData.duplicateShippingWarnings.length) + ' مورد):</strong> ' +
+          'مبلغ حمل در فاکتور خرید ثبت شده و همزمان پرداخت مستقلی با سرفصل «هزینه حمل» وجود دارد.' +
+        '</div>' +
+        '<span class="erp-kpi-link-hint">بررسی در P&L ←</span>' +
+      '</div>';
+    }
+
+    if (plData.purchaseShippingSummary && plData.purchaseShippingSummary.unallocatedInvoicesCount > 0) {
+      alertItemsHtml += '<div class="erp-alert-item" style="border-right:3px solid var(--d);cursor:pointer" onclick="ROUTES.purchase()">' +
+        '<div class="erp-alert-lead">' +
+          '<span class="erp-alert-badge danger"><i class="bi bi-exclamation-circle"></i> حمل تخصیص‌نیافته</span>' +
+          '<strong>' + UI.fn(plData.purchaseShippingSummary.unallocatedInvoicesCount) + ' فاکتور خرید دارای هزینه حمل تخصیص‌نیافته/نیازمند بررسی:</strong> ' +
+          'مبلغ: ' + UI.fn(plData.purchaseShippingSummary.unallocatedShipping) + ' ریال.' +
+        '</div>' +
+        '<span class="erp-kpi-link-hint">فاکتورهای خرید ←</span>' +
       '</div>';
     }
 
