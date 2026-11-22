@@ -488,9 +488,10 @@ var Pay = {
     var balMap = await Con.allBalances();
     var allInvs = (await FY.byYear('invoices')) || [];
     var allPays = (await FY.byYear('payments')) || [];
+    var allChks = (await FY.byYear('checks')) || [];
 
     var settleRes = (typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.calculateInvoiceSettlements === 'function')
-      ? FinanceEngine.calculateInvoiceSettlements(allInvs, allPays, { excludePaymentId: id || null })
+      ? FinanceEngine.calculateInvoiceSettlements(allInvs, allPays, { checks: allChks, excludePaymentId: id || null })
       : { byInvoiceId: {}, byInvoiceUid: {} };
 
     var initialOrder = [];
@@ -628,8 +629,9 @@ var Pay = {
     if (cid && this._formCtx && this._formCtx.type === type && Array.isArray(this._formCtx.selectedOrder) && this._formCtx.selectedOrder.length) {
       var allInvs = (await FY.byYear('invoices')) || [];
       var allPays = (await FY.byYear('payments')) || [];
+      var allChks = (await FY.byYear('checks')) || [];
       var freshSettle = (typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.calculateInvoiceSettlements === 'function')
-        ? FinanceEngine.calculateInvoiceSettlements(allInvs, allPays, { excludePaymentId: id || null }).byInvoiceId
+        ? FinanceEngine.calculateInvoiceSettlements(allInvs, allPays, { checks: allChks, excludePaymentId: id || null }).byInvoiceId
         : (this._formCtx.settleById || {});
       var allocResult = this._computeFormAllocations(cid, am, freshSettle, allInvs);
       invoiceAllocations = allocResult.allocations || [];
@@ -637,8 +639,9 @@ var Pay = {
       /* در صورت ذخیره مستقیم بدون باز کردن مودال، تخصیص‌های قبلی متناسب با مبلغ جدید بازمحاسبه می‌شوند */
       var freshInvs = (await FY.byYear('invoices')) || [];
       var freshPays = (await FY.byYear('payments')) || [];
+      var freshChks = (await FY.byYear('checks')) || [];
       var freshMap = (typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.calculateInvoiceSettlements === 'function')
-        ? FinanceEngine.calculateInvoiceSettlements(freshInvs, freshPays, { excludePaymentId: id }).byInvoiceId
+        ? FinanceEngine.calculateInvoiceSettlements(freshInvs, freshPays, { checks: freshChks, excludePaymentId: id }).byInvoiceId
         : {};
       var targetInvType = type === 'receipt' ? 'sale' : 'purchase';
       var ord = [];

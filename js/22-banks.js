@@ -1,7 +1,9 @@
 /* ══ BANKS ══ */
 var Bank = {
+  _currentBankId: null,
   render: async function() {
     currentPage = 'banks';
+    this._currentBankId = null;
     UI.nav('banks');
     UI.title('bi-bank2', 'حساب‌های بانکی');
     UI.act('<button class="btn bp" onclick="Bank.form()"><i class="bi bi-plus-lg"></i>حساب جدید</button>');
@@ -386,7 +388,11 @@ var Bank = {
   },
   show: async function(bankId) {
     var b = await DB.get('banks', bankId);
-    if (!b) return;
+    if (!b) {
+      this._currentBankId = null;
+      return;
+    }
+    this._currentBankId = bankId;
     currentPage = 'banks';
     UI.nav('banks');
     UI.title('bi-bank2', b.name);

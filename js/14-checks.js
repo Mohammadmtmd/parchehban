@@ -3,8 +3,14 @@ var Chk = {
   _fl: 'all',
   _q: '',
   _sort: 'asc',
+  _filters: {
+    contactId: '',
+    type: 'all',
+    status: 'all'
+  },
   _selected: {},
   _currentVoucher: null,
+  _formCtx: null,
   nextDocNumber: async function() {
     var all = await DB.all('checks');
     var max = 1000;
@@ -236,7 +242,32 @@ var Chk = {
       '<button class="btn bo" onclick="Chk.openPrintModal()" title="چاپ قبض پرداخت چک‌های انتخابی"><i class="bi bi-printer"></i> قبض پرداخت چک</button>'
     );
     this._fl = filterMode || 'all';
+    this._filters = {
+      contactId: '',
+      type: 'all',
+      status: 'all'
+    };
     await this.ll(this._fl);
+  },
+  setFilter: async function(key, val) {
+    if (!this._filters) {
+      this._filters = { contactId: '', type: 'all', status: 'all' };
+    }
+    this._filters[key] = val == null ? '' : String(val).trim();
+    var pk = 'chk_' + (this._fl || 'all');
+    if (typeof Pag !== 'undefined' && typeof Pag.reset === 'function') Pag.reset(pk);
+    await this.ll();
+  },
+  resetFilters: async function() {
+    this._fl = 'all';
+    this._q = '';
+    this._filters = {
+      contactId: '',
+      type: 'all',
+      status: 'all'
+    };
+    if (typeof Pag !== 'undefined' && typeof Pag.reset === 'function') Pag.reset('chk_all');
+    await this.ll('all');
   },
   onSel: function(id, isChecked) {
     if (isChecked) {
@@ -249,7 +280,7 @@ var Chk = {
   },
   toggleAll: function(isChecked) {
     var me = this;
-    var cbs = document.querySelectorAll('.chk-row-cb');
+    var cbs = (typeof document !== 'undefined' && document.querySelectorAll) ? document.querySelectorAll('.chk-row-cb') : [];
     cbs.forEach(function(cb) {
       cb.checked = isChecked;
       var cid = intOf(cb.value);
@@ -261,9 +292,9 @@ var Chk = {
     this.updateBatchBar();
   },
   syncSelectAllHeader: function() {
-    var master = document.getElementById('chkSelAll');
+    var master = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('chkSelAll') : null;
     if (!master) return;
-    var cbs = document.querySelectorAll('.chk-row-cb');
+    var cbs = document.querySelectorAll ? document.querySelectorAll('.chk-row-cb') : [];
     if (!cbs.length) { master.checked = false; return; }
     var allChecked = true;
     for (var i = 0; i < cbs.length; i++) {
@@ -273,13 +304,15 @@ var Chk = {
   },
   clearSelection: function() {
     this._selected = {};
-    var cbs = document.querySelectorAll('.chk-row-cb');
-    cbs.forEach(function(cb) { cb.checked = false; });
-    var master = document.getElementById('chkSelAll');
-    if (master) master.checked = false;
+    if (typeof document !== 'undefined' && document.querySelectorAll) {
+      var cbs = document.querySelectorAll('.chk-row-cb');
+      cbs.forEach(function(cb) { cb.checked = false; });
+      var master = document.getElementById ? document.getElementById('chkSelAll') : null;
+      if (master) master.checked = false;
+      var trs = document.querySelectorAll('tbody tr');
+      trs.forEach(function(tr) { tr.style.background = ''; });
+    }
     this.updateBatchBar();
-    var trs = document.querySelectorAll('tbody tr');
-    trs.forEach(function(tr) { tr.style.background = ''; });
   },
   getSelectedIds: function() {
     var me = this;
@@ -288,6 +321,7 @@ var Chk = {
     });
   },
   updateBatchBar: async function() {
+    if (typeof document === 'undefined' || !document.getElementById) return;
     var ids = this.getSelectedIds();
     var bar = document.getElementById('chkBatchBar');
     if (!ids.length) {
@@ -320,7 +354,13 @@ var Chk = {
   },
   ll: async function(fl) {
     if (fl) this._fl = fl;
-    else fl = this._fl;
+    else fl = this._fl || 'all';
+    if (!this._filters) {
+      this._filters = { contactId: '', type: 'all', status: 'all' };
+    }
+    var fContact = this._filters.contactId || '';
+    var fType = this._filters.type || 'all';
+    var fStatus = this._filters.status || 'all';
 
     await this.ensureDocNumbers();
     await this.fixTransferredChecks();
@@ -411,6 +451,37 @@ var Chk = {
       return isRet && d !== null && d < 0;
     });
 
+    /* فیلترهای طرف حساب، نوع و وضعیت */
+    if (fContact) {
+      ls = ls.filter(function(c) {
+        if (!c) return false;
+        var trRec = me.getTransferRecipientId(c);
+        return String(c.contactId || '') === String(fContact) ||
+          (trRec != null && String(trRec) === String(fContact));
+      });
+    }
+    if (fType && fType !== 'all') {
+      if (fType === 'received') {
+        ls = ls.filter(function(c) { return c && c.type === 'received'; });
+      } else if (fType === 'issued') {
+        ls = ls.filter(function(c) { return c && c.type === 'issued'; });
+      } else if (fType === 'transferred') {
+        ls = ls.filter(function(c) { return me.isTransferred(c); });
+      }
+    }
+    if (fStatus && fStatus !== 'all') {
+      ls = ls.filter(function(c) {
+        if (!c) return false;
+        if (fStatus === 'returned_all') {
+          return c.status === 'returned' || c.status === 'returned_to_me' || c.status === 'returned_to_customer';
+        }
+        if (fStatus === 'transferred') {
+          return me.isTransferred(c) && c.status !== 'returned_to_me' && c.status !== 'returned_to_customer';
+        }
+        return c.status === fStatus;
+      });
+    }
+
     /* جستجو بر اساس شماره سند ۴ رقمی، شماره چک، صیاد، حساب، طرف حساب، بانک و مبلغ */
     if (me._q && me._q.trim()) {
       var q = toEnDigits(me._q).trim().toLowerCase();
@@ -474,6 +545,21 @@ var Chk = {
           '<br><span class="tg tg-r" style="font-size:.73rem;padding:2px 6px"><i class="bi bi-person-x"></i> عودت داده‌شده به مشتری</span>';
       }
 
+      var isRetChk = (c.status === 'returned' || c.status === 'returned_to_me' || c.status === 'returned_to_customer');
+      var allocBadges = '';
+      if (Array.isArray(c.invoiceAllocations) && c.invoiceAllocations.length) {
+        allocBadges = '<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">' +
+          c.invoiceAllocations.map(function(al) {
+            if (!al || !numOf(al.amount)) return '';
+            var lbl = 'بابت ' + esc(al.invoiceNumber || ('#' + al.invoiceId)) + ' (' + UI.fn(al.amount) + ')';
+            var cls = isRetChk ? 'tg-r' : 'tg-b';
+            var stStyle = isRetChk ? 'font-size:10px;text-decoration:line-through;cursor:pointer' : 'font-size:10px;cursor:pointer';
+            var titleTxt = isRetChk ? 'چک برگشتی/عودتی — از تسویه فاکتور خارج شده' : 'نمایش فاکتور';
+            return '<span class="tg ' + cls + '" style="' + stStyle + '" title="' + titleTxt + '" onclick="Inv.vw(' + al.invoiceId + ')">' + lbl + '</span>';
+          }).join('') +
+        '</div>';
+      }
+
       r += '<tr' + (isChecked ? ' style="background:rgba(37,99,235,.07)"' : '') + '>' +
         '<td class="chk-sel-cell"><input type="checkbox" class="chk-row-cb" value="' + c.id + '" ' + (isChecked ? 'checked' : '') + ' onchange="Chk.onSel(' + c.id + ',this.checked)"></td>' +
         '<td style="text-align:center;font-weight:700;color:var(--txs)">' + UI.fn(rowMap[c.id] || (((pg.page - 1) * pg.per) + i + 1)) + '</td>' +
@@ -482,7 +568,7 @@ var Chk = {
         '<td><strong>' + esc(c.checkNumber) + '</strong>' + (c.accountNumber ? '<br><small style="color:var(--txs);direction:ltr;display:inline-block">حساب: ' + esc(c.accountNumber) + '</small>' : '') + '</td>' +
         '<td>' + bnkTxt + '</td>' +
         '<td style="font-weight:700">' + UI.fn(c.amount) + '</td>' +
-        '<td>' + personText + '</td>' +
+        '<td>' + personText + allocBadges + '</td>' +
         '<td>' + esc(c.dueDate || '—') + dueBadge + '</td>' +
         '<td>' + me.statusBadgeHTML(c) + '</td>' +
         '<td style="white-space:nowrap">';
@@ -498,8 +584,9 @@ var Chk = {
         '<button class="bi2" onclick="Chk.form(\'' + c.type + '\',' + c.id + ')" title="ویرایش"><i class="bi bi-pencil"></i></button> ' +
         '<button class="bi2 d" onclick="Chk.rm(' + c.id + ')" title="حذف"><i class="bi bi-trash3"></i></button></td></tr>';
     }
+    var hasActiveFilter = (fl !== 'all' || !!(me._q && me._q.trim()) || !!fContact || fType !== 'all' || fStatus !== 'all');
     var ft = '<tfoot><tr style="background:var(--bg);font-weight:700">' +
-      '<td colspan="6">جمع ' + UI.fn(ls.length) + ' چک' + (me._q ? ' (فیلتر شده)' : '') + '</td><td>' + UI.fn(tAmt) +
+      '<td colspan="6">جمع ' + UI.fn(ls.length) + ' چک' + (hasActiveFilter ? ' (فیلتر شده)' : '') + '</td><td>' + UI.fn(tAmt) +
       '</td><td colspan="4"></td></tr></tfoot>';
     var tb = ls.length ?
       '<div class="tw"><table><thead><tr>' +
@@ -508,7 +595,7 @@ var Chk = {
       '<th style="width:90px;text-align:center">شماره سند</th>' +
       '<th>نوع</th><th>شماره چک</th><th>بانک و شعبه</th><th>مبلغ (ریال)</th><th>طرف حساب</th><th>سررسید</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>' +
       r + '</tbody>' + ft + '</table></div>' + Pag.html(pk) :
-      '<div class="em"><p>' + (me._q ? 'چکی با عبارت «' + esc(me._q) + '» یافت نشد' : 'چکی با این شرط یافت نشد') + '</p></div>';
+      '<div class="em"><p>' + (hasActiveFilter ? 'چکی با فیلترها یا عبارت جستجوی انتخاب‌شده یافت نشد' : 'چکی با این شرط یافت نشد') + '</p></div>';
 
     /* کارت هشدار سررسید در بالای صفحه چک‌ها */
     var reminderBanner = '';
@@ -544,28 +631,311 @@ var Chk = {
       (analysis.overdue.length ? '<button class="tab-btn' + (fl === 'overdue' ? ' active' : '') + '" onclick="Chk.ll(\'overdue\')" style="color:var(--d)"><i class="bi bi-exclamation-triangle"></i> برگشتی‌های سررسید گذشته (' + analysis.overdue.length + ')</button>' : '') +
       '</div>';
 
-    /* نوار ابزار جستجو و مرتب‌سازی */
-    var toolBar = '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;background:var(--sf);padding:10px 14px;border-radius:10px;border:1px solid var(--bd)">' +
-      '<div style="display:flex;align-items:center;gap:8px;flex:1;min-width:240px;max-width:440px">' +
-      '<div style="position:relative;width:100%">' +
-      '<input id="chkSearchInput" class="fc" placeholder="جستجو (شماره سند ۴ رقمی، چک، طرف حساب، بانک...)" value="' + esc(me._q || '') + '" oninput="Chk.onSearch(this.value)" style="padding-inline-start:34px;font-size:.84rem">' +
-      '<i class="bi bi-search" style="position:absolute;top:50%;transform:translateY(-50%);right:10px;color:var(--txs);pointer-events:none"></i>' +
-      (me._q ? '<button type="button" onclick="Chk.onSearch(\'\')" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--txs);cursor:pointer" title="پاک کردن جستجو"><i class="bi bi-x-circle-fill"></i></button>' : '') +
-      '</div></div>' +
-      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
-      '<label style="font-size:.82rem;color:var(--txs);white-space:nowrap"><i class="bi bi-sort-down" style="margin-inline-end:4px"></i>مرتب‌سازی:</label>' +
-      '<select class="fc" style="width:auto;font-size:.82rem;padding:5px 10px" onchange="Chk.onSortChange(this.value)">' +
-      '<option value="asc"' + (sortMode === 'asc' ? ' selected' : '') + '>شماره سند / ثبت (صعودی - قدیمی به جدید)</option>' +
-      '<option value="desc"' + (sortMode === 'desc' ? ' selected' : '') + '>شماره سند / ثبت (نزولی - جدیدترین ابتدا)</option>' +
-      '<option value="dueAsc"' + (sortMode === 'dueAsc' ? ' selected' : '') + '>سررسید (نزدیک‌ترین)</option>' +
-      '<option value="dueDesc"' + (sortMode === 'dueDesc' ? ' selected' : '') + '>سررسید (دورترین)</option>' +
-      '<option value="amtDesc"' + (sortMode === 'amtDesc' ? ' selected' : '') + '>بیشترین مبلغ</option>' +
-      '</select>' +
-      '</div></div>';
+    var contactFilterOpts = '<option value="">همه طرف‌های حساب</option>';
+    ct.slice().sort(function(a, b) {
+      return String(a.name || '').localeCompare(String(b.name || ''), 'fa');
+    }).forEach(function(cc) {
+      if (!cc || cc.id == null) return;
+      contactFilterOpts += '<option value="' + cc.id + '"' + (String(fContact) === String(cc.id) ? ' selected' : '') + '>' + esc(cc.name) + '</option>';
+    });
+
+    /* نوار ابزار جستجو، فیلترهای طرف حساب/نوع/وضعیت و مرتب‌سازی */
+    var toolBar = '<div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px;background:var(--sf);padding:12px 14px;border-radius:10px;border:1px solid var(--bd)">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">' +
+        '<div style="display:flex;align-items:center;gap:8px;flex:1;min-width:240px;max-width:440px">' +
+          '<div style="position:relative;width:100%">' +
+            '<input id="chkSearchInput" class="fc" placeholder="جستجو (شماره سند ۴ رقمی، چک، طرف حساب، بانک...)" value="' + esc(me._q || '') + '" oninput="Chk.onSearch(this.value)" style="padding-inline-start:34px;font-size:.84rem">' +
+            '<i class="bi bi-search" style="position:absolute;top:50%;transform:translateY(-50%);right:10px;color:var(--txs);pointer-events:none"></i>' +
+            (me._q ? '<button type="button" onclick="Chk.onSearch(\'\')" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--txs);cursor:pointer" title="پاک کردن جستجو"><i class="bi bi-x-circle-fill"></i></button>' : '') +
+          '</div>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+          '<label style="font-size:.82rem;color:var(--txs);white-space:nowrap"><i class="bi bi-sort-down" style="margin-inline-end:4px"></i>مرتب‌سازی:</label>' +
+          '<select class="fc" style="width:auto;font-size:.82rem;padding:5px 10px" onchange="Chk.onSortChange(this.value)">' +
+            '<option value="asc"' + (sortMode === 'asc' ? ' selected' : '') + '>شماره سند / ثبت (صعودی - قدیمی به جدید)</option>' +
+            '<option value="desc"' + (sortMode === 'desc' ? ' selected' : '') + '>شماره سند / ثبت (نزولی - جدیدترین ابتدا)</option>' +
+            '<option value="dueAsc"' + (sortMode === 'dueAsc' ? ' selected' : '') + '>سررسید (نزدیک‌ترین)</option>' +
+            '<option value="dueDesc"' + (sortMode === 'dueDesc' ? ' selected' : '') + '>سررسید (دورترین)</option>' +
+            '<option value="amtDesc"' + (sortMode === 'amtDesc' ? ' selected' : '') + '>بیشترین مبلغ</option>' +
+          '</select>' +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;align-items:flex-end;flex-wrap:wrap;gap:10px;padding-top:8px;border-top:1px dashed var(--bd)">' +
+        '<div style="display:flex;flex-direction:column;gap:4px;min-width:170px;flex:1.4">' +
+          '<label style="font-size:.75rem;color:var(--txs)">طرف حساب</label>' +
+          '<select id="chkFContact" class="fc" style="font-size:.82rem;padding:6px 10px" onchange="Chk.setFilter(\'contactId\',this.value)">' + contactFilterOpts + '</select>' +
+        '</div>' +
+        '<div style="display:flex;flex-direction:column;gap:4px;min-width:140px;flex:1">' +
+          '<label style="font-size:.75rem;color:var(--txs)">نوع چک</label>' +
+          '<select id="chkFType" class="fc" style="font-size:.82rem;padding:6px 10px" onchange="Chk.setFilter(\'type\',this.value)">' +
+            '<option value="all"' + (fType === 'all' ? ' selected' : '') + '>همه انواع</option>' +
+            '<option value="received"' + (fType === 'received' ? ' selected' : '') + '>دریافتی</option>' +
+            '<option value="issued"' + (fType === 'issued' ? ' selected' : '') + '>پرداختی</option>' +
+            '<option value="transferred"' + (fType === 'transferred' ? ' selected' : '') + '>انتقال‌یافته</option>' +
+          '</select>' +
+        '</div>' +
+        '<div style="display:flex;flex-direction:column;gap:4px;min-width:160px;flex:1.2">' +
+          '<label style="font-size:.75rem;color:var(--txs)">وضعیت چک</label>' +
+          '<select id="chkFStatus" class="fc" style="font-size:.82rem;padding:6px 10px" onchange="Chk.setFilter(\'status\',this.value)">' +
+            '<option value="all"' + (fStatus === 'all' ? ' selected' : '') + '>همه وضعیت‌ها</option>' +
+            '<option value="pending"' + (fStatus === 'pending' ? ' selected' : '') + '>در انتظار</option>' +
+            '<option value="deposited"' + (fStatus === 'deposited' ? ' selected' : '') + '>واریز به حساب</option>' +
+            '<option value="passed"' + (fStatus === 'passed' ? ' selected' : '') + '>وصول / پاس‌شده</option>' +
+            '<option value="transferred"' + (fStatus === 'transferred' ? ' selected' : '') + '>انتقال‌یافته</option>' +
+            '<option value="returned_all"' + (fStatus === 'returned_all' ? ' selected' : '') + '>عودت / برگشتی (همه)</option>' +
+            '<option value="returned"' + (fStatus === 'returned' ? ' selected' : '') + '>برگشتی (واخواست)</option>' +
+            '<option value="returned_to_me"' + (fStatus === 'returned_to_me' ? ' selected' : '') + '>عودت به خود (نزد ما)</option>' +
+            '<option value="returned_to_customer"' + (fStatus === 'returned_to_customer' ? ' selected' : '') + '>عودت به مشتری</option>' +
+          '</select>' +
+        '</div>' +
+        (hasActiveFilter ? '<button type="button" class="btn bs bo" onclick="Chk.resetFilters()" style="height:34px;white-space:nowrap"><i class="bi bi-x-lg"></i> پاک کردن فیلتر</button>' : '') +
+      '</div>' +
+    '</div>';
 
     UI.content(reminderBanner + tabBar + toolBar + '<div class="cd">' + tb + '</div>');
     me.syncSelectAllHeader();
     me.updateBatchBar();
+  },
+  _getEligibleInvoices: function(cid, type) {
+    var ctx = this._formCtx;
+    if (!ctx || !cid) return [];
+    var targetType = type === 'received' ? 'sale' : 'purchase';
+    var selOrder = ctx.selectedOrder || [];
+    var settleById = ctx.settleById || {};
+    var eligible = [];
+    (ctx.allInvs || []).forEach(function(inv) {
+      if (!inv || inv.type !== targetType || inv.contactId !== cid) return;
+      var st = settleById[inv.id];
+      var remBefore = st ? Math.max(0, st.remaining) : Math.max(0, numOf(inv.grandTotal) - numOf(inv.paidAmount));
+      var isSelected = selOrder.indexOf(inv.id) !== -1;
+      if (remBefore > 0.01 || isSelected) {
+        eligible.push({
+          invoiceId: inv.id,
+          invoiceUid: inv.uid || null,
+          invoiceNumber: inv.invoiceNumber || ('#' + inv.id),
+          date: inv.date || '',
+          grandTotal: numOf(inv.grandTotal),
+          paidBefore: st ? st.totalPaid : numOf(inv.paidAmount),
+          remainingBeforePayment: remBefore,
+          isSelected: isSelected
+        });
+      }
+    });
+    eligible.sort(function(a, b) {
+      return (pn(a.date) - pn(b.date)) || ((a.invoiceId || 0) - (b.invoiceId || 0));
+    });
+    return eligible;
+  },
+  _computeFormAllocations: function(cid, amount, settleByIdOverride, allInvsOverride) {
+    var ctx = this._formCtx;
+    if (!ctx || !cid) {
+      return { items: [], allocations: [], totalAllocated: 0, unallocatedAmount: Math.max(0, numOf(amount)) };
+    }
+    var targetType = ctx.type === 'received' ? 'sale' : 'purchase';
+    var invList = allInvsOverride || ctx.allInvs || [];
+    var settleMap = settleByIdOverride || ctx.settleById || {};
+    var orderedItems = [];
+    (ctx.selectedOrder || []).forEach(function(invId) {
+      var inv = invList.find(function(x) { return x && x.id === invId; });
+      if (!inv || inv.type !== targetType || inv.contactId !== cid) return;
+      var st = settleMap[inv.id];
+      var remBefore = st ? Math.max(0, st.remaining) : Math.max(0, numOf(inv.grandTotal) - numOf(inv.paidAmount));
+      orderedItems.push({
+        invoiceId: inv.id,
+        invoiceUid: inv.uid || null,
+        invoiceNumber: inv.invoiceNumber || ('#' + inv.id),
+        date: inv.date || '',
+        grandTotal: numOf(inv.grandTotal),
+        remainingBeforePayment: remBefore
+      });
+    });
+    if (typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.allocatePaymentToInvoices === 'function') {
+      return FinanceEngine.allocatePaymentToInvoices(amount, orderedItems);
+    }
+    return { items: [], allocations: [], totalAllocated: 0, unallocatedAmount: Math.max(0, numOf(amount)) };
+  },
+  onFormContactChange: function() {
+    var cid = intOf(elVal('kCt')) || null;
+    if (this._formCtx) {
+      if (this._formCtx.contactId !== cid) {
+        this._formCtx.contactId = cid;
+        this._formCtx.selectedOrder = [];
+      }
+    }
+    this._renderInvAllocUI();
+  },
+  toggleInv: function(invId) {
+    var ctx = this._formCtx;
+    if (!ctx) return;
+    invId = intOf(invId);
+    var idx = ctx.selectedOrder.indexOf(invId);
+    if (idx !== -1) ctx.selectedOrder.splice(idx, 1);
+    else ctx.selectedOrder.push(invId);
+    this._renderInvAllocUI();
+  },
+  moveInv: function(invId, delta) {
+    var ctx = this._formCtx;
+    if (!ctx) return;
+    invId = intOf(invId);
+    var idx = ctx.selectedOrder.indexOf(invId);
+    var targetIdx = idx + delta;
+    if (idx === -1 || targetIdx < 0 || targetIdx >= ctx.selectedOrder.length) return;
+    var tmp = ctx.selectedOrder[idx];
+    ctx.selectedOrder[idx] = ctx.selectedOrder[targetIdx];
+    ctx.selectedOrder[targetIdx] = tmp;
+    this._renderInvAllocUI();
+  },
+  autoSelectInvs: function() {
+    var ctx = this._formCtx;
+    if (!ctx) return;
+    var cid = intOf(elVal('kCt')) || ctx.contactId || null;
+    if (!cid) return;
+    var eligible = this._getEligibleInvoices(cid, ctx.type).filter(function(it) {
+      return it.remainingBeforePayment > 0.01;
+    });
+    var am = elNum('kAm');
+    var nextOrder = [];
+    if (am > 0) {
+      var acc = 0;
+      for (var i = 0; i < eligible.length; i++) {
+        nextOrder.push(eligible[i].invoiceId);
+        acc += eligible[i].remainingBeforePayment;
+        if (acc >= am - 0.01) break;
+      }
+    } else {
+      eligible.forEach(function(it) {
+        nextOrder.push(it.invoiceId);
+      });
+    }
+    ctx.selectedOrder = nextOrder;
+    this._renderInvAllocUI();
+  },
+  clearInvSelection: function() {
+    if (!this._formCtx) return;
+    this._formCtx.selectedOrder = [];
+    this._renderInvAllocUI();
+  },
+  fillAmountFromSelected: function() {
+    var ctx = this._formCtx;
+    if (!ctx) return;
+    var cid = intOf(elVal('kCt')) || ctx.contactId || null;
+    var eligible = this._getEligibleInvoices(cid, ctx.type);
+    var elMap = {};
+    eligible.forEach(function(e) { elMap[e.invoiceId] = e; });
+    var totalRem = 0;
+    (ctx.selectedOrder || []).forEach(function(id) {
+      if (elMap[id]) totalRem += elMap[id].remainingBeforePayment;
+    });
+    var amEl = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('kAm') : null;
+    if (amEl && totalRem > 0) {
+      amEl.value = UI.fn(Math.round(totalRem));
+      var wEl = document.getElementById('kAm_w');
+      if (wEl && typeof num2fa === 'function') wEl.textContent = num2fa(Math.round(totalRem));
+    }
+    this._renderInvAllocUI();
+  },
+  _renderInvAllocUI: function() {
+    var box = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('kInvSec') : null;
+    if (!box || !this._formCtx) return;
+    var ctx = this._formCtx;
+    var cid = intOf(elVal('kCt')) || null;
+    var am = elNum('kAm');
+    var isR = ctx.type === 'received';
+
+    if (!cid) {
+      box.innerHTML = '<div class="hint-box" style="font-size:.78rem;color:var(--txs)">' +
+        '<i class="bi bi-receipt"></i> ' +
+        (isR
+          ? 'پس از انتخاب شخص، فاکتورهای فروش بازِ او برای تسویه با این چک نمایش داده می‌شوند.'
+          : 'پس از انتخاب شخص، فاکتورهای خرید بازِ او برای تسویه با این چک نمایش داده می‌شوند.') +
+        '</div>';
+      return;
+    }
+
+    var eligible = this._getEligibleInvoices(cid, ctx.type);
+    if (!eligible.length) {
+      box.innerHTML = '<div class="hint-box" style="font-size:.78rem;color:var(--txs)">' +
+        '<i class="bi bi-check-circle"></i> فاکتور ' + (isR ? 'فروش' : 'خرید') +
+        ' تسویه‌نشده‌ای برای این شخص وجود ندارد (مبلغ چک به‌صورت علی‌الحساب در حساب شخص منظور می‌شود).' +
+        '</div>';
+      return;
+    }
+
+    var allocRes = this._computeFormAllocations(cid, am);
+    var allocById = {};
+    (allocRes.items || []).forEach(function(it) {
+      allocById[it.invoiceId] = it;
+    });
+
+    var selOrder = ctx.selectedOrder || [];
+    var sumSelectedRem = 0;
+    eligible.forEach(function(e) {
+      if (selOrder.indexOf(e.invoiceId) !== -1) sumSelectedRem += e.remainingBeforePayment;
+    });
+
+    var h = '<div style="border:1px solid var(--bd);border-radius:8px;padding:10px 12px;background:var(--bg)">';
+    h += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:8px">';
+    h += '<strong style="font-size:.82rem"><i class="bi bi-receipt-cutoff"></i> تسویه فاکتورها با این چک (اختیاری — به ترتیب انتخاب)</strong>';
+    h += '<div style="display:flex;gap:6px;flex-wrap:wrap">';
+    h += '<button type="button" class="btn bs bo" onclick="Chk.autoSelectInvs()" title="انتخاب فاکتورهای باز از قدیمی‌ترین به جدیدترین">انتخاب خودکار قدیمی‌ترین</button>';
+    if (selOrder.length) {
+      h += '<button type="button" class="btn bs bo" onclick="Chk.fillAmountFromSelected()" title="پر کردن مبلغ چک برابر با جمع مانده فاکتورهای انتخاب‌شده">تنظیم مبلغ = ' + UI.fn(Math.round(sumSelectedRem)) + '</button>';
+      h += '<button type="button" class="btn bs bo" onclick="Chk.clearInvSelection()">پاک کردن</button>';
+    }
+    h += '</div></div>';
+
+    h += '<div style="display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto">';
+    eligible.forEach(function(inv) {
+      var orderIdx = selOrder.indexOf(inv.invoiceId);
+      var isSel = orderIdx !== -1;
+      var al = allocById[inv.invoiceId];
+      var borderCol = isSel ? 'var(--p)' : 'var(--bd)';
+      var bgCol = isSel ? 'rgba(37,99,235,.05)' : '#fff';
+
+      h += '<div style="border:1px solid ' + borderCol + ';background:' + bgCol + ';border-radius:6px;padding:7px 10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;font-size:.78rem">';
+      h += '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;flex:1;min-width:190px">';
+      h += '<input type="checkbox" ' + (isSel ? 'checked' : '') + ' onchange="Chk.toggleInv(' + inv.invoiceId + ')">';
+      if (isSel) {
+        h += '<span class="tg tg-b" style="font-size:10px;min-width:22px;text-align:center">#' + UI.fn(orderIdx + 1) + '</span>';
+      }
+      h += '<div><div style="font-weight:700">' + esc(inv.invoiceNumber) +
+        ' <span style="font-weight:400;color:var(--txs)">(' + esc(inv.date) + ')</span></div>' +
+        '<div style="font-size:.72rem;color:var(--txs)">جمع: ' + UI.fn(inv.grandTotal) + ' | مانده فعلی: <strong style="color:var(--d)">' + UI.fn(inv.remainingBeforePayment) + '</strong></div></div>';
+      h += '</label>';
+
+      h += '<div style="display:flex;align-items:center;gap:6px">';
+      if (isSel && selOrder.length > 1) {
+        h += '<div style="display:flex;gap:2px">';
+        if (orderIdx > 0) h += '<button type="button" class="bi2" style="width:24px;height:24px" title="اولویت بالاتر" onclick="Chk.moveInv(' + inv.invoiceId + ',-1)"><i class="bi bi-arrow-up"></i></button>';
+        if (orderIdx < selOrder.length - 1) h += '<button type="button" class="bi2" style="width:24px;height:24px" title="اولویت پایین‌تر" onclick="Chk.moveInv(' + inv.invoiceId + ',1)"><i class="bi bi-arrow-down"></i></button>';
+        h += '</div>';
+      }
+      if (isSel && al) {
+        if (am > 0) {
+          var remAfter = al.remainingAfter;
+          h += '<div style="text-align:left;font-size:.74rem">' +
+            '<div style="color:var(--p);font-weight:700">تخصیص: ' + UI.fn(al.allocatedAmount) + '</div>' +
+            '<div style="color:' + (remAfter <= 0 ? 'var(--ok)' : 'var(--w)') + ';font-weight:700">' +
+            (remAfter <= 0 ? 'تسویه کامل (مانده: ۰)' : 'مانده جدید: ' + UI.fn(remAfter)) + '</div></div>';
+        } else {
+          h += '<span style="font-size:.72rem;color:var(--txs)">منتظر ورود مبلغ</span>';
+        }
+      }
+      h += '</div></div>';
+    });
+    h += '</div>';
+
+    h += '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--bd);font-size:.76rem;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">';
+    if (selOrder.length) {
+      h += '<span>تخصیص‌یافته به <strong>' + UI.fn(selOrder.length) + '</strong> فاکتور: <strong style="color:var(--ok)">' + UI.fn(allocRes.totalAllocated) + ' ریال</strong></span>';
+      if (allocRes.unallocatedAmount > 0 && am > 0) {
+        h += '<span style="color:var(--w)">مازاد تخصیص‌نیافته (علی‌الحساب): <strong>' + UI.fn(allocRes.unallocatedAmount) + ' ریال</strong></span>';
+      }
+    } else {
+      h += '<span style="color:var(--txs)">هیچ فاکتوری انتخاب نشده — مبلغ چک فقط در حساب کل شخص ثبت می‌شود و مانده فاکتورها تغییر نمی‌کند.</span>';
+    }
+    h += '</div></div>';
+    box.innerHTML = h;
   },
   form: async function(type, id) {
     var c = id ? await DB.get('checks', id) : null;
@@ -578,6 +948,39 @@ var Chk = {
     var isR = type === 'received';
     var nextDoc = await this.nextDocNumber();
     var balMap = await Con.allBalances();
+    var allInvs = (await FY.byYear('invoices')) || [];
+    var allPays = (await FY.byYear('payments')) || [];
+    var allChks = (await FY.byYear('checks')) || [];
+
+    var settleRes = (typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.calculateInvoiceSettlements === 'function')
+      ? FinanceEngine.calculateInvoiceSettlements(allInvs, allPays, { checks: allChks, excludeCheckId: id || null })
+      : { byInvoiceId: {}, byInvoiceUid: {} };
+
+    var initialOrder = [];
+    if (c && Array.isArray(c.invoiceAllocations)) {
+      c.invoiceAllocations.forEach(function(a) {
+        if (!a) return;
+        var matchedInv = null;
+        if (a.invoiceId != null) {
+          matchedInv = allInvs.find(function(x) { return x && x.id === a.invoiceId; });
+        }
+        if (!matchedInv && a.invoiceUid) {
+          matchedInv = allInvs.find(function(x) { return x && x.uid === a.invoiceUid; });
+        }
+        if (matchedInv && initialOrder.indexOf(matchedInv.id) === -1) {
+          initialOrder.push(matchedInv.id);
+        }
+      });
+    }
+
+    this._formCtx = {
+      type: type,
+      editId: id || null,
+      contactId: c ? (c.contactId || null) : null,
+      allInvs: allInvs,
+      settleById: settleRes.byInvoiceId || {},
+      selectedOrder: initialOrder
+    };
 
     /* بازنویسی با ابزار مشترک فرم (js/05b-form.js).
        دو مشکل جدی فرم قبلی رفع شد:
@@ -671,6 +1074,7 @@ var Chk = {
         hint: isR ? 'حسابی که چک قرار است به آن خوابانده شود. هنگام «وصول» سند بانکی خودکار ساخته می‌شود.'
                   : 'حسابی که چک از آن کشیده شده. هنگام «پاس شدن» سند بانکی خودکار ساخته می‌شود.'
       }) +
+      '<div id="kInvSec" style="margin:12px 0 4px"></div>' +
       F.text({
         id: 'kNt', label: 'شرح', note: 'اختیاری',
         value: c ? (c.notes || '') : '', ph: 'بابت چه چیزی؟'
@@ -709,6 +1113,18 @@ var Chk = {
       '<button class="btn bo" onclick="UI.close()">انصراف</button>',
       true
     );
+    if (typeof document !== 'undefined' && document.getElementById) {
+      var kCtEl = document.getElementById('kCt');
+      if (kCtEl && kCtEl.addEventListener) {
+        kCtEl.addEventListener('change', function() { Chk.onFormContactChange(); });
+      }
+      var kAmEl = document.getElementById('kAm');
+      if (kAmEl && kAmEl.addEventListener) {
+        kAmEl.addEventListener('input', function() { Chk._renderInvAllocUI(); });
+        kAmEl.addEventListener('change', function() { Chk._renderInvAllocUI(); });
+      }
+    }
+    this._renderInvAllocUI();
     F.focusFirst('kNm');
   },
   save: async function(type, id) {
@@ -717,12 +1133,54 @@ var Chk = {
     if (!Perm.require('edit', 'ثبت یا ویرایش سند')) return;
     if (!await FY.assertOpen()) return;
 
+    var prevChk = id ? await DB.get('checks', id) : null;
     var docNo = elVal('kDocNo').trim();
     if (!docNo) {
       docNo = await this.nextDocNumber();
     } else {
       var nVal = intOf(docNo);
       if (nVal > 0) docNo = String(nVal).padStart(4, '0');
+    }
+
+    var chkContactId = intOf(elVal('kCt')) || null;
+    var chkAmount = elNum('kAm');
+    var invoiceAllocations = [];
+    if (chkContactId && this._formCtx && this._formCtx.type === type && Array.isArray(this._formCtx.selectedOrder) && this._formCtx.selectedOrder.length) {
+      var allInvs = (await FY.byYear('invoices')) || [];
+      var allPays = (await FY.byYear('payments')) || [];
+      var allChks = (await FY.byYear('checks')) || [];
+      var freshSettle = (typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.calculateInvoiceSettlements === 'function')
+        ? FinanceEngine.calculateInvoiceSettlements(allInvs, allPays, { checks: allChks, excludeCheckId: id || null }).byInvoiceId
+        : (this._formCtx.settleById || {});
+      var allocResult = this._computeFormAllocations(chkContactId, chkAmount, freshSettle, allInvs);
+      invoiceAllocations = allocResult.allocations || [];
+    } else if (id && !this._formCtx && prevChk && Array.isArray(prevChk.invoiceAllocations) && prevChk.contactId === chkContactId && prevChk.invoiceAllocations.length) {
+      /* در صورت ذخیره مستقیم بدون باز کردن مودال، تخصیص‌های قبلی متناسب با مبلغ جدید بازمحاسبه می‌شوند */
+      var freshInvs = (await FY.byYear('invoices')) || [];
+      var freshPays = (await FY.byYear('payments')) || [];
+      var freshChks = (await FY.byYear('checks')) || [];
+      var freshMap = (typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.calculateInvoiceSettlements === 'function')
+        ? FinanceEngine.calculateInvoiceSettlements(freshInvs, freshPays, { checks: freshChks, excludeCheckId: id }).byInvoiceId
+        : {};
+      var targetInvType = type === 'received' ? 'sale' : 'purchase';
+      var ord = [];
+      prevChk.invoiceAllocations.forEach(function(al) {
+        if (!al) return;
+        var inv = freshInvs.find(function(x) { return x && x.id === al.invoiceId && x.contactId === chkContactId && x.type === targetInvType; });
+        if (!inv) return;
+        var st = freshMap[inv.id];
+        ord.push({
+          invoiceId: inv.id,
+          invoiceUid: inv.uid || null,
+          invoiceNumber: inv.invoiceNumber || ('#' + inv.id),
+          date: inv.date || '',
+          grandTotal: numOf(inv.grandTotal),
+          remainingBeforePayment: st ? Math.max(0, st.remaining) : Math.max(0, numOf(inv.grandTotal) - numOf(inv.paidAmount))
+        });
+      });
+      if (typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.allocatePaymentToInvoices === 'function') {
+        invoiceAllocations = FinanceEngine.allocatePaymentToInvoices(chkAmount, ord).allocations || [];
+      }
     }
 
     var d = {
@@ -734,13 +1192,14 @@ var Chk = {
       branch: elVal('kBr').trim(),
       accountNumber: elVal('kAcc').trim(),
       sayadId: elVal('kSayad').trim(),
-      amount: elNum('kAm'),
+      amount: chkAmount,
       issuerName: elVal('kIs').trim(),
       issueDate: Jalali.parse(elVal('kIsD')),
       dueDate: Jalali.parse(elVal('kDu')),
-      contactId: intOf(elVal('kCt')) || null,
+      contactId: chkContactId,
       bankAccountId: intOf(elVal('kBkAcc')) || null,
-      notes: elVal('kNt').trim()
+      notes: elVal('kNt').trim(),
+      invoiceAllocations: invoiceAllocations
     };
     if (type === 'received') {
       var trTo = intOf(elVal('kTrTo')) || null;
@@ -751,7 +1210,6 @@ var Chk = {
       d.transferNotes = trNt;
       if (trTo) {
         if (id) {
-          var prevChk = await DB.get('checks', id);
           if (prevChk && prevChk.status === 'passed') {
             d.status = 'passed';
           } else if (prevChk && (prevChk.status === 'returned_to_me' || prevChk.status === 'returned_to_customer' || prevChk.status === 'returned')) {
@@ -763,7 +1221,6 @@ var Chk = {
           d.status = 'transferred';
         }
       } else if (id) {
-        var prevChk = await DB.get('checks', id);
         if (prevChk && prevChk.status === 'transferred') {
           d.status = 'pending';
         }
@@ -785,12 +1242,8 @@ var Chk = {
       UI.toast('تاریخ سررسید نامعتبر است (نمونه صحیح: 1404/01/05)', 'e');
       return;
     }
-    if (d.amount <= 0) {
-      UI.toast('مبلغ', 'e');
-      return;
-    }
     if (id) {
-      var ex = await DB.get('checks', id);
+      var ex = prevChk || await DB.get('checks', id);
       Object.assign(ex, d);
       await DB.put('checks', ex);
       /* افزوده شد: اگر مبلغ یا حساب بانکیِ چکِ وصول‌شده ویرایش شود،
@@ -800,6 +1253,7 @@ var Chk = {
       if (!d.status) d.status = 'pending';
       await DB.add('checks', d);
     }
+    this._formCtx = null;
     UI.close();
     await this.ll();
   },
@@ -1594,4 +2048,15 @@ var Chk = {
     await this.ll();
   }
 };
+
+if (typeof window !== 'undefined') {
+  window.Chk = Chk;
+}
+if (typeof globalThis !== 'undefined') {
+  globalThis.Chk = Chk;
+}
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = Chk;
+}
+
 

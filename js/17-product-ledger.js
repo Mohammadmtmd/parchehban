@@ -1,7 +1,9 @@
 /* ══ PRODUCT LEDGER (cardex) ══ */
 var PLed = {
+  _currentPid: null,
   render: async function() {
     currentPage = 'productLedger';
+    this._currentPid = null;
     UI.nav('productLedger');
     UI.title('bi-list-check', 'دفتر کالا');
     UI.act('');
@@ -15,6 +17,11 @@ var PLed = {
   show: async function(pid) {
     var p = await DB.get('products', pid);
     if (!p) return;
+    this._currentPid = pid;
+    if (typeof document !== 'undefined') {
+      var plPEl = document.getElementById('plP');
+      if (plPEl) plPEl.value = String(pid);
+    }
     var invs = await FY.byYear('invoices');
     var ct = await DB.all('contacts'),
       cm = {};
@@ -68,3 +75,13 @@ var PLed = {
     else UI.content(h);
   }
 };
+
+if (typeof window !== 'undefined') {
+  window.PLed = PLed;
+}
+if (typeof globalThis !== 'undefined') {
+  globalThis.PLed = PLed;
+}
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = PLed;
+}

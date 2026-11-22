@@ -585,19 +585,93 @@ var Sync = {
 
       localStorage.setItem('pb_last_sync', new Date().toISOString());
 
-      /* اگر داده‌های جدید آمد و کاربر در صفحه مربوطه است، صفحه تازه‌سازی شود */
-      if (updatedCount > 0 && typeof currentPage !== 'undefined' && ROUTES[currentPage]) {
+      /* اگر داده‌های جدید آمد، صفحه فعلی بدون از بین بردن فیلترها، انتخاب‌ها یا وضعیت جاری تازه‌سازی شود */
+      if (updatedCount > 0 && typeof currentPage !== 'undefined') {
         if (typeof UI !== 'undefined' && UI.toast) {
           UI.toast('داده‌ها با سرور همگام شدند (' + updatedCount + ' تغییر)');
         }
-        await FY.refreshSel();
-        ROUTES[currentPage]();
+        if (typeof FY !== 'undefined' && FY.refreshSel) {
+          await FY.refreshSel();
+        }
+        await Sync.refreshCurrentView();
       }
 
       return { pulled: updatedCount };
     } catch (e) {
       console.warn('دریافت تغییرات از Supabase ناموفق بود:', e && e.message);
       return { error: e && e.message };
+    }
+  },
+
+  /* تازه‌سازی غیرمخرب نمای فعلی پس از همگام‌سازی بدون بازنشانی فیلترها، زیرصفحه‌ها یا تب فعال */
+  refreshCurrentView: async function() {
+    if (typeof currentPage === 'undefined' || !currentPage) return;
+    try {
+      switch (currentPage) {
+        case 'dashboard':
+          if (typeof Dash !== 'undefined' && Dash.load) await Dash.load();
+          return;
+        case 'payments':
+          if (typeof Pay !== 'undefined' && Pay.ll) await Pay.ll();
+          return;
+        case 'checks':
+          if (typeof Chk !== 'undefined' && Chk.ll) await Chk.ll();
+          return;
+        case 'sales':
+          if (typeof Inv !== 'undefined' && Inv.ll) await Inv.ll('sale');
+          return;
+        case 'purchase':
+          if (typeof Inv !== 'undefined' && Inv.ll) await Inv.ll('purchase');
+          return;
+        case 'proforma':
+          if (typeof Inv !== 'undefined' && Inv.ll) await Inv.ll('proforma');
+          return;
+        case 'ledger':
+          if (typeof Led !== 'undefined') {
+            if (Led._currentCid && Led.show) await Led.show(Led._currentCid);
+            else if (Led.render) await Led.render();
+          }
+          return;
+        case 'productLedger':
+          if (typeof PLed !== 'undefined') {
+            if (PLed._currentPid && PLed.show) await PLed.show(PLed._currentPid);
+            else if (PLed.render) await PLed.render();
+          }
+          return;
+        case 'banks':
+          if (typeof Bank !== 'undefined') {
+            if (Bank._currentBankId && Bank.show) await Bank.show(Bank._currentBankId);
+            else if (Bank.render) await Bank.render();
+          }
+          return;
+        case 'reports':
+          if (typeof Rep !== 'undefined') {
+            if (Rep._c && typeof Rep[Rep._c] === 'function') {
+              await Rep[Rep._c](Rep._c === 'profit' ? (Rep._pPeriod || 'year') : undefined);
+              if (Rep._btns) Rep._btns();
+            } else if (Rep.render) {
+              await Rep.render();
+            }
+          }
+          return;
+        case 'profit':
+          if (typeof Rep !== 'undefined' && Rep.profit) {
+            await Rep.profit(Rep._pPeriod || 'year');
+            if (Rep._btns) Rep._btns();
+          }
+          return;
+        case 'free-invoice':
+        case 'settings':
+        case 'users':
+          return;
+        default:
+          if (typeof ROUTES !== 'undefined' && ROUTES[currentPage]) {
+            await ROUTES[currentPage]();
+          }
+          return;
+      }
+    } catch (e) {
+      console.warn('خطا در تازه‌سازی نمای فعلی پس از همگام‌سازی:', e && e.message);
     }
   },
 
@@ -1108,3 +1182,13 @@ var Sync = {
     Sync.updateUI();
   }
 };
+
+if (typeof window !== 'undefined') {
+  window.Sync = Sync;
+}
+if (typeof globalThis !== 'undefined') {
+  globalThis.Sync = Sync;
+}
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = Sync;
+}

@@ -1,7 +1,9 @@
 /* ══ LEDGER (clickable items) ══ */
 var Led = {
+  _currentCid: null,
   render: async function() {
     currentPage = 'ledger';
+    this._currentCid = null;
     UI.nav('ledger');
     UI.title('bi-journal-text', 'دفتر معین');
     UI.act('');
@@ -15,10 +17,15 @@ var Led = {
   show: async function(cid) {
     var c = await DB.get('contacts', cid);
     if (!c) return;
+    this._currentCid = cid;
     currentPage = 'ledger';
     UI.nav('ledger');
     UI.title('bi-journal-text', 'معین — ' + c.name);
     UI.act('<button class="btn bo" onclick="Led.render()"><i class="bi bi-arrow-right"></i>بازگشت</button> <button class="btn bg bs" onclick="Led.expCSV(' + cid + ')"><i class="bi bi-filetype-xlsx"></i>Excel</button> <button class="btn bdn bs" onclick="Led.expPDF(' + cid + ')"><i class="bi bi-filetype-pdf"></i>PDF</button>')
+    if (typeof document !== 'undefined') {
+      var lPEl = document.getElementById('lP');
+      if (lPEl) lPEl.value = String(cid);
+    }
     var invs = await FY.byYear('invoices'),
       pays = await FY.byYear('payments'),
       chks = await FY.byYear('checks');
@@ -285,13 +292,7 @@ Led.expCSV = function(cid) {
             cr: 0,
             s: 1
           });
-          if (inv.paidAmount > 0) txs.push({
-            d: inv.date,
-            desc: 'دریافت فاکتور ' + inv.invoiceNumber,
-            db: 0,
-            cr: inv.paidAmount,
-            s: 1
-          });
+          /* دریافت نقدی/اولیه فاکتور در سند پرداخت خودکار (pays) ثبت و آورده می‌شود */
         } else {
           txs.push({
             d: inv.date,
@@ -300,13 +301,7 @@ Led.expCSV = function(cid) {
             cr: inv.grandTotal,
             s: 1
           });
-          if (inv.paidAmount > 0) txs.push({
-            d: inv.date,
-            desc: 'پرداخت فاکتور ' + inv.invoiceNumber,
-            db: inv.paidAmount,
-            cr: 0,
-            s: 1
-          });
+          /* پرداخت نقدی/اولیه فاکتور در سند پرداخت خودکار (pays) ثبت و آورده می‌شود */
         }
       }
       if (inv.brokerId === cid && inv.brokerCommission) txs.push({
@@ -471,13 +466,7 @@ Led.expPDF = function(cid) {
             cr: 0,
             s: 1
           });
-          if (inv.paidAmount > 0) txs.push({
-            d: inv.date,
-            desc: 'دریافت فاکتور ' + inv.invoiceNumber,
-            db: 0,
-            cr: inv.paidAmount,
-            s: 1
-          });
+          /* دریافت نقدی/اولیه فاکتور در سند پرداخت خودکار (pays) ثبت و آورده می‌شود */
         } else {
           txs.push({
             d: inv.date,
@@ -486,13 +475,7 @@ Led.expPDF = function(cid) {
             cr: inv.grandTotal,
             s: 1
           });
-          if (inv.paidAmount > 0) txs.push({
-            d: inv.date,
-            desc: 'پرداخت فاکتور ' + inv.invoiceNumber,
-            db: inv.paidAmount,
-            cr: 0,
-            s: 1
-          });
+          /* پرداخت نقدی/اولیه فاکتور در سند پرداخت خودکار (pays) ثبت و آورده می‌شود */
         }
       }
       if (inv.brokerId === cid && inv.brokerCommission) txs.push({
@@ -641,3 +624,13 @@ Led.expPDF = function(cid) {
     EXP.pdf('دفتر معین — ' + c.name, ['تاریخ', 'شرح', 'بدهکار', 'بستانکار', 'مانده'], rows, sum);
   });
 };
+
+if (typeof window !== 'undefined') {
+  window.Led = Led;
+}
+if (typeof globalThis !== 'undefined') {
+  globalThis.Led = Led;
+}
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = Led;
+}

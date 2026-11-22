@@ -81,6 +81,7 @@ var Inv = {
 
     var all = (await FY.byYear('invoices')) || [];
     var pays = (await FY.byYear('payments')) || [];
+    var chks = (await FY.byYear('checks')) || [];
     var ls = all.filter(function(i) {
       if (!i) return false;
       if (fType === 'all') return true;
@@ -95,7 +96,7 @@ var Inv = {
     });
 
     var settleMap = (typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.calculateInvoiceSettlements === 'function')
-      ? FinanceEngine.calculateInvoiceSettlements(ls, pays).byInvoiceId
+      ? FinanceEngine.calculateInvoiceSettlements(ls, pays, { checks: chks }).byInvoiceId
       : {};
 
     if (fContact === '__none__') {
@@ -312,7 +313,8 @@ var Inv = {
     this._linkedAllocs = [];
     if (inv && !isP && typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.calculateInvoiceSettlements === 'function') {
       var allPaysForInv = (await FY.byYear('payments')) || [];
-      var invSt = FinanceEngine.calculateInvoiceSettlements([inv], allPaysForInv).byInvoiceId[inv.id];
+      var allChksForInv = (await FY.byYear('checks')) || [];
+      var invSt = FinanceEngine.calculateInvoiceSettlements([inv], allPaysForInv, { checks: allChksForInv }).byInvoiceId[inv.id];
       if (invSt) {
         this._linkedPaid = invSt.linkedPaid || 0;
         this._linkedAllocs = invSt.allocations || [];
@@ -928,8 +930,9 @@ var Inv = {
     var isPf = v.type === 'proforma';
     var items = v.items || [];
     var allPaysHtml = isPf ? [] : ((await DB.all('payments')) || []);
+    var allChksHtml = isPf ? [] : ((await DB.all('checks')) || []);
     var settledInfo = (!isPf && typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.calculateInvoiceSettlements === 'function')
-      ? FinanceEngine.calculateInvoiceSettlements([v], allPaysHtml).byInvoiceId[v.id]
+      ? FinanceEngine.calculateInvoiceSettlements([v], allPaysHtml, { checks: allChksHtml }).byInvoiceId[v.id]
       : null;
     var totalPaidHtml = settledInfo ? settledInfo.totalPaid : numOf(v.paidAmount);
     var rm = settledInfo ? settledInfo.remaining : (numOf(v.grandTotal) - numOf(v.paidAmount));
@@ -1441,6 +1444,7 @@ var Inv = {
     /* سطح دسترسی */
     if (!Perm.require('delete', 'حذف')) return;
     var pays = (await DB.all('payments')) || [];
+    var chks = (await DB.all('checks')) || [];
     var linked = pays.filter(function(p) {
       return p.sourceInvoiceId === id;
     });
@@ -1448,14 +1452,24 @@ var Inv = {
       return p && !p.sourceInvoiceId && Array.isArray(p.invoiceAllocations) &&
         p.invoiceAllocations.some(function(a) { return a && a.invoiceId === id; });
     });
+    var allocChks = chks.filter(function(c) {
+      return c && Array.isArray(c.invoiceAllocations) &&
+        c.invoiceAllocations.some(function(a) { return a && a.invoiceId === id; });
+    });
     var msg = 'این فاکتور حذف شود؟ موجودی انبار هم اصلاح می‌شود.';
     if (linked.length) msg += '\nسند دریافت/پرداخت خودکار مربوط به آن هم حذف می‌شود.';
     if (manualAllocPays.length) msg += '\nاتصال ' + manualAllocPays.length + ' سند دریافت/پرداخت دستی به این فاکتور نیز برداشته می‌شود (خود اسناد حفظ می‌مانند).';
+    if (allocChks.length) msg += '\nاتصال ' + allocChks.length + ' چک به این فاکتور نیز برداشته می‌شود (خود چک‌ها حفظ می‌مانند).';
     if (!await UI.confirm(msg)) return;
     for (var mi = 0; mi < manualAllocPays.length; mi++) {
       var mp = manualAllocPays[mi];
       mp.invoiceAllocations = (mp.invoiceAllocations || []).filter(function(a) { return a && a.invoiceId !== id; });
       await DB.put('payments', mp);
+    }
+    for (var ci = 0; ci < allocChks.length; ci++) {
+      var mc = allocChks[ci];
+      mc.invoiceAllocations = (mc.invoiceAllocations || []).filter(function(a) { return a && a.invoiceId !== id; });
+      await DB.put('checks', mc);
     }
     await this.removeAutoPayment(id);
     await DB.del('invoices', id);

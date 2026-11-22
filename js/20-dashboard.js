@@ -472,7 +472,7 @@ var Dash = {
 
     /* ══ آخرین فعالیت‌های تجاری برنامه ══ */
     var dashSettleMap = (hasFinanceEngine && typeof FinanceEngine.calculateInvoiceSettlements === 'function')
-      ? FinanceEngine.calculateInvoiceSettlements(allInvs, dashPays).byInvoiceId
+      ? FinanceEngine.calculateInvoiceSettlements(allInvs, dashPays, { checks: dashChks }).byInvoiceId
       : {};
     var recentActivities = [];
     allInvs.filter(function(x) { return x && x.type === 'sale'; }).slice(0, 5).forEach(function(inv) {

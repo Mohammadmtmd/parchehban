@@ -749,21 +749,28 @@ var FinanceEngine = (function() {
 
   /**
    * ══════════════════════════════════════════════════════════════════════════════
-   * محاسبه تسویه و مانده واقعی فاکتورها با لحاظ دریافت‌ها و پرداخت‌های متصل (Pure)
+   * محاسبه تسویه و مانده واقعی فاکتورها با لحاظ دریافت‌ها/پرداخت‌ها و چک‌های متصل (Pure)
    * ══════════════════════════════════════════════════════════════════════════════
    * قوانین:
    * ۱. فیلد paidAmount روی خود فاکتور (= سند خودکار sourceInvoiceId) مستقیماً شمرده می‌شود
    *    و سند sourceInvoiceId دوباره جمع زده نمی‌شود (جلوگیری از شمارش مضاعف).
    * ۲. دریافت‌ها/پرداخت‌های بعدی که از بخش پرداخت و دریافت به صورت دستی یا چندفاکتوری
    *    به فاکتورها تخصیص داده شده‌اند (p.invoiceAllocations) به totalPaid اضافه می‌شوند.
-   * ۳. حواله‌های بین‌بانکی و اسناد خودکار فاکتور/چک به عنوان تخصیص دستی دوباره شمرده نمی‌شوند.
-   * ۴. با ارسال options.excludePaymentId می‌توان مانده پیش از اثر یک سند مشخص را هنگام ویرایش محاسبه کرد.
+   * ۳. حواله‌های بین‌بانکی و اسناد خودکار فاکتور/چک (sourceInvoiceId / sourceCheckId)
+   *    به عنوان تخصیص دستی دوباره شمرده نمی‌شوند.
+   * ۴. چک‌های دریافتی/پرداختی که مستقیماً به فاکتورها تخصیص داده شده‌اند (c.invoiceAllocations)
+   *    یک‌بار از روی خود رکورد چک (و نه از سند خودکار وصول sourceCheckId) لحاظ می‌شوند؛
+   *    چک‌های برگشتی/عودتی از تسویه فاکتور خارج می‌گردند تا مانده فاکتور مجدداً باز شود.
+   * ۵. با ارسال options.excludePaymentId یا options.excludeCheckId می‌توان مانده پیش از اثر
+   *    یک سند یا چک مشخص را هنگام ویرایش محاسبه کرد.
    */
   function calculateInvoiceSettlements(invoices, payments, options) {
     var invs = invoices || [];
     var pays = payments || [];
     var opts = options || {};
+    var chks = Array.isArray(opts.checks) ? opts.checks : [];
     var excludeId = opts.excludePaymentId != null ? String(opts.excludePaymentId) : null;
+    var excludeChkId = opts.excludeCheckId != null ? String(opts.excludeCheckId) : null;
 
     var byInvoiceId = {};
     var byInvoiceUid = {};
@@ -822,6 +829,40 @@ var FinanceEngine = (function() {
           amount: allocAmt,
           bankId: p.bankId || null,
           description: p.description || p.notes || ''
+        });
+      });
+    });
+
+    chks.forEach(function(c) {
+      if (!c) return;
+      if (excludeChkId !== null && String(c.id) === excludeChkId) return;
+      // چک‌های برگشتی یا عودت‌داده شده تسویه محسوب نمی‌شوند
+      var isReturned = (c.status === 'returned' || c.status === 'returned_to_me' || c.status === 'returned_to_customer');
+      if (isReturned) return;
+      if (!Array.isArray(c.invoiceAllocations) || !c.invoiceAllocations.length) return;
+
+      c.invoiceAllocations.forEach(function(alloc) {
+        if (!alloc) return;
+        var allocAmt = safeNum(alloc.amount);
+        if (allocAmt <= 0) return;
+
+        var entry = (alloc.invoiceId != null ? byInvoiceId[alloc.invoiceId] : null) ||
+                    (alloc.invoiceUid ? byInvoiceUid[alloc.invoiceUid] : null);
+        if (!entry || entry.type === 'proforma') return;
+
+        // تطابق نوع چک با نوع فاکتور: فروش با چک دریافتی، خرید با چک پرداختی
+        var expectedChkType = entry.type === 'sale' ? 'received' : (entry.type === 'purchase' ? 'issued' : null);
+        if (!expectedChkType || c.type !== expectedChkType) return;
+
+        entry.linkedPaid += allocAmt;
+        entry.allocations.push({
+          checkId: c.id,
+          checkNumber: c.checkNumber || '',
+          docNumber: c.docNumber || '',
+          date: c.dueDate || c.issueDate || '',
+          status: c.status || 'pending',
+          amount: allocAmt,
+          description: c.notes || ''
         });
       });
     });

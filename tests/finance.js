@@ -159,7 +159,8 @@ globalThis.todayJ = function() { return '1404/01/15'; };
 globalThis.Jalali = {
   parse: function(d) { return d; },
   today: function() { return '1404/01/15'; },
-  addMonths: function(d, m) { return '1403/12/15'; }
+  addMonths: function(d, m) { return '1403/12/15'; },
+  toJDN: function(y, m, d) { return y * 365 + (m - 1) * 30 + d; }
 };
 globalThis.Perm = { require: function() { return true; }, can: function() { return true; } };
 globalThis.STATE = { yearId: 1 };
@@ -195,17 +196,34 @@ globalThis.ROUTES = {
   banks: () => {},
   warehouse: () => {},
   payments: () => {},
+  checks: () => {},
+  sales: () => {},
+  purchase: () => {},
+  ledger: () => {},
+  productLedger: () => {},
+  reports: () => {},
   settings: () => {},
   years: () => {}
 };
 globalThis.Chk = { autoPassDueChecks: async () => {}, ll: () => {} };
 globalThis.Auth = { isDefaultAdminPass: async () => false };
 globalThis.Sync = { getConfig: () => ({ configured: false }) };
+globalThis.getOpenBal = async function() { return 0; };
+globalThis.EXP = { csv: function() {}, pdf: function() {} };
+if (!globalThis.localStorage) {
+  const _ls = {};
+  globalThis.localStorage = {
+    getItem: (k) => (k in _ls ? _ls[k] : null),
+    setItem: (k, v) => { _ls[k] = String(v); },
+    removeItem: (k) => { delete _ls[k]; }
+  };
+}
 if (!globalThis.navigator) globalThis.navigator = { onLine: true };
 if (!globalThis.window) globalThis.window = globalThis;
 if (!globalThis.document) {
   globalThis.document = {
     getElementById: function() { return null; },
+    querySelectorAll: function() { return []; },
     body: { classList: { contains: () => false } }
   };
 }
@@ -236,8 +254,11 @@ globalThis.UI = {
 let memStore = {
   invoices: {},
   payments: [],
+  checks: [],
   banks: {},
-  bankTransfers: []
+  bankTransfers: [],
+  contacts: null,
+  products: []
 };
 let mockAutoId = 2000;
 
@@ -249,24 +270,38 @@ globalThis.DB = {
       const p = memStore.payments.find(x => x.id === id);
       return p ? JSON.parse(JSON.stringify(p)) : null;
     }
+    if (table === 'checks') {
+      const c = memStore.checks.find(x => x.id === id);
+      return c ? JSON.parse(JSON.stringify(c)) : null;
+    }
+    if (table === 'contacts') {
+      const list = memStore.contacts || [{ id: 1, name: 'مشتری ۱', type: 'customer' }, { id: 2, name: 'تأمین‌کننده ۲', type: 'supplier' }];
+      const ct = list.find(x => x.id === id);
+      return ct ? JSON.parse(JSON.stringify(ct)) : null;
+    }
+    if (table === 'products') {
+      const pr = (memStore.products || []).find(x => x.id === id);
+      return pr ? JSON.parse(JSON.stringify(pr)) : null;
+    }
     if (table === 'fiscalYears') return { id: 1, name: '۱۴۰۴', isCurrent: true, isClosed: false };
     return null;
   },
   all: async function(table) {
     if (table === 'payments') return JSON.parse(JSON.stringify(memStore.payments));
+    if (table === 'checks') return JSON.parse(JSON.stringify(memStore.checks));
     if (table === 'invoices') return Object.values(memStore.invoices).map(x => JSON.parse(JSON.stringify(x)));
     if (table === 'banks') return Object.values(memStore.banks).map(x => JSON.parse(JSON.stringify(x)));
     if (table === 'bankTransfers') return JSON.parse(JSON.stringify(memStore.bankTransfers));
-    if (table === 'contacts') return [{ id: 1, name: 'مشتری ۱' }, { id: 2, name: 'تأمین‌کننده ۲' }];
+    if (table === 'contacts') return JSON.parse(JSON.stringify(memStore.contacts || [{ id: 1, name: 'مشتری ۱', type: 'customer' }, { id: 2, name: 'تأمین‌کننده ۲', type: 'supplier' }]));
     if (table === 'fiscalYears') return [{ id: 1, name: '۱۴۰۴', isCurrent: true, isClosed: false }];
-    if (table === 'checks') return [];
-    if (table === 'products') return [];
+    if (table === 'products') return JSON.parse(JSON.stringify(memStore.products || []));
     return [];
   },
   add: async function(table, doc) {
     const copy = JSON.parse(JSON.stringify(doc));
     copy.id = ++mockAutoId;
     if (table === 'payments') memStore.payments.push(copy);
+    if (table === 'checks') memStore.checks.push(copy);
     if (table === 'invoices') memStore.invoices[copy.id] = copy;
     return copy.id;
   },
@@ -277,11 +312,19 @@ globalThis.DB = {
       if (idx !== -1) memStore.payments[idx] = copy;
       else memStore.payments.push(copy);
     }
+    if (table === 'checks') {
+      const idx = memStore.checks.findIndex(x => x.id === copy.id);
+      if (idx !== -1) memStore.checks[idx] = copy;
+      else memStore.checks.push(copy);
+    }
     if (table === 'invoices') memStore.invoices[copy.id] = copy;
   },
   del: async function(table, id) {
     if (table === 'payments') {
       memStore.payments = memStore.payments.filter(x => x.id !== id);
+    }
+    if (table === 'checks') {
+      memStore.checks = memStore.checks.filter(x => x.id !== id);
     }
     if (table === 'invoices') {
       delete memStore.invoices[id];
@@ -293,11 +336,13 @@ globalThis.FY = {
   byYear: async function(table) {
     return globalThis.DB.all(table);
   },
-  assertOpen: async function() { return true; }
+  assertOpen: async function() { return true; },
+  refreshSel: async function() {}
 };
 
 globalThis.F = {
   section: function(t) { return '<div class="fsec">' + t + '</div>'; },
+  row: function() { return Array.prototype.slice.call(arguments).join(' '); },
   select: function(o) {
     var ops = (o.items || []).map(function(it) {
       return '<option value="' + it.v + '">' + it.t + '</option>';
@@ -307,6 +352,7 @@ globalThis.F = {
   money: function(o) { return '<input id="' + o.id + '" value="' + (o.value || '') + '">'; },
   date: function(o) { return '<input id="' + o.id + '" value="' + (o.value || '') + '">'; },
   text: function(o) { return '<input id="' + o.id + '" value="' + (o.value || '') + '">'; },
+  area: function(o) { return '<textarea id="' + o.id + '">' + (o.value || '') + '</textarea>'; },
   validate: function() { return true; },
   focusFirst: function() {}
 };
@@ -314,23 +360,35 @@ globalThis.F = {
 // بارگذاری ماژول‌های پروژه
 await import('../js/12-invoices.js');
 await import('../js/13-payments.js');
+await import('../js/14-checks.js');
+await import('../js/15-ledger.js');
+await import('../js/17-product-ledger.js');
 await import('../js/18-reports.js');
 await import('../js/22-banks.js');
 await import('../js/20-dashboard.js');
+await import('../js/03c-sync.js');
 
 const Inv = globalThis.Inv;
 const Pay = globalThis.Pay;
+const Chk = globalThis.Chk;
+const Led = globalThis.Led;
+const PLed = globalThis.PLed;
 const Rep = globalThis.Rep;
 const Bank = globalThis.Bank;
 const Dash = globalThis.Dash;
+const Sync = globalThis.Sync;
 
 assert(Inv && typeof Inv.syncAutoPayment === 'function', 'ماژول Inv باید در دسترس باشد');
 assert(Pay && typeof Pay.save === 'function', 'ماژول Pay باید در دسترس باشد');
+assert(Chk && typeof Chk.save === 'function', 'ماژول Chk باید در دسترس باشد');
+assert(Led && typeof Led.show === 'function', 'ماژول Led باید در دسترس باشد');
+assert(PLed && typeof PLed.show === 'function', 'ماژول PLed باید در دسترس باشد');
 assert(Rep && typeof Rep.summary === 'function', 'ماژول Rep باید در دسترس باشد');
 assert(Bank && typeof Bank.balance === 'function', 'ماژول Bank باید در دسترس باشد');
 assert(Dash && typeof Dash.load === 'function', 'ماژول Dash باید در دسترس باشد');
+assert(Sync && typeof Sync.refreshCurrentView === 'function', 'ماژول Sync باید در دسترس باشد');
 
-console.log('✓ محیط Mock در رم و ماژول‌های Inv، Pay، Rep، Bank و Dash با موفقیت مقداردهی شدند.');
+console.log('✓ محیط Mock در رم و ماژول‌های Inv، Pay، Chk، Led، PLed، Rep، Bank، Dash و Sync با موفقیت مقداردهی شدند.');
 
 console.log('\n--- اجرای آزمون واقعی ۲: رفتار دقیق Inv.syncAutoPayment در ویرایش و حذف ---');
 await (async () => {
@@ -1701,6 +1759,251 @@ await runPhase4AsyncTest('فیلترهای لیست — آزمون ۲: فیلت�
   }
 });
 
+// تست تخصیص چندفاکتوری چک‌های دریافتی و پرداختی و ممیزی عدم دوباره‌شماری
+await runPhase4AsyncTest('چک و ممیزی — آزمون ۱: تسویه آبشاری چک دریافتی/پرداختی، برگشت چک و عدم دوباره‌شماری هنگام پاس شدن چک', async () => {
+  memStore.banks = { 1: { id: 1, name: 'ملت', openingBalance: 10000000 } };
+  memStore.invoices = {
+    9501: { id: 9501, invoiceNumber: 'ف-۹۵۰۱', type: 'sale', date: '1404/01/05', contactId: 1, subtotal: 4000000, grandTotal: 4000000, paidAmount: 0, items: [] },
+    9502: { id: 9502, invoiceNumber: 'ف-۹۵۰۲', type: 'sale', date: '1404/01/08', contactId: 1, subtotal: 3000000, grandTotal: 3000000, paidAmount: 0, items: [] },
+    9503: { id: 9503, invoiceNumber: 'خ-۹۵۰۳', type: 'purchase', date: '1404/01/10', contactId: 2, subtotal: 2500000, grandTotal: 2500000, paidAmount: 0, items: [] }
+  };
+  // یک پرداخت دستی ۱M روی فاکتور ف-۹۵۰۱ ثبت شده؛ بنابراین مانده ف-۹۵۰۱ پیش از چک ۳M است
+  memStore.payments = [
+    { id: 9601, type: 'receipt', fiscalYearId: 1, contactId: 1, amount: 1000000, date: '1404/01/06', bankId: 1, description: 'پیش‌پرداخت', invoiceAllocations: [{ invoiceId: 9501, invoiceNumber: 'ف-۹۵۰۱', amount: 1000000 }] }
+  ];
+  memStore.checks = [];
+  memStore.bankTransfers = [];
+
+  const origElVal = globalThis.elVal;
+  const origElNum = globalThis.elNum;
+  try {
+    // ۱) باز کردن فرم چک دریافتی و تخصیص آبشاری ۵M روی ف-۹۵۰۱ (مانده ۳M) و ف-۹۵۰۲ (مانده ۳M -> ۲M تخصیص، ۱M باقی‌مانده)
+    await Chk.form('received', null);
+    globalThis.elVal = (fid) => {
+      if (fid === 'kDocNo') return '1001';
+      if (fid === 'kNm') return '550011';
+      if (fid === 'kBk') return 'ملت';
+      if (fid === 'kIsD') return '1404/01/10';
+      if (fid === 'kDu') return '1404/02/10';
+      if (fid === 'kCt') return '1';
+      if (fid === 'kBkAcc') return '1';
+      if (fid === 'kNt') return 'چک بابت دو فاکتور';
+      return '';
+    };
+    globalThis.elNum = (fid) => (fid === 'kAm' ? 5000000 : 0);
+    Chk.onFormContactChange();
+    Chk.toggleInv(9501);
+    Chk.toggleInv(9502);
+    await Chk.save('received', null);
+
+    assert.strictEqual(memStore.checks.length, 1);
+    const chkId = memStore.checks[0].id;
+    assert.strictEqual(memStore.checks[0].invoiceAllocations.length, 2);
+    assert.strictEqual(memStore.checks[0].invoiceAllocations[0].amount, 3000000);
+    assert.strictEqual(memStore.checks[0].invoiceAllocations[1].amount, 2000000);
+
+    // بررسی مانده فاکتورها تا این لحظه (چک در جریان)
+    let st = FinanceEngine.calculateInvoiceSettlements(Object.values(memStore.invoices), memStore.payments, { checks: memStore.checks });
+    assert.strictEqual(st.byInvoiceId[9501].remaining, 0, 'ف-۹۵۰۱ باید با ۱M پرداخت + ۳M چک کاملاً تسویه شود');
+    assert.strictEqual(st.byInvoiceId[9502].remaining, 1000000, 'ف-۹۵۰۲ باید ۱M مانده داشته باشد');
+    assert.strictEqual(await Bank.balance(1), 11000000, 'تا پیش از پاس شدن چک فقط ۱۰M اولیه + ۱M دریافت نقدی در بانک است');
+
+    // ۲) پاس شدن چک و ایجاد سند بانکی خودکار (sourceCheckId) -> نباید فاکتور دوباره تسویه شود!
+    globalThis.elVal = (fid) => {
+      if (fid === 'nSt') return 'passed';
+      if (fid === 'nPassDate') return '1404/02/10';
+      if (fid === 'nBk') return '1';
+      return '';
+    };
+    await Chk.ss(chkId);
+    assert.strictEqual(memStore.payments.length, 2, 'پس از وصول چک باید یک سند خودکار بانکی با sourceCheckId ساخته شود');
+    assert.strictEqual(memStore.payments[1].sourceCheckId, chkId);
+    assert.strictEqual(await Bank.balance(1), 16000000, 'بانک پس از پاس شدن چک باید ۱۶M باشد (۱۰M + ۱M + ۵M)');
+
+    // کنترل دقیق عدم دوباره‌شماری در تسویه فاکتورها پس از ایجاد sourceCheckId:
+    st = FinanceEngine.calculateInvoiceSettlements(Object.values(memStore.invoices), memStore.payments, { checks: memStore.checks });
+    assert.strictEqual(st.byInvoiceId[9501].totalPaid, 4000000, 'سند sourceCheckId نباید دوباره فاکتور ۹۵۰۱ را کم کند');
+    assert.strictEqual(st.byInvoiceId[9501].remaining, 0);
+    assert.strictEqual(st.byInvoiceId[9502].totalPaid, 2000000);
+    assert.strictEqual(st.byInvoiceId[9502].remaining, 1000000);
+
+    // ۳) برگشت خوردن چک باید سند sourceCheckId را حذف و مانده فاکتورها را بازگرداند
+    globalThis.elVal = (fid) => {
+      if (fid === 'nSt') return 'returned';
+      if (fid === 'nRetDate') return '1404/02/11';
+      return '';
+    };
+    await Chk.ss(chkId);
+    assert.strictEqual(await Bank.balance(1), 11000000, 'پس از برگشت چک مانده بانک باید به ۱۱M برگردد');
+    st = FinanceEngine.calculateInvoiceSettlements(Object.values(memStore.invoices), memStore.payments, { checks: memStore.checks });
+    assert.strictEqual(st.byInvoiceId[9501].remaining, 3000000, 'با برگشت چک، ۳M مانده ف-۹۵۰۱ باید باز شود');
+    assert.strictEqual(st.byInvoiceId[9502].remaining, 3000000, 'با برگشت چک، کل ف-۹۵۰۲ باید مجدد باز شود');
+
+    // ۴) ثبت چک پرداختی برای فاکتور خرید خ-۹۵۰۳
+    await Chk.form('issued', null);
+    globalThis.elVal = (fid) => {
+      if (fid === 'kDocNo') return '1002';
+      if (fid === 'kNm') return '770022';
+      if (fid === 'kBk') return 'ملی';
+      if (fid === 'kIsD') return '1404/01/12';
+      if (fid === 'kDu') return '1404/02/20';
+      if (fid === 'kCt') return '2';
+      if (fid === 'kBkAcc') return '1';
+      return '';
+    };
+    globalThis.elNum = (fid) => (fid === 'kAm' ? 1500000 : 0);
+    Chk.onFormContactChange();
+    Chk.toggleInv(9503);
+    await Chk.save('issued', null);
+    st = FinanceEngine.calculateInvoiceSettlements(Object.values(memStore.invoices), memStore.payments, { checks: memStore.checks });
+    assert.strictEqual(st.byInvoiceId[9503].totalPaid, 1500000);
+    assert.strictEqual(st.byInvoiceId[9503].remaining, 1000000);
+
+    // ۵) حذف فاکتور خ-۹۵۰۳ نباید چک پرداختی را پاک کند؛ فقط ارجاع تخصیص را پاک می‌کند
+    await Inv.rm(9503, 'purchase');
+    const issuedChk = memStore.checks.find(x => x.checkNumber === '770022');
+    assert(issuedChk, 'اصل چک نباید هنگام حذف فاکتور پاک شود');
+    assert.strictEqual((issuedChk.invoiceAllocations || []).length, 0, 'ارجاع فاکتور حذف‌شده باید از چک پاک شود');
+  } finally {
+    globalThis.elVal = origElVal;
+    globalThis.elNum = origElNum;
+    Chk._formCtx = null;
+    memStore.checks = [];
+    memStore.payments = [];
+  }
+});
+
+// تست فیلترهای صفحه چک‌ها (طرف حساب، نوع، وضعیت)
+await runPhase4AsyncTest('چک و ممیزی — آزمون ۲: فیلتر طرف حساب (از جمله گیرنده واگذاری)، نوع و وضعیت در صفحه چک‌ها (Chk)', async () => {
+  memStore.contacts = [
+    { id: 1, name: 'مشتری اول', type: 'customer' },
+    { id: 2, name: 'تأمین‌کننده دوم', type: 'supplier' },
+    { id: 3, name: 'واسطه سوم', type: 'broker' }
+  ];
+  memStore.checks = [
+    { id: 9701, docNumber: '1001', type: 'received', checkNumber: 'CHK-A1', bank: 'ملت', amount: 1000000, dueDate: '1404/03/01', contactId: 1, status: 'pending' },
+    { id: 9702, docNumber: '1002', type: 'received', checkNumber: 'CHK-B2', bank: 'ملی', amount: 2000000, dueDate: '1404/03/05', contactId: 1, transferToId: 2, status: 'transferred' },
+    { id: 9703, docNumber: '1003', type: 'issued', checkNumber: 'CHK-C3', bank: 'صادرات', amount: 3000000, dueDate: '1404/03/10', contactId: 2, status: 'passed' },
+    { id: 9704, docNumber: '1004', type: 'received', checkNumber: 'CHK-D4', bank: 'تجارت', amount: 500000, dueDate: '1404/03/12', contactId: 3, status: 'returned_to_customer' }
+  ];
+
+  try {
+    await Chk.render();
+    assert(capturedUIContent.includes('CHK-A1') && capturedUIContent.includes('CHK-D4'));
+
+    // فیلتر نوع: واگذارشده به غیر
+    await Chk.setFilter('type', 'transferred');
+    assert(capturedUIContent.includes('CHK-B2'));
+    assert(!capturedUIContent.includes('CHK-A1'));
+
+    // بازنشانی و فیلتر طرف حساب: تامین‌کننده دوم (هم چک پرداختی به او و هم چک واگذارشده به او را شامل شود)
+    await Chk.resetFilters();
+    await Chk.setFilter('contactId', '2');
+    assert(capturedUIContent.includes('CHK-B2'), 'چک واگذارشده به طرف حساب هم باید در فیلتر طرف حساب دیده شود');
+    assert(capturedUIContent.includes('CHK-C3'));
+    assert(!capturedUIContent.includes('CHK-A1'));
+
+    // بازنشانی و فیلتر وضعیت: همه عودتی/برگشتی‌ها
+    await Chk.resetFilters();
+    await Chk.setFilter('status', 'returned_all');
+    assert(capturedUIContent.includes('CHK-D4'));
+    assert(!capturedUIContent.includes('CHK-A1') && !capturedUIContent.includes('CHK-C3'));
+
+    // در صورت نبود نتیجه، کنترل‌های فیلتر نباید مخفی شوند
+    await Chk.setFilter('type', 'issued');
+    assert(capturedUIContent.includes('چکی با فیلترها یا عبارت جستجوی انتخاب‌شده یافت نشد'));
+    assert(capturedUIContent.includes('chkFContact') && capturedUIContent.includes('chkFType') && capturedUIContent.includes('chkFStatus'));
+  } finally {
+    await Chk.resetFilters();
+    memStore.contacts = null;
+    memStore.checks = [];
+  }
+});
+
+// تست حفظ صفحه، زیرصفحه، شخص/کالا/بانک انتخاب‌شده، تب گزارش و فیلترها هنگام همگام‌سازی
+await runPhase4AsyncTest('همگام‌سازی — آزمون ۳: حفظ زیرصفحه (دفتر معین، دفتر کالا، جزئیات بانک، تب گزارش) و فیلترها در Sync.refreshCurrentView', async () => {
+  memStore.contacts = [{ id: 1, name: 'مشتری معین', type: 'customer' }];
+  memStore.products = [{ id: 11, name: 'پارچه کرپ', unit: 'متر', buyPrice: 100000, sellPrice: 150000 }];
+  memStore.banks = { 5: { id: 5, name: 'بانک تجارت', openingBalance: 5000000 } };
+  memStore.invoices = {
+    9801: { id: 9801, invoiceNumber: 'ف-۹۸۰۱', type: 'sale', date: '1404/01/10', contactId: 1, subtotal: 1500000, grandTotal: 1500000, paidAmount: 0, items: [{ productId: 11, quantity: 10, unitPrice: 150000, total: 1500000 }] }
+  };
+  memStore.payments = [
+    { id: 9811, type: 'receipt', contactId: 1, amount: 500000, date: '1404/01/11', bankId: 5, description: 'تست حفظ فیلتر' }
+  ];
+  memStore.checks = [
+    { id: 9821, docNumber: '1009', type: 'received', checkNumber: 'CHK-SYNC', amount: 250000, dueDate: '1404/02/01', contactId: 1, status: 'pending' }
+  ];
+
+  try {
+    // ۱) دفتر معین روی مشتری ۱: بعد از Sync.refreshCurrentView نباید به صفحه انتخاب مشتری برگردد
+    await Led.show(1);
+    assert.strictEqual(Led._currentCid, 1);
+    assert(capturedUIContent.includes('ف-۹۸۰۱'));
+    capturedUIContent = '';
+    await Sync.refreshCurrentView();
+    assert.strictEqual(Led._currentCid, 1);
+    assert(capturedUIContent.includes('ف-۹۸۰۱') && !capturedUIContent.includes('id="lP"'), 'نباید به صفحه اول دفتر معین (انتخاب شخص) برگردد');
+
+    // ۲) دفتر کالا روی کالای ۱۱
+    currentPage = 'productLedger';
+    await PLed.show(11);
+    assert.strictEqual(PLed._currentPid, 11);
+    assert(capturedUIContent.includes('پارچه کرپ'));
+    capturedUIContent = '';
+    await Sync.refreshCurrentView();
+    assert.strictEqual(PLed._currentPid, 11);
+    assert(capturedUIContent.includes('ف-۹۸۰۱'));
+
+    // ۳) جزئیات بانک ۵
+    await Bank.show(5);
+    assert.strictEqual(Bank._currentBankId, 5);
+    capturedUIContent = '';
+    await Sync.refreshCurrentView();
+    assert.strictEqual(Bank._currentBankId, 5);
+    assert(capturedUIContent.includes('گردش حساب'));
+
+    // ۴) حفظ فیلترها در Pay، Inv و Chk هنگام همگام‌سازی
+    await Pay.render();
+    await Pay.setFilter('type', 'receipt');
+    assert.strictEqual(Pay._fl, 'receipt');
+    await Sync.refreshCurrentView();
+    assert.strictEqual(Pay._fl, 'receipt', 'فیلتر دریافت/پرداخت نباید هنگام همگام‌سازی پاک شود');
+
+    await Inv.render('sale');
+    await Inv.setFilter('status', 'unsettled');
+    assert.strictEqual(Inv._filters.status, 'unsettled');
+    await Sync.refreshCurrentView();
+    assert.strictEqual(Inv._filters.status, 'unsettled', 'فیلتر فاکتور نباید هنگام همگام‌سازی پاک شود');
+
+    await Chk.render();
+    await Chk.setFilter('contactId', '1');
+    assert.strictEqual(Chk._filters.contactId, '1');
+    await Sync.refreshCurrentView();
+    assert.strictEqual(Chk._filters.contactId, '1', 'فیلتر چک نباید هنگام همگام‌سازی پاک شود');
+
+    // ۵) حفظ تب فعال گزارشات (بدهکاران)
+    currentPage = 'reports';
+    Rep._c = 'debtors';
+    capturedHTML['rC'] = '';
+    await Sync.refreshCurrentView();
+    assert.strictEqual(Rep._c, 'debtors', 'تب فعال گزارشات نباید به خلاصه برگردد');
+    assert(capturedHTML['rC'].includes('بدهکاران'));
+  } finally {
+    await Pay.resetFilters();
+    await Inv.resetFilters();
+    await Chk.resetFilters();
+    Led._currentCid = null;
+    PLed._currentPid = null;
+    Bank._currentBankId = null;
+    Rep._c = null;
+    currentPage = '';
+    memStore.contacts = null;
+    memStore.products = [];
+    memStore.checks = [];
+    memStore.payments = [];
+  }
+});
 
 // استخراج داینامیک و دقیق شمارش آزمون‌ها از آرایه ردیابی
 const totalExecuted = executedTestTracker.length;
