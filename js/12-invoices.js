@@ -3,6 +3,8 @@ var Inv = {
   items: [],
   prodMap: {},
   prodOpts: '',
+  _pageType: 'sale',
+  _filters: null,
   contactBal: async function(cid) {
     return Con.balance(cid);
   },
@@ -11,17 +13,78 @@ var Inv = {
     currentPage = type === 'sale' ? 'sales' : type === 'proforma' ? 'proforma' : 'purchase';
     var isP = type === 'proforma';
     var isS = type === 'sale';
+    this._pageType = type;
+    this._filters = {
+      _forPage: type,
+      invType: type,
+      contactId: '',
+      dateFrom: '',
+      dateTo: '',
+      status: 'all'
+    };
     UI.nav(currentPage);
     UI.title(isP ? 'bi-file-earmark-text' : isS ? 'bi-receipt-cutoff' : 'bi-cart-fill', isP ? 'پیش فاکتور' : isS ? 'فاکتور فروش' : 'فاکتور خرید');
     UI.act('<button class="btn bp" onclick="Inv.showF(\'' + type + '\')"><i class="bi bi-plus-lg"></i>جدید</button>');
     await this.ll(type);
   },
 
+  setFilter: async function(key, val) {
+    var baseType = this._pageType || 'sale';
+    if (!this._filters || this._filters._forPage !== baseType) {
+      this._filters = {
+        _forPage: baseType,
+        invType: baseType,
+        contactId: '',
+        dateFrom: '',
+        dateTo: '',
+        status: 'all'
+      };
+    }
+    this._filters[key] = val == null ? '' : String(val).trim();
+    var pk = 'inv_' + (this._filters.invType || baseType);
+    if (typeof Pag !== 'undefined' && typeof Pag.reset === 'function') Pag.reset(pk);
+    await this.ll(baseType);
+  },
+
+  resetFilters: async function() {
+    var baseType = this._pageType || 'sale';
+    this._filters = {
+      _forPage: baseType,
+      invType: baseType,
+      contactId: '',
+      dateFrom: '',
+      dateTo: '',
+      status: 'all'
+    };
+    if (typeof Pag !== 'undefined' && typeof Pag.reset === 'function') Pag.reset('inv_' + baseType);
+    await this.ll(baseType);
+  },
+
   ll: async function(type) {
+    var baseType = type || this._pageType || 'sale';
+    if (!this._filters || this._filters._forPage !== baseType) {
+      this._pageType = baseType;
+      this._filters = {
+        _forPage: baseType,
+        invType: baseType,
+        contactId: '',
+        dateFrom: '',
+        dateTo: '',
+        status: 'all'
+      };
+    }
+    var fType = this._filters.invType || baseType;
+    var fContact = this._filters.contactId || '';
+    var fDateFrom = this._filters.dateFrom || '';
+    var fDateTo = this._filters.dateTo || '';
+    var fStatus = this._filters.status || 'all';
+
     var all = (await FY.byYear('invoices')) || [];
     var pays = (await FY.byYear('payments')) || [];
     var ls = all.filter(function(i) {
-      return i && i.type === type;
+      if (!i) return false;
+      if (fType === 'all') return true;
+      return i.type === fType;
     }).sort(function(a, b) {
       return (b.id || 0) - (a.id || 0);
     });
@@ -30,13 +93,97 @@ var Inv = {
     ct.forEach(function(c) {
       if (c && c.id) cm[c.id] = c.name;
     });
-    if (!ls.length) {
-      UI.content('<div class="cd"><div class="em"><i class="bi bi-receipt"></i><p>فاکتوری نیست</p></div></div>');
-      return;
-    }
-    var settleMap = (type !== 'proforma' && typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.calculateInvoiceSettlements === 'function')
+
+    var settleMap = (typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.calculateInvoiceSettlements === 'function')
       ? FinanceEngine.calculateInvoiceSettlements(ls, pays).byInvoiceId
       : {};
+
+    if (fContact === '__none__') {
+      ls = ls.filter(function(v) {
+        return !v.contactId;
+      });
+    } else if (fContact) {
+      ls = ls.filter(function(v) {
+        return String(v.contactId || '') === String(fContact);
+      });
+    }
+
+    var dFromNum = fDateFrom ? pn(fDateFrom) : 0;
+    var dToNum = fDateTo ? pn(fDateTo) : 0;
+    if (dFromNum > 0) {
+      ls = ls.filter(function(v) {
+        var d = pn(v.date);
+        return d > 0 && d >= dFromNum;
+      });
+    }
+    if (dToNum > 0) {
+      ls = ls.filter(function(v) {
+        var d = pn(v.date);
+        return d > 0 && d <= dToNum;
+      });
+    }
+
+    if (fStatus && fStatus !== 'all') {
+      ls = ls.filter(function(v) {
+        var stInfo = settleMap[v.id];
+        var paidVal = stInfo ? stInfo.totalPaid : numOf(v.paidAmount);
+        var rm = stInfo ? stInfo.remaining : (numOf(v.grandTotal) - numOf(v.paidAmount));
+        if (fStatus === 'settled') return rm <= 0;
+        if (fStatus === 'partial') return rm > 0 && paidVal > 0;
+        if (fStatus === 'open') return rm > 0 && paidVal <= 0;
+        if (fStatus === 'unsettled') return rm > 0;
+        return true;
+      });
+    }
+
+    var contactOpts = '<option value="">همه اشخاص</option>' +
+      '<option value="__none__"' + (fContact === '__none__' ? ' selected' : '') + '>بدون شخص</option>';
+    ct.slice().sort(function(a, b) {
+      return String(a.name || '').localeCompare(String(b.name || ''), 'fa');
+    }).forEach(function(c) {
+      if (!c || c.id == null) return;
+      contactOpts += '<option value="' + c.id + '"' + (String(fContact) === String(c.id) ? ' selected' : '') + '>' + esc(c.name) + '</option>';
+    });
+    var hasActiveFilter = (fType !== baseType || !!fContact || !!fDateFrom || !!fDateTo || fStatus !== 'all');
+    var filterBar = '<div style="display:flex;align-items:flex-end;flex-wrap:wrap;gap:10px;margin-bottom:14px;background:var(--sf);padding:10px 14px;border-radius:10px;border:1px solid var(--bd)">' +
+      '<div style="display:flex;flex-direction:column;gap:4px;min-width:130px;flex:1">' +
+        '<label style="font-size:.75rem;color:var(--txs)">نوع</label>' +
+        '<select id="invFType" class="fc" style="font-size:.82rem;padding:6px 10px" onchange="Inv.setFilter(\'invType\',this.value)">' +
+          '<option value="all"' + (fType === 'all' ? ' selected' : '') + '>همه فاکتورها</option>' +
+          '<option value="sale"' + (fType === 'sale' ? ' selected' : '') + '>فاکتور فروش</option>' +
+          '<option value="purchase"' + (fType === 'purchase' ? ' selected' : '') + '>فاکتور خرید</option>' +
+          '<option value="proforma"' + (fType === 'proforma' ? ' selected' : '') + '>پیش فاکتور</option>' +
+        '</select>' +
+      '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:4px;min-width:165px;flex:1.4">' +
+        '<label style="font-size:.75rem;color:var(--txs)">شخص</label>' +
+        '<select id="invFContact" class="fc" style="font-size:.82rem;padding:6px 10px" onchange="Inv.setFilter(\'contactId\',this.value)">' + contactOpts + '</select>' +
+      '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:4px;min-width:120px;flex:1">' +
+        '<label style="font-size:.75rem;color:var(--txs)">از تاریخ</label>' +
+        '<input id="invFDateFrom" class="fc" dir="ltr" placeholder="1404/01/01" value="' + esc(fDateFrom) + '" style="font-size:.82rem;padding:6px 10px" onchange="Inv.setFilter(\'dateFrom\',this.value)" onkeydown="if(event.key===\'Enter\')Inv.setFilter(\'dateFrom\',this.value)">' +
+      '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:4px;min-width:120px;flex:1">' +
+        '<label style="font-size:.75rem;color:var(--txs)">تا تاریخ</label>' +
+        '<input id="invFDateTo" class="fc" dir="ltr" placeholder="1404/12/29" value="' + esc(fDateTo) + '" style="font-size:.82rem;padding:6px 10px" onchange="Inv.setFilter(\'dateTo\',this.value)" onkeydown="if(event.key===\'Enter\')Inv.setFilter(\'dateTo\',this.value)">' +
+      '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:4px;min-width:145px;flex:1.1">' +
+        '<label style="font-size:.75rem;color:var(--txs)">وضعیت</label>' +
+        '<select id="invFStatus" class="fc" style="font-size:.82rem;padding:6px 10px" onchange="Inv.setFilter(\'status\',this.value)">' +
+          '<option value="all"' + (fStatus === 'all' ? ' selected' : '') + '>همه وضعیت‌ها</option>' +
+          '<option value="settled"' + (fStatus === 'settled' ? ' selected' : '') + '>تسویه</option>' +
+          '<option value="partial"' + (fStatus === 'partial' ? ' selected' : '') + '>جزئی</option>' +
+          '<option value="open"' + (fStatus === 'open' ? ' selected' : '') + '>باز</option>' +
+          '<option value="unsettled"' + (fStatus === 'unsettled' ? ' selected' : '') + '>مانده‌دار (باز و جزئی)</option>' +
+        '</select>' +
+      '</div>' +
+      (hasActiveFilter ? '<button type="button" class="btn bs bo" onclick="Inv.resetFilters()" style="height:34px;white-space:nowrap"><i class="bi bi-x-lg"></i> پاک کردن فیلتر</button>' : '') +
+      '</div>';
+
+    if (!ls.length) {
+      UI.content(filterBar + '<div class="cd"><div class="em"><i class="bi bi-receipt"></i><p>' + (hasActiveFilter ? 'فاکتوری با فیلترهای انتخاب‌شده یافت نشد' : 'فاکتوری نیست') + '</p></div></div>');
+      return;
+    }
     /* جمع کل */
     var tSub = 0,
       tShip = 0,
@@ -60,14 +207,15 @@ var Inv = {
       });
     });
     /* صفحه‌بندی */
-    var pk = 'inv_' + type;
+    var pk = 'inv_' + fType;
     Pag.register(pk, function() {
-      return Inv.ll(type);
+      return Inv.ll(baseType);
     });
     var pg = Pag.slice(pk, ls);
     var r = '';
     for (var i = 0; i < pg.items.length; i++) {
       var v = pg.items[i];
+      var rowType = v.type || baseType;
       var stInfo = settleMap[v.id];
       var paidVal = stInfo ? stInfo.totalPaid : numOf(v.paidAmount);
       var rm = stInfo ? stInfo.remaining : (numOf(v.grandTotal) - numOf(v.paidAmount));
@@ -76,16 +224,19 @@ var Inv = {
       var paidSub = (stInfo && stInfo.linkedPaid > 0)
         ? '<div style="font-size:.68rem;color:var(--txs)" title="دریافت/پرداخت متصل از سند جداگانه">شامل ' + UI.fn(stInfo.linkedPaid) + ' از اسناد</div>'
         : '';
-      r += '<tr><td>' + (((pg.page - 1) * pg.per) + i + 1) + '</td><td>' + esc(v.invoiceNumber || '—') + '</td><td>' + v.date + '</td><td>' + esc(cm[v.contactId] || '—') + '</td><td>' + UI.fn(v.subtotal) + '</td><td>' + UI.fn(v.shippingCost || 0) + '</td><td>' + UI.fn(v.discount || 0) + '</td><td style="font-weight:700">' + UI.fn(v.grandTotal) + '</td><td>' + UI.fn(paidVal) + paidSub + '</td><td style="color:' + (rm > 0 ? 'var(--d)' : 'var(--ok)') + ';font-weight:700">' + UI.fn(rm) + '</td><td><span class="tg ' + sg + '">' + sl + '</span></td><td style="white-space:nowrap"><button class="bi2" title="پیش‌نمایش چاپ و تنظیمات" onclick="Inv.vw(' + v.id + ')"><i class="bi bi-eye"></i></button> <button class="bi2" title="پیش‌نمایش و چاپ A4" onclick="Inv.vw(' + v.id + ',\'a4\')"><span style="font-size:.6rem;font-weight:800">A4</span></button> <button class="bi2" title="پیش‌نمایش و چاپ A5" onclick="Inv.vw(' + v.id + ',\'a5\')"><span style="font-size:.6rem;font-weight:800">A5</span></button> <button class="bi2" title="ویرایش" onclick="Inv.showF(\'' + type + '\',' + v.id + ')"><i class="bi bi-pencil"></i></button> <button class="bi2 d" title="حذف" onclick="Inv.rm(' + v.id + ',\'' + type + '\')"><i class="bi bi-trash3"></i></button></td></tr>';
+      var typeBadge = (fType === 'all')
+        ? ' <span class="tg ' + (rowType === 'sale' ? 'tg-g' : rowType === 'purchase' ? 'tg-o' : 'tg-b') + '" style="font-size:10px">' + (rowType === 'sale' ? 'فروش' : rowType === 'purchase' ? 'خرید' : 'پیش‌فاکتور') + '</span>'
+        : '';
+      r += '<tr><td>' + (((pg.page - 1) * pg.per) + i + 1) + '</td><td>' + esc(v.invoiceNumber || '—') + typeBadge + '</td><td>' + v.date + '</td><td>' + esc(cm[v.contactId] || '—') + '</td><td>' + UI.fn(v.subtotal) + '</td><td>' + UI.fn(v.shippingCost || 0) + '</td><td>' + UI.fn(v.discount || 0) + '</td><td style="font-weight:700">' + UI.fn(v.grandTotal) + '</td><td>' + UI.fn(paidVal) + paidSub + '</td><td style="color:' + (rm > 0 ? 'var(--d)' : 'var(--ok)') + ';font-weight:700">' + UI.fn(rm) + '</td><td><span class="tg ' + sg + '">' + sl + '</span></td><td style="white-space:nowrap"><button class="bi2" title="پیش‌نمایش چاپ و تنظیمات" onclick="Inv.vw(' + v.id + ')"><i class="bi bi-eye"></i></button> <button class="bi2" title="پیش‌نمایش و چاپ A4" onclick="Inv.vw(' + v.id + ',\'a4\')"><span style="font-size:.6rem;font-weight:800">A4</span></button> <button class="bi2" title="پیش‌نمایش و چاپ A5" onclick="Inv.vw(' + v.id + ',\'a5\')"><span style="font-size:.6rem;font-weight:800">A5</span></button> <button class="bi2" title="ویرایش" onclick="Inv.showF(\'' + rowType + '\',' + v.id + ')"><i class="bi bi-pencil"></i></button> <button class="bi2 d" title="حذف" onclick="Inv.rm(' + v.id + ',\'' + rowType + '\')"><i class="bi bi-trash3"></i></button></td></tr>';
     }
     var ft = '<tfoot><tr style="background:var(--bg);font-weight:700">';
     ft += '<td colspan="4">جمع ' + ls.length + ' فاکتور (مقدار کل: ' + UI.fn(tQty) + ')</td>';
     ft += '<td>' + UI.fn(tSub) + '</td><td>' + UI.fn(tShip) + '</td><td>' + UI.fn(tDis) + '</td>';
     ft += '<td>' + UI.fn(tGrand) + '</td><td>' + UI.fn(tPaid) + '</td><td>' + UI.fn(tRem) + '</td>';
     ft += '<td colspan="2"></td></tr></tfoot>';
-    var title = type === 'proforma' ? 'پیش فاکتور' : type === 'sale' ? 'فروش' : 'خرید';
-    var shipColTitle = type === 'purchase' ? 'هزینه حمل خرید' : 'حمل';
-    var h = '<div class="cd"><div class="cd-h"><span>' + title + '</span><span class="tg tg-b" style="font-size:12px"><i class="bi bi-box-seam" style="margin-inline-end:4px"></i>جمع مقدار / متراژ کل: ' + UI.fn(tQty) + '</span></div>';
+    var title = fType === 'all' ? 'همه فاکتورها' : fType === 'proforma' ? 'پیش فاکتور' : fType === 'sale' ? 'فروش' : 'خرید';
+    var shipColTitle = fType === 'purchase' ? 'هزینه حمل خرید' : 'حمل';
+    var h = filterBar + '<div class="cd"><div class="cd-h"><span>' + title + '</span><span class="tg tg-b" style="font-size:12px"><i class="bi bi-box-seam" style="margin-inline-end:4px"></i>جمع مقدار / متراژ کل: ' + UI.fn(tQty) + '</span></div>';
     h += '<div class="tw"><table><thead><tr><th>#</th><th>شماره</th><th>تاریخ</th><th>شخص</th><th>جمع</th><th>' + shipColTitle + '</th><th>تخفیف</th><th>نهایی</th><th>پرداختی</th><th>مانده</th><th>وضعیت</th><th></th></tr></thead>';
     h += '<tbody>' + r + '</tbody>' + ft + '</table></div>';
     h += Pag.html(pk);

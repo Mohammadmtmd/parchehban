@@ -1583,6 +1583,125 @@ await runPhase4AsyncTest('تخصیص فاکتور — آزمون ۶: بازگش�
   assert.strictEqual(stAfter.byInvoiceId[6402].remaining, 1000000);
 });
 
+// تست فیلترهای صفحه پرداخت و دریافت (شخص، تاریخ، نوع، وضعیت)
+await runPhase4AsyncTest('فیلترهای لیست — آزمون ۱: فیلتر نوع، شخص، تاریخ و وضعیت در صفحه دریافت و پرداخت (Pay)', async () => {
+  const origDbAll = DB.all;
+  DB.all = async (table) => {
+    if (table === 'contacts') {
+      return [
+        { id: 1, name: 'مشتری اول', type: 'customer' },
+        { id: 2, name: 'تأمین‌کننده دوم', type: 'supplier' }
+      ];
+    }
+    return origDbAll(table);
+  };
+  memStore.payments = [
+    { id: 8101, type: 'receipt', contactId: 1, amount: 1000000, date: '1404/01/05', description: 'دریافت اول متصل', invoiceAllocations: [{ invoiceId: 1, amount: 1000000 }] },
+    { id: 8102, type: 'receipt', contactId: 1, amount: 2000000, date: '1404/02/10', description: 'دریافت دوم علی‌الحساب' },
+    { id: 8103, type: 'payment', contactId: 2, amount: 3000000, date: '1404/02/15', description: 'پرداخت خودکار فاکتور', sourceInvoiceId: 2 },
+    { id: 8104, type: 'payment', contactId: null, amount: 400000, date: '1404/03/01', category: 'اجاره', description: 'اجاره دفتر' }
+  ];
+
+  try {
+    await Pay.render();
+    assert(capturedUIContent.includes('دریافت اول متصل'));
+    assert(capturedUIContent.includes('اجاره دفتر'));
+
+    // فیلتر نوع: فقط دریافت
+    await Pay.setFilter('type', 'receipt');
+    assert(capturedUIContent.includes('دریافت اول متصل'));
+    assert(capturedUIContent.includes('دریافت دوم علی‌الحساب'));
+    assert(!capturedUIContent.includes('پرداخت خودکار فاکتور'));
+
+    // فیلتر وضعیت: فقط متصل به فاکتور
+    await Pay.setFilter('status', 'allocated');
+    assert(capturedUIContent.includes('دریافت اول متصل'));
+    assert(!capturedUIContent.includes('دریافت دوم علی‌الحساب'));
+
+    // پاک کردن و فیلتر بازه تاریخ + شخص
+    await Pay.resetFilters();
+    await Pay.setFilter('dateFrom', '1404/02/01');
+    await Pay.setFilter('dateTo', '1404/02/20');
+    assert(!capturedUIContent.includes('دریافت اول متصل'));
+    assert(capturedUIContent.includes('دریافت دوم علی‌الحساب'));
+    assert(capturedUIContent.includes('پرداخت خودکار فاکتور'));
+    assert(!capturedUIContent.includes('اجاره دفتر'));
+
+    // فیلتر بدون شخص (مخارج عمومی)
+    await Pay.resetFilters();
+    await Pay.setFilter('contactId', '__none__');
+    assert(capturedUIContent.includes('اجاره دفتر'));
+    assert(!capturedUIContent.includes('دریافت اول متصل'));
+
+    // حالت بدون نتیجه باید نوار فیلتر را حفظ کند تا کاربر بتواند فیلتر را تغییر دهد
+    await Pay.setFilter('dateFrom', '1405/01/01');
+    assert(capturedUIContent.includes('تراکنشی با فیلترهای انتخاب‌شده یافت نشد'));
+    assert(capturedUIContent.includes('payFContact') && capturedUIContent.includes('payFStatus'));
+  } finally {
+    await Pay.resetFilters();
+    DB.all = origDbAll;
+  }
+});
+
+// تست فیلترهای صفحه فاکتور فروش و خرید (شخص، تاریخ، نوع، وضعیت)
+await runPhase4AsyncTest('فیلترهای لیست — آزمون ۲: فیلتر نوع، شخص، تاریخ و وضعیت در صفحه فاکتورهای فروش و خرید (Inv)', async () => {
+  const origDbAll = DB.all;
+  DB.all = async (table) => {
+    if (table === 'contacts') {
+      return [
+        { id: 1, name: 'مشتری آلفا', type: 'customer' },
+        { id: 2, name: 'تأمین‌کننده بتا', type: 'supplier' }
+      ];
+    }
+    return origDbAll(table);
+  };
+  memStore.invoices = {
+    9101: { id: 9101, invoiceNumber: 'ف-۹۱۰۱', type: 'sale', date: '1404/01/05', contactId: 1, subtotal: 1000000, grandTotal: 1000000, paidAmount: 1000000, items: [] }, // تسویه
+    9102: { id: 9102, invoiceNumber: 'ف-۹۱۰۲', type: 'sale', date: '1404/02/10', contactId: 1, subtotal: 2000000, grandTotal: 2000000, paidAmount: 500000, items: [] }, // جزئی
+    9103: { id: 9103, invoiceNumber: 'ف-۹۱۰۳', type: 'sale', date: '1404/03/01', contactId: 1, subtotal: 3000000, grandTotal: 3000000, paidAmount: 0, items: [] }, // باز
+    9104: { id: 9104, invoiceNumber: 'خ-۹۱۰۴', type: 'purchase', date: '1404/02/15', contactId: 2, subtotal: 4000000, grandTotal: 4000000, paidAmount: 0, items: [] } // خرید باز
+  };
+  memStore.payments = [];
+
+  try {
+    await Inv.render('sale');
+    assert(capturedUIContent.includes('ف-۹۱۰۱'));
+    assert(capturedUIContent.includes('ف-۹۱۰۳'));
+    assert(!capturedUIContent.includes('خ-۹۱۰۴'), 'صفحه فروش در حالت پیش‌فرض نباید فاکتور خرید نشان دهد');
+
+    // فیلتر وضعیت: جزئی
+    await Inv.setFilter('status', 'partial');
+    assert(!capturedUIContent.includes('ف-۹۱۰۱'));
+    assert(capturedUIContent.includes('ف-۹۱۰۲'));
+    assert(!capturedUIContent.includes('ف-۹۱۰۳'));
+
+    // فیلتر وضعیت: مانده‌دار (باز و جزئی)
+    await Inv.setFilter('status', 'unsettled');
+    assert(!capturedUIContent.includes('ف-۹۱۰۱'));
+    assert(capturedUIContent.includes('ف-۹۱۰۲'));
+    assert(capturedUIContent.includes('ف-۹۱۰۳'));
+
+    // فیلتر نوع: همه فاکتورها + فیلتر شخص تامین‌کننده بتا
+    await Inv.setFilter('invType', 'all');
+    assert(capturedUIContent.includes('خ-۹۱۰۴'));
+    await Inv.setFilter('contactId', '2');
+    assert(capturedUIContent.includes('خ-۹۱۰۴'));
+    assert(!capturedUIContent.includes('ف-۹۱۰۲'));
+
+    // بازنشانی فیلتر و تست فیلتر تاریخ روی صفحه فروش
+    await Inv.resetFilters();
+    await Inv.setFilter('dateFrom', '1404/02/01');
+    await Inv.setFilter('dateTo', '1404/02/29');
+    assert(!capturedUIContent.includes('ف-۹۱۰۱'));
+    assert(capturedUIContent.includes('ف-۹۱۰۲'));
+    assert(!capturedUIContent.includes('ف-۹۱۰۳'));
+  } finally {
+    await Inv.resetFilters();
+    DB.all = origDbAll;
+  }
+});
+
+
 // استخراج داینامیک و دقیق شمارش آزمون‌ها از آرایه ردیابی
 const totalExecuted = executedTestTracker.length;
 const totalPassed = executedTestTracker.filter(t => t.passed).length;

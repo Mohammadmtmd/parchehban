@@ -1,24 +1,66 @@
 /* ══ PAYMENTS (with edit) ══ */
 var Pay = {
   _fl: 'all',
+  _filters: {
+    contactId: '',
+    dateFrom: '',
+    dateTo: '',
+    status: 'all'
+  },
   render: async function() {
     currentPage = 'payments';
     UI.nav('payments');
     UI.title('bi-wallet2', 'پرداخت و دریافت');
     UI.act('<button class="btn bg" onclick="Pay.showF(\'receipt\')">دریافت</button> <button class="btn bdn" onclick="Pay.showF(\'payment\')">پرداخت</button> <button class="btn bw" onclick="Pay.showTransfer()">حواله</button>');
     this._fl = 'all';
+    this._filters = {
+      contactId: '',
+      dateFrom: '',
+      dateTo: '',
+      status: 'all'
+    };
+    await this.ll('all');
+  },
+  setFilter: async function(key, val) {
+    if (key === 'type') {
+      this._fl = val || 'all';
+    } else {
+      if (!this._filters) this._filters = { contactId: '', dateFrom: '', dateTo: '', status: 'all' };
+      this._filters[key] = val == null ? '' : String(val).trim();
+    }
+    var pk = 'pay_' + (this._fl || 'all');
+    if (typeof Pag !== 'undefined' && typeof Pag.reset === 'function') Pag.reset(pk);
+    await this.ll();
+  },
+  resetFilters: async function() {
+    this._fl = 'all';
+    this._filters = {
+      contactId: '',
+      dateFrom: '',
+      dateTo: '',
+      status: 'all'
+    };
+    if (typeof Pag !== 'undefined' && typeof Pag.reset === 'function') Pag.reset('pay_all');
     await this.ll('all');
   },
   ll: async function(fl) {
     if (fl) this._fl = fl;
-    else fl = this._fl;
-    var all = await FY.byYear('payments');
-    var ct = await DB.all('contacts'),
+    else fl = this._fl || 'all';
+    if (!this._filters) {
+      this._filters = { contactId: '', dateFrom: '', dateTo: '', status: 'all' };
+    }
+    var fContact = this._filters.contactId || '';
+    var fDateFrom = this._filters.dateFrom || '';
+    var fDateTo = this._filters.dateTo || '';
+    var fStatus = this._filters.status || 'all';
+
+    var all = (await FY.byYear('payments')) || [];
+    var ct = (await DB.all('contacts')) || [],
       cm = {};
     ct.forEach(function(c) {
-      cm[c.id] = c.name;
+      if (c && c.id != null) cm[c.id] = c.name;
     });
-    var ls = all.sort(function(a, b) {
+    var ls = all.slice().sort(function(a, b) {
       return (b.id || 0) - (a.id || 0);
     });
     if (fl === 'receipt') ls = ls.filter(function(p) {
@@ -30,6 +72,46 @@ var Pay = {
     if (fl === 'transfer') ls = ls.filter(function(p) {
       return p.transferId;
     });
+
+    if (fContact === '__none__') {
+      ls = ls.filter(function(p) {
+        return !p.contactId;
+      });
+    } else if (fContact) {
+      ls = ls.filter(function(p) {
+        return String(p.contactId || '') === String(fContact);
+      });
+    }
+
+    var dFromNum = fDateFrom ? pn(fDateFrom) : 0;
+    var dToNum = fDateTo ? pn(fDateTo) : 0;
+    if (dFromNum > 0) {
+      ls = ls.filter(function(p) {
+        var d = pn(p.date);
+        return d > 0 && d >= dFromNum;
+      });
+    }
+    if (dToNum > 0) {
+      ls = ls.filter(function(p) {
+        var d = pn(p.date);
+        return d > 0 && d <= dToNum;
+      });
+    }
+
+    if (fStatus && fStatus !== 'all') {
+      ls = ls.filter(function(p) {
+        var isAutoDoc = !!(p.sourceInvoiceId || p.sourceCheckId);
+        var hasAlloc = Array.isArray(p.invoiceAllocations) && p.invoiceAllocations.some(function(a) {
+          return a && numOf(a.amount) > 0;
+        });
+        if (fStatus === 'allocated') return !!p.sourceInvoiceId || hasAlloc;
+        if (fStatus === 'unallocated') return !isAutoDoc && !p.transferId && !hasAlloc;
+        if (fStatus === 'auto') return isAutoDoc;
+        if (fStatus === 'manual') return !isAutoDoc && !p.transferId;
+        return true;
+      });
+    }
+
     /* صفحه‌بندی — قبلاً کل تراکنش‌ها در یک صفحه رندر می‌شد */
     var pk = 'pay_' + fl;
     Pag.register(pk, function() {
@@ -85,14 +167,59 @@ var Pay = {
       }
       r += '<tr><td>' + (((pg.page - 1) * pg.per) + i + 1) + '</td><td><span class="tg ' + tt + '">' + tl + '</span>' + catTag + srcTag + '</td><td>' + p.date + '</td><td>' + esc(cm[p.contactId] || '—') + '</td><td style="font-weight:700">' + UI.fn(p.amount) + '</td><td>' + esc(p.description || p.notes || '—') + allocHtml + '</td><td style="white-space:nowrap">' + actions + '</td></tr>';
     }
+
+    var contactOpts = '<option value="">همه اشخاص</option>' +
+      '<option value="__none__"' + (fContact === '__none__' ? ' selected' : '') + '>بدون شخص (مخارج عمومی)</option>';
+    ct.slice().sort(function(a, b) {
+      return String(a.name || '').localeCompare(String(b.name || ''), 'fa');
+    }).forEach(function(c) {
+      if (!c || c.id == null) return;
+      contactOpts += '<option value="' + c.id + '"' + (String(fContact) === String(c.id) ? ' selected' : '') + '>' + esc(c.name) + '</option>';
+    });
+    var hasActiveFilter = (fl !== 'all' || !!fContact || !!fDateFrom || !!fDateTo || fStatus !== 'all');
+    var filterBar = '<div style="display:flex;align-items:flex-end;flex-wrap:wrap;gap:10px;margin-bottom:14px;background:var(--sf);padding:10px 14px;border-radius:10px;border:1px solid var(--bd)">' +
+      '<div style="display:flex;flex-direction:column;gap:4px;min-width:130px;flex:1">' +
+        '<label style="font-size:.75rem;color:var(--txs)">نوع</label>' +
+        '<select id="payFType" class="fc" style="font-size:.82rem;padding:6px 10px" onchange="Pay.setFilter(\'type\',this.value)">' +
+          '<option value="all"' + (fl === 'all' ? ' selected' : '') + '>همه انواع</option>' +
+          '<option value="receipt"' + (fl === 'receipt' ? ' selected' : '') + '>دریافت</option>' +
+          '<option value="payment"' + (fl === 'payment' ? ' selected' : '') + '>پرداخت</option>' +
+          '<option value="transfer"' + (fl === 'transfer' ? ' selected' : '') + '>حواله</option>' +
+        '</select>' +
+      '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:4px;min-width:165px;flex:1.4">' +
+        '<label style="font-size:.75rem;color:var(--txs)">شخص</label>' +
+        '<select id="payFContact" class="fc" style="font-size:.82rem;padding:6px 10px" onchange="Pay.setFilter(\'contactId\',this.value)">' + contactOpts + '</select>' +
+      '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:4px;min-width:120px;flex:1">' +
+        '<label style="font-size:.75rem;color:var(--txs)">از تاریخ</label>' +
+        '<input id="payFDateFrom" class="fc" dir="ltr" placeholder="1404/01/01" value="' + esc(fDateFrom) + '" style="font-size:.82rem;padding:6px 10px" onchange="Pay.setFilter(\'dateFrom\',this.value)" onkeydown="if(event.key===\'Enter\')Pay.setFilter(\'dateFrom\',this.value)">' +
+      '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:4px;min-width:120px;flex:1">' +
+        '<label style="font-size:.75rem;color:var(--txs)">تا تاریخ</label>' +
+        '<input id="payFDateTo" class="fc" dir="ltr" placeholder="1404/12/29" value="' + esc(fDateTo) + '" style="font-size:.82rem;padding:6px 10px" onchange="Pay.setFilter(\'dateTo\',this.value)" onkeydown="if(event.key===\'Enter\')Pay.setFilter(\'dateTo\',this.value)">' +
+      '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:4px;min-width:155px;flex:1.2">' +
+        '<label style="font-size:.75rem;color:var(--txs)">وضعیت</label>' +
+        '<select id="payFStatus" class="fc" style="font-size:.82rem;padding:6px 10px" onchange="Pay.setFilter(\'status\',this.value)">' +
+          '<option value="all"' + (fStatus === 'all' ? ' selected' : '') + '>همه وضعیت‌ها</option>' +
+          '<option value="allocated"' + (fStatus === 'allocated' ? ' selected' : '') + '>متصل به فاکتور</option>' +
+          '<option value="unallocated"' + (fStatus === 'unallocated' ? ' selected' : '') + '>علی‌الحساب / بدون فاکتور</option>' +
+          '<option value="manual"' + (fStatus === 'manual' ? ' selected' : '') + '>سند دستی</option>' +
+          '<option value="auto"' + (fStatus === 'auto' ? ' selected' : '') + '>سند خودکار</option>' +
+        '</select>' +
+      '</div>' +
+      (hasActiveFilter ? '<button type="button" class="btn bs bo" onclick="Pay.resetFilters()" style="height:34px;white-space:nowrap"><i class="bi bi-x-lg"></i> پاک کردن فیلتر</button>' : '') +
+      '</div>';
+
     var ft = '<tfoot><tr style="background:var(--bg);font-weight:700">' +
       '<td colspan="4">جمع ' + UI.fn(ls.length) + ' تراکنش</td>' +
       '<td>' + UI.fn(tAmt) + '</td><td colspan="2"></td></tr></tfoot>';
     var tb = ls.length ?
       '<div class="tw"><table><thead><tr><th>#</th><th>نوع</th><th>تاریخ</th><th>شخص</th><th>مبلغ</th><th>شرح</th><th></th></tr></thead><tbody>' +
       r + '</tbody>' + ft + '</table></div>' + Pag.html(pk) :
-      '<div class="em"><p>تراکنشی نیست</p></div>';
-    UI.content('<div class="tab-bar"><button class="tab-btn' + (fl === 'all' ? ' active' : '') + '" onclick="Pay.ll(\'all\')">همه</button><button class="tab-btn' + (fl === 'receipt' ? ' active' : '') + '" onclick="Pay.ll(\'receipt\')">دریافت</button><button class="tab-btn' + (fl === 'payment' ? ' active' : '') + '" onclick="Pay.ll(\'payment\')">پرداخت</button><button class="tab-btn' + (fl === 'transfer' ? ' active' : '') + '" onclick="Pay.ll(\'transfer\')">حواله</button></div><div class="cd">' + tb + '</div>');
+      '<div class="em"><p>' + (hasActiveFilter ? 'تراکنشی با فیلترهای انتخاب‌شده یافت نشد' : 'تراکنشی نیست') + '</p></div>';
+    UI.content('<div class="tab-bar"><button class="tab-btn' + (fl === 'all' ? ' active' : '') + '" onclick="Pay.ll(\'all\')">همه</button><button class="tab-btn' + (fl === 'receipt' ? ' active' : '') + '" onclick="Pay.ll(\'receipt\')">دریافت</button><button class="tab-btn' + (fl === 'payment' ? ' active' : '') + '" onclick="Pay.ll(\'payment\')">پرداخت</button><button class="tab-btn' + (fl === 'transfer' ? ' active' : '') + '" onclick="Pay.ll(\'transfer\')">حواله</button></div>' + filterBar + '<div class="cd">' + tb + '</div>');
   },
   EXPENSE_CATEGORIES: [
     'حقوق و دستمزد',
