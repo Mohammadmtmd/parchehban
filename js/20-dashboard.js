@@ -471,8 +471,13 @@ var Dash = {
     });
 
     /* ══ آخرین فعالیت‌های تجاری برنامه ══ */
+    var dashSettleMap = (hasFinanceEngine && typeof FinanceEngine.calculateInvoiceSettlements === 'function')
+      ? FinanceEngine.calculateInvoiceSettlements(allInvs, dashPays).byInvoiceId
+      : {};
     var recentActivities = [];
     allInvs.filter(function(x) { return x && x.type === 'sale'; }).slice(0, 5).forEach(function(inv) {
+      var st = dashSettleMap[inv.id];
+      var remInv = st ? st.remaining : (numOf(inv.grandTotal) - numOf(inv.paidAmount));
       recentActivities.push({
         kind: 'sale',
         typeLabel: 'فاکتور فروش',
@@ -481,13 +486,15 @@ var Dash = {
         person: cMap[inv.contactId] || 'مشتری آزاد',
         date: inv.date,
         amount: numOf(inv.grandTotal),
-        status: (numOf(inv.paidAmount) >= numOf(inv.grandTotal)) ? 'تسویه' : 'مانده: ' + UI.fn(numOf(inv.grandTotal) - numOf(inv.paidAmount)),
+        status: (remInv <= 0) ? 'تسویه' : 'مانده: ' + UI.fn(remInv),
         isPositive: true,
         action: 'Inv.vw(' + inv.id + ')'
       });
     });
 
     allInvs.filter(function(x) { return x && x.type === 'purchase'; }).slice(0, 5).forEach(function(inv) {
+      var st = dashSettleMap[inv.id];
+      var remInv = st ? st.remaining : (numOf(inv.grandTotal) - numOf(inv.paidAmount));
       recentActivities.push({
         kind: 'purchase',
         typeLabel: 'فاکتور خرید',
@@ -496,7 +503,7 @@ var Dash = {
         person: cMap[inv.contactId] || 'تأمین‌کننده',
         date: inv.date,
         amount: numOf(inv.grandTotal),
-        status: (numOf(inv.paidAmount) >= numOf(inv.grandTotal)) ? 'تسویه' : 'مانده: ' + UI.fn(numOf(inv.grandTotal) - numOf(inv.paidAmount)),
+        status: (remInv <= 0) ? 'تسویه' : 'مانده: ' + UI.fn(remInv),
         isPositive: false,
         action: 'Inv.vw(' + inv.id + ')'
       });

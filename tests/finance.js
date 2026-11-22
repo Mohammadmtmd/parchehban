@@ -296,23 +296,41 @@ globalThis.FY = {
   assertOpen: async function() { return true; }
 };
 
+globalThis.F = {
+  section: function(t) { return '<div class="fsec">' + t + '</div>'; },
+  select: function(o) {
+    var ops = (o.items || []).map(function(it) {
+      return '<option value="' + it.v + '">' + it.t + '</option>';
+    }).join('');
+    return '<select id="' + o.id + '">' + ops + '</select>';
+  },
+  money: function(o) { return '<input id="' + o.id + '" value="' + (o.value || '') + '">'; },
+  date: function(o) { return '<input id="' + o.id + '" value="' + (o.value || '') + '">'; },
+  text: function(o) { return '<input id="' + o.id + '" value="' + (o.value || '') + '">'; },
+  validate: function() { return true; },
+  focusFirst: function() {}
+};
+
 // بارگذاری ماژول‌های پروژه
 await import('../js/12-invoices.js');
+await import('../js/13-payments.js');
 await import('../js/18-reports.js');
 await import('../js/22-banks.js');
 await import('../js/20-dashboard.js');
 
 const Inv = globalThis.Inv;
+const Pay = globalThis.Pay;
 const Rep = globalThis.Rep;
 const Bank = globalThis.Bank;
 const Dash = globalThis.Dash;
 
 assert(Inv && typeof Inv.syncAutoPayment === 'function', 'ماژول Inv باید در دسترس باشد');
+assert(Pay && typeof Pay.save === 'function', 'ماژول Pay باید در دسترس باشد');
 assert(Rep && typeof Rep.summary === 'function', 'ماژول Rep باید در دسترس باشد');
 assert(Bank && typeof Bank.balance === 'function', 'ماژول Bank باید در دسترس باشد');
 assert(Dash && typeof Dash.load === 'function', 'ماژول Dash باید در دسترس باشد');
 
-console.log('✓ محیط Mock در رم و ماژول‌های Inv، Rep، Bank و Dash با موفقیت مقداردهی شدند.');
+console.log('✓ محیط Mock در رم و ماژول‌های Inv، Pay، Rep، Bank و Dash با موفقیت مقداردهی شدند.');
 
 console.log('\n--- اجرای آزمون واقعی ۲: رفتار دقیق Inv.syncAutoPayment در ویرایش و حذف ---');
 await (async () => {
@@ -1334,6 +1352,235 @@ await runPhase4AsyncTest('مرحله ۴ — آزمون ۲۰: گزارش سود �
     DB.all = origDbAll;
     Prod.stockMap = origStockMap;
   }
+});
+
+console.log('\n--- اجرای آزمون‌های اتصال دریافت/پرداخت به فاکتورها، تسویه آبشاری چندفاکتوری، ویرایش عطف به ماسبق و دریافت از واسطه ---');
+
+// تست ۱: تخصیص تک‌فاکتوری و عدم دوباره‌شماری
+runPhase4Test('تخصیص فاکتور — آزمون ۱: تسویه کامل تک‌فاکتوری و ترکیب با پیش‌پرداخت مستقیم بدون دوباره‌شماری', () => {
+  const inv1 = { id: 6001, invoiceNumber: 'ف-۶۰۰۱', type: 'sale', contactId: 1, grandTotal: 1000000, paidAmount: 300000 };
+  const autoPay = { id: 7001, type: 'receipt', contactId: 1, amount: 300000, sourceInvoiceId: 6001 }; // نباید دوباره جمع شود
+  const linkedReceipt = {
+    id: 7002,
+    type: 'receipt',
+    contactId: 1,
+    amount: 700000,
+    invoiceAllocations: [{ invoiceId: 6001, invoiceNumber: 'ف-۶۰۰۱', amount: 700000 }]
+  };
+
+  const res = FinanceEngine.calculateInvoiceSettlements([inv1], [autoPay, linkedReceipt]);
+  const s = res.byInvoiceId[6001];
+  assert.strictEqual(s.directPaid, 300000);
+  assert.strictEqual(s.linkedPaid, 700000);
+  assert.strictEqual(s.totalPaid, 1000000);
+  assert.strictEqual(s.remaining, 0);
+  assert.strictEqual(s.status, 'settled');
+  assert.strictEqual(s.statusLabel, 'تسویه');
+});
+
+// تست ۲: تسویه آبشاری چندفاکتوری به ترتیب انتخاب و نگهداری مازاد تخصیص‌نیافته
+runPhase4Test('تخصیص فاکتور — آزمون ۲: تسویه آبشاری چندفاکتوری (صفر کردن اولی، سرریز به دومی و مازاد علی‌الحساب)', () => {
+  const ordered = [
+    { invoiceId: 6101, invoiceNumber: 'ف-۶۱۰۱', remainingBeforePayment: 5000000, grandTotal: 5000000 },
+    { invoiceId: 6102, invoiceNumber: 'ف-۶۱۰۲', remainingBeforePayment: 3000000, grandTotal: 3000000 },
+    { invoiceId: 6103, invoiceNumber: 'ف-۶۱۰۳', remainingBeforePayment: 4000000, grandTotal: 4000000 }
+  ];
+
+  // دریافت ۶.۵ میلیون: اولی ۵M (تسویه کامل)، دومی ۱.۵M (مانده ۱.۵M)، سومی ۰ (مانده ۴M)
+  const cascade = FinanceEngine.allocatePaymentToInvoices(6500000, ordered);
+  assert.strictEqual(cascade.totalAllocated, 6500000);
+  assert.strictEqual(cascade.unallocatedAmount, 0);
+  assert.strictEqual(cascade.allocations.length, 2);
+  assert.strictEqual(cascade.items[0].allocatedAmount, 5000000);
+  assert.strictEqual(cascade.items[0].remainingAfter, 0);
+  assert.strictEqual(cascade.items[1].allocatedAmount, 1500000);
+  assert.strictEqual(cascade.items[1].remainingAfter, 1500000);
+  assert.strictEqual(cascade.items[2].allocatedAmount, 0);
+  assert.strictEqual(cascade.items[2].remainingAfter, 4000000);
+
+  // پرداخت بیشتر از جمع دو فاکتور انتخاب‌شده (مثلاً ۱۰M روی ۵M + ۳M) -> ۲M علی‌الحساب
+  const over = FinanceEngine.allocatePaymentToInvoices(10000000, ordered.slice(0, 2));
+  assert.strictEqual(over.totalAllocated, 8000000);
+  assert.strictEqual(over.unallocatedAmount, 2000000);
+});
+
+// تست ۳: ثبت و ویرایش عطف به ماسبق در Pay.showF و Pay.save بدون دستکاری مانده بانک و گزارش‌ها
+await runPhase4AsyncTest('تخصیص فاکتور — آزمون ۳: ویرایش دریافت/پرداخت قبلی، تسویه چندفاکتوری و انعکاس در Inv.ll، Inv._html، Dash و Rep', async () => {
+  memStore.banks = { 1: { id: 1, name: 'ملت', openingBalance: 10000000 } };
+  memStore.invoices = {
+    6201: { id: 6201, invoiceNumber: 'ف-۶۲۰۱', type: 'sale', date: '1404/01/05', contactId: 1, subtotal: 4000000, grandTotal: 4000000, paidAmount: 0, items: [] },
+    6202: { id: 6202, invoiceNumber: 'ف-۶۲۰۲', type: 'sale', date: '1404/01/10', contactId: 1, subtotal: 3000000, grandTotal: 3000000, paidAmount: 0, items: [] }
+  };
+  // دریافت قبلی بدون اتصال به فاکتور به مبلغ ۵،۰۰۰،۰۰۰ ریال
+  memStore.payments = [
+    { id: 7201, type: 'receipt', fiscalYearId: 1, contactId: 1, amount: 5000000, date: '1404/01/12', bankId: 1, description: 'واریز قدیمی' }
+  ];
+  memStore.bankTransfers = [];
+
+  const origElVal = globalThis.elVal;
+  const origElNum = globalThis.elNum;
+  try {
+    // ابتدا باز کردن مودال ویرایش سند قدیمی ۷۲۰۱
+    await Pay.showF('receipt', 7201);
+    assert.strictEqual(Pay._formCtx.selectedOrder.length, 0);
+    // انتخاب هر دو فاکتور به ترتیب: اول ۶۲۰۱ (۴M)، دوم ۶۲۰۲ (۳M -> فقط ۱M تخصیص می‌گیرد)
+    Pay.toggleInv(6201);
+    Pay.toggleInv(6202);
+
+    globalThis.elVal = (fid) => {
+      if (fid === 'pCt') return '1';
+      if (fid === 'pDt') return '1404/01/12';
+      if (fid === 'pBk') return '1';
+      if (fid === 'pNt') return 'تسویه فاکتورها';
+      return '';
+    };
+    globalThis.elNum = (fid) => (fid === 'pAm' ? 5000000 : 0);
+
+    await Pay.save('receipt', 7201);
+    assert.strictEqual(memStore.payments.length, 1, 'تعداد اسناد نباید هنگام ویرایش اضافه شود');
+    assert.strictEqual(memStore.payments[0].invoiceAllocations.length, 2);
+    assert.strictEqual(memStore.payments[0].invoiceAllocations[0].amount, 4000000);
+    assert.strictEqual(memStore.payments[0].invoiceAllocations[1].amount, 1000000);
+
+    // مانده بانک باید دقیقاً ۱۵M باشد (۱۰M اولیه + ۵M دریافت)، بدون هیچ دوباره‌شماری
+    const bankBal = await Bank.balance(1);
+    assert.strictEqual(bankBal, 15000000);
+
+    // لیست فاکتورها (Inv.ll) باید ف-۶۲۰۱ را تسویه و ف-۶۲۰۲ را جزئی با مانده ۲M نشان دهد
+    capturedUIContent = '';
+    await Inv.ll('sale');
+    assert(capturedUIContent.includes('تسویه'), 'ف-۶۲۰۱ باید برچسب تسویه بگیرد');
+    assert(capturedUIContent.includes('جزئی'), 'ف-۶۲۰۲ باید برچسب جزئی بگیرد');
+
+    // خروجی چاپ فاکتور (Inv._html) باید پرداخت‌شده و مانده واقعی را نشان دهد
+    const invHtml1 = await Inv._html(memStore.invoices[6201], { showPrices: true, showPayment: true });
+    assert(invHtml1.includes('مبلغ پرداخت شده'), 'چاپ ف-۶۲۰۱ باید مبلغ پرداخت شده را نشان دهد');
+    assert(!invHtml1.includes('مانده این فاکتور'), 'چاپ ف-۶۲۰۱ بعد از تسویه کامل نباید مانده این فاکتور نشان دهد');
+
+    const invHtml2 = await Inv._html(memStore.invoices[6202], { showPrices: true, showPayment: true });
+    assert(invHtml2.includes('مبلغ پرداخت شده'));
+    assert(invHtml2.includes('مانده این فاکتور'));
+
+    // گزارش summary نباید دوباره‌شماری کند: کل فروش ۷M، دریافت ۵M، مانده ۲M
+    await Rep.summary();
+    assert(capturedHTML['rC'].includes(UI.fn(2000000)), 'گزارش کلی فروش باید مانده دقیق ۲M را نشان دهد');
+
+    // ویرایش مجدد همین سند برای بررسی excludePaymentId (فاکتور ۶۲۰۱ تسویه‌شده هم باید دیده شود!)
+    await Pay.showF('receipt', 7201);
+    assert.strictEqual(Pay._formCtx.selectedOrder.length, 2);
+    const elig = Pay._getEligibleInvoices(1, 'receipt');
+    const el6201 = elig.find(x => x.invoiceId === 6201);
+    assert(el6201 && el6201.remainingBeforePayment === 4000000, 'در ویرایش مجدد، مانده پیش از این سند برای ۶۲۰۱ باید ۴M باشد');
+
+    // داشبورد باید برای ف-۶۲۰۱ وضعیت تسویه و برای ف-۶۲۰۲ مانده ۲M را برگرداند
+    capturedUIContent = '';
+    await Dash.load();
+    assert(capturedUIContent.includes('تسویه'));
+  } finally {
+    globalThis.elVal = origElVal;
+    globalThis.elNum = origElNum;
+    Pay._formCtx = null;
+  }
+});
+
+// تست ۴: پرداخت فاکتور خرید بدون انتخاب سرفصل هزینه نباید وارد Unclassified یا OpEx شود
+runPhase4Test('تخصیص فاکتور — آزمون ۴: طبقه‌بندی خودکار پرداخت متصل به فاکتور خرید در supplierSettlements (نه هزینه عملیاتی)', () => {
+  const exp = FinanceEngine.filterOperatingExpenses([
+    {
+      id: 7301,
+      type: 'payment',
+      amount: 2500000,
+      date: '1404/01/15',
+      contactId: 2,
+      category: null,
+      invoiceAllocations: [{ invoiceId: 901, invoiceNumber: 'خ-۰۹۰۱', amount: 2500000 }]
+    }
+  ], 0, 0);
+  assert.strictEqual(exp.supplierSettlements, 2500000);
+  assert.strictEqual(exp.classifiedOpEx, 0);
+  assert.strictEqual(exp.unclassifiedPayments, 0);
+});
+
+// تست ۵: امکان انتخاب واسطه (broker) در بخش دریافت و ثبت دریافت از واسطه
+await runPhase4AsyncTest('تخصیص فاکتور — آزمون ۵: نمایش واسطه در فهرست «دریافت از» و ثبت موفق دریافت از واسطه', async () => {
+  const origDbAll = DB.all;
+  const origElVal = globalThis.elVal;
+  const origElNum = globalThis.elNum;
+  memStore.banks = { 1: { id: 1, name: 'ملت', openingBalance: 0 } };
+  memStore.invoices = {};
+  memStore.payments = [];
+
+  DB.all = async (table) => {
+    if (table === 'contacts') {
+      return [
+        { id: 1, name: 'مشتری ۱', type: 'customer' },
+        { id: 2, name: 'تأمین‌کننده ۲', type: 'supplier' },
+        { id: 3, name: 'واسطه کریمی', type: 'broker' }
+      ];
+    }
+    return origDbAll(table);
+  };
+
+  try {
+    capturedUIContent = '';
+    await Pay.showF('receipt', null);
+    assert(capturedUIContent.includes('واسطه کریمی'), 'نام واسطه باید در فرم دریافت جدید نمایش داده شود');
+    assert(!capturedUIContent.includes('تأمین‌کننده ۲'), 'تأمین‌کننده صرف نباید در فهرست دریافت باشد');
+
+    globalThis.elVal = (fid) => {
+      if (fid === 'pCt') return '3';
+      if (fid === 'pDt') return '1404/01/15';
+      if (fid === 'pBk') return '1';
+      if (fid === 'pNt') return 'دریافت از واسطه';
+      return '';
+    };
+    globalThis.elNum = (fid) => (fid === 'pAm' ? 1200000 : 0);
+
+    await Pay.save('receipt', null);
+    assert.strictEqual(memStore.payments.length, 1);
+    assert.strictEqual(memStore.payments[0].type, 'receipt');
+    assert.strictEqual(memStore.payments[0].contactId, 3);
+    assert.strictEqual(memStore.payments[0].amount, 1200000);
+    assert.strictEqual(await Bank.balance(1), 1200000);
+  } finally {
+    DB.all = origDbAll;
+    globalThis.elVal = origElVal;
+    globalThis.elNum = origElNum;
+    Pay._formCtx = null;
+  }
+});
+
+// تست ۶: حذف سند پرداخت متصل باعث بازگشت مانده فاکتور و حذف فاکتور باعث پاک‌سازی ایمن ارجاع در سند بدون حذف اصل پرداخت می‌شود
+await runPhase4AsyncTest('تخصیص فاکتور — آزمون ۶: بازگشت مانده با حذف سند پرداخت و پاک‌سازی ایمن تخصیص هنگام حذف فاکتور', async () => {
+  memStore.invoices = {
+    6401: { id: 6401, invoiceNumber: 'خ-۶۴۰۱', type: 'purchase', date: '1404/01/05', contactId: 2, grandTotal: 2000000, paidAmount: 0, items: [] },
+    6402: { id: 6402, invoiceNumber: 'خ-۶۴۰۲', type: 'purchase', date: '1404/01/06', contactId: 2, grandTotal: 1000000, paidAmount: 0, items: [] }
+  };
+  memStore.payments = [
+    {
+      id: 7401,
+      type: 'payment',
+      contactId: 2,
+      amount: 2500000,
+      date: '1404/01/10',
+      invoiceAllocations: [
+        { invoiceId: 6401, invoiceNumber: 'خ-۶۴۰۱', amount: 2000000 },
+        { invoiceId: 6402, invoiceNumber: 'خ-۶۴۰۲', amount: 500000 }
+      ]
+    }
+  ];
+
+  // حذف فاکتور ۶۴۰۱ نباید کل سند ۷۴۰۱ را پاک کند؛ فقط ارجاع ۶۴۰۱ را حذف کند و ۶۴۰۲ را حفظ کند
+  await Inv.rm(6401, 'purchase');
+  assert.strictEqual(memStore.payments.length, 1, 'سند پرداخت دستی نباید با حذف یکی از فاکتورها پاک شود');
+  assert.strictEqual(memStore.payments[0].invoiceAllocations.length, 1);
+  assert.strictEqual(memStore.payments[0].invoiceAllocations[0].invoiceId, 6402);
+
+  // حذف سند پرداخت ۷۴۰۱ باید مانده فاکتور ۶۴۰۲ را به ۱،۰۰۰،۰۰۰ ریال برگرداند
+  await Pay.rm(7401);
+  assert.strictEqual(memStore.payments.length, 0);
+  const stAfter = FinanceEngine.calculateInvoiceSettlements(Object.values(memStore.invoices), memStore.payments);
+  assert.strictEqual(stAfter.byInvoiceId[6402].remaining, 1000000);
 });
 
 // استخراج داینامیک و دقیق شمارش آزمون‌ها از آرایه ردیابی

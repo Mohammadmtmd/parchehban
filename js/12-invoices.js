@@ -19,6 +19,7 @@ var Inv = {
 
   ll: async function(type) {
     var all = (await FY.byYear('invoices')) || [];
+    var pays = (await FY.byYear('payments')) || [];
     var ls = all.filter(function(i) {
       return i && i.type === type;
     }).sort(function(a, b) {
@@ -33,6 +34,9 @@ var Inv = {
       UI.content('<div class="cd"><div class="em"><i class="bi bi-receipt"></i><p>فاکتوری نیست</p></div></div>');
       return;
     }
+    var settleMap = (type !== 'proforma' && typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.calculateInvoiceSettlements === 'function')
+      ? FinanceEngine.calculateInvoiceSettlements(ls, pays).byInvoiceId
+      : {};
     /* جمع کل */
     var tSub = 0,
       tShip = 0,
@@ -42,12 +46,15 @@ var Inv = {
       tRem = 0,
       tQty = 0;
     ls.forEach(function(v) {
+      var stInfo = settleMap[v.id];
+      var paidVal = stInfo ? stInfo.totalPaid : numOf(v.paidAmount);
+      var remVal = stInfo ? stInfo.remaining : (numOf(v.grandTotal) - numOf(v.paidAmount));
       tSub += v.subtotal || 0;
       tShip += v.shippingCost || 0;
       tDis += v.discount || 0;
       tGrand += v.grandTotal || 0;
-      tPaid += v.paidAmount || 0;
-      tRem += (v.grandTotal || 0) - (v.paidAmount || 0);
+      tPaid += paidVal;
+      tRem += remVal;
       (v.items || []).forEach(function(it) {
         tQty += (parseFloat(it.quantity) || 0);
       });
@@ -61,10 +68,15 @@ var Inv = {
     var r = '';
     for (var i = 0; i < pg.items.length; i++) {
       var v = pg.items[i];
-      var rm = (v.grandTotal || 0) - (v.paidAmount || 0);
-      var sg = rm <= 0 ? 'tg-g' : v.paidAmount > 0 ? 'tg-o' : 'tg-r';
-      var sl = rm <= 0 ? 'تسویه' : v.paidAmount > 0 ? 'جزئی' : 'باز';
-      r += '<tr><td>' + (((pg.page - 1) * pg.per) + i + 1) + '</td><td>' + esc(v.invoiceNumber || '—') + '</td><td>' + v.date + '</td><td>' + esc(cm[v.contactId] || '—') + '</td><td>' + UI.fn(v.subtotal) + '</td><td>' + UI.fn(v.shippingCost || 0) + '</td><td>' + UI.fn(v.discount || 0) + '</td><td style="font-weight:700">' + UI.fn(v.grandTotal) + '</td><td>' + UI.fn(v.paidAmount) + '</td><td style="color:' + (rm > 0 ? 'var(--d)' : 'var(--ok)') + ';font-weight:700">' + UI.fn(rm) + '</td><td><span class="tg ' + sg + '">' + sl + '</span></td><td style="white-space:nowrap"><button class="bi2" title="پیش‌نمایش چاپ و تنظیمات" onclick="Inv.vw(' + v.id + ')"><i class="bi bi-eye"></i></button> <button class="bi2" title="پیش‌نمایش و چاپ A4" onclick="Inv.vw(' + v.id + ',\'a4\')"><span style="font-size:.6rem;font-weight:800">A4</span></button> <button class="bi2" title="پیش‌نمایش و چاپ A5" onclick="Inv.vw(' + v.id + ',\'a5\')"><span style="font-size:.6rem;font-weight:800">A5</span></button> <button class="bi2" title="ویرایش" onclick="Inv.showF(\'' + type + '\',' + v.id + ')"><i class="bi bi-pencil"></i></button> <button class="bi2 d" title="حذف" onclick="Inv.rm(' + v.id + ',\'' + type + '\')"><i class="bi bi-trash3"></i></button></td></tr>';
+      var stInfo = settleMap[v.id];
+      var paidVal = stInfo ? stInfo.totalPaid : numOf(v.paidAmount);
+      var rm = stInfo ? stInfo.remaining : (numOf(v.grandTotal) - numOf(v.paidAmount));
+      var sg = rm <= 0 ? 'tg-g' : paidVal > 0 ? 'tg-o' : 'tg-r';
+      var sl = rm <= 0 ? 'تسویه' : paidVal > 0 ? 'جزئی' : 'باز';
+      var paidSub = (stInfo && stInfo.linkedPaid > 0)
+        ? '<div style="font-size:.68rem;color:var(--txs)" title="دریافت/پرداخت متصل از سند جداگانه">شامل ' + UI.fn(stInfo.linkedPaid) + ' از اسناد</div>'
+        : '';
+      r += '<tr><td>' + (((pg.page - 1) * pg.per) + i + 1) + '</td><td>' + esc(v.invoiceNumber || '—') + '</td><td>' + v.date + '</td><td>' + esc(cm[v.contactId] || '—') + '</td><td>' + UI.fn(v.subtotal) + '</td><td>' + UI.fn(v.shippingCost || 0) + '</td><td>' + UI.fn(v.discount || 0) + '</td><td style="font-weight:700">' + UI.fn(v.grandTotal) + '</td><td>' + UI.fn(paidVal) + paidSub + '</td><td style="color:' + (rm > 0 ? 'var(--d)' : 'var(--ok)') + ';font-weight:700">' + UI.fn(rm) + '</td><td><span class="tg ' + sg + '">' + sl + '</span></td><td style="white-space:nowrap"><button class="bi2" title="پیش‌نمایش چاپ و تنظیمات" onclick="Inv.vw(' + v.id + ')"><i class="bi bi-eye"></i></button> <button class="bi2" title="پیش‌نمایش و چاپ A4" onclick="Inv.vw(' + v.id + ',\'a4\')"><span style="font-size:.6rem;font-weight:800">A4</span></button> <button class="bi2" title="پیش‌نمایش و چاپ A5" onclick="Inv.vw(' + v.id + ',\'a5\')"><span style="font-size:.6rem;font-weight:800">A5</span></button> <button class="bi2" title="ویرایش" onclick="Inv.showF(\'' + type + '\',' + v.id + ')"><i class="bi bi-pencil"></i></button> <button class="bi2 d" title="حذف" onclick="Inv.rm(' + v.id + ',\'' + type + '\')"><i class="bi bi-trash3"></i></button></td></tr>';
     }
     var ft = '<tfoot><tr style="background:var(--bg);font-weight:700">';
     ft += '<td colspan="4">جمع ' + ls.length + ' فاکتور (مقدار کل: ' + UI.fn(tQty) + ')</td>';
@@ -145,6 +157,16 @@ var Inv = {
     this._type = type;
     this._editId = id || null;
     this._allInvoices = (await DB.all('invoices')) || [];
+    this._linkedPaid = 0;
+    this._linkedAllocs = [];
+    if (inv && !isP && typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.calculateInvoiceSettlements === 'function') {
+      var allPaysForInv = (await FY.byYear('payments')) || [];
+      var invSt = FinanceEngine.calculateInvoiceSettlements([inv], allPaysForInv).byInvoiceId[inv.id];
+      if (invSt) {
+        this._linkedPaid = invSt.linkedPaid || 0;
+        this._linkedAllocs = invSt.allocations || [];
+      }
+    }
     this.items = inv ? JSON.parse(JSON.stringify(inv.items || [])) : [];
     this.items.forEach(function(it) {
       if (!it.unit && it.productId && Inv.prodMap[it.productId]) {
@@ -481,9 +503,10 @@ var Inv = {
     var sh = elNum('iSh');
     var dis = elNum('iDis');
     var pd = elNum('iPd');
+    var linkedPd = (this._editId && this._type !== 'proforma') ? (this._linkedPaid || 0) : 0;
     var cm = elNum('iCm');
     var gr = Math.max(0, sub + sh - dis);
-    var rm = gr - pd;
+    var rm = gr - (pd + linkedPd);
     var el = document.getElementById('iT');
     if (el) {
       var shipLabel = this._type === 'purchase' ? 'هزینه حمل خرید' : 'حمل';
@@ -493,7 +516,8 @@ var Inv = {
       if (dis) h += '<div class="inv-ti"><label>تخفیف</label><div class="val g">−' + UI.fn(dis) + '</div></div>';
       if (cm > 0) h += '<div class="inv-ti"><label>کمیسیون واسطه</label><div class="val r">−' + UI.fn(cm) + '</div></div>';
       h += '<div class="inv-ti"><label>نهایی</label><div class="val g">' + UI.fn(gr) + '</div></div>';
-      h += '<div class="inv-ti"><label>پرداختی</label><div class="val">' + UI.fn(pd) + '</div></div>';
+      h += '<div class="inv-ti"><label>' + (linkedPd > 0 ? 'پرداختی هنگام فاکتور' : 'پرداختی') + '</label><div class="val">' + UI.fn(pd) + '</div></div>';
+      if (linkedPd > 0) h += '<div class="inv-ti"><label>اسناد دریافت/پرداخت متصل</label><div class="val g">' + UI.fn(linkedPd) + '</div></div>';
       if (this._type === 'sale' || this._type === 'proforma') {
         var invProfitCalc = FinanceEngine.calculateInvoiceProfit({
           subtotal: sub,
@@ -598,8 +622,11 @@ var Inv = {
       UI.toast('تخفیف از جمع فاکتور بیشتر است', 'e');
       return;
     }
-    if (pd > grand) {
-      UI.toast('مبلغ پرداختی از مبلغ نهایی فاکتور بیشتر است', 'e');
+    var linkedPd = (id && !isP) ? (this._linkedPaid || 0) : 0;
+    if (pd + linkedPd > grand) {
+      UI.toast(linkedPd > 0
+        ? 'مجموع پرداختی فاکتور و اسناد متصل (' + UI.fn(pd + linkedPd) + ') از مبلغ نهایی فاکتور بیشتر است'
+        : 'مبلغ پرداختی از مبلغ نهایی فاکتور بیشتر است', 'e');
       return;
     }
 
@@ -749,7 +776,12 @@ var Inv = {
     var isS = v.type === 'sale';
     var isPf = v.type === 'proforma';
     var items = v.items || [];
-    var rm = numOf(v.grandTotal) - numOf(v.paidAmount);
+    var allPaysHtml = isPf ? [] : ((await DB.all('payments')) || []);
+    var settledInfo = (!isPf && typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.calculateInvoiceSettlements === 'function')
+      ? FinanceEngine.calculateInvoiceSettlements([v], allPaysHtml).byInvoiceId[v.id]
+      : null;
+    var totalPaidHtml = settledInfo ? settledInfo.totalPaid : numOf(v.paidAmount);
+    var rm = settledInfo ? settledInfo.remaining : (numOf(v.grandTotal) - numOf(v.paidAmount));
     var cBal = isPf ? 0 : await this.contactBal(v.contactId);
     var cObj = cMapFull[v.contactId];
     var custName = cm[v.contactId] || '—';
@@ -843,7 +875,7 @@ var Inv = {
       if (v.shippingCost) h += addRow(v.type === 'purchase' ? 'هزینه حمل خرید' : 'هزینه حمل', UI.fn(v.shippingCost) + ' ریال', false);
       if (v.discount) h += addRow('تخفیف', '−' + UI.fn(v.discount) + ' ریال', false, '#16a34a');
       h += addRow('مبلغ قابل پرداخت', UI.fn(v.grandTotal) + ' ریال', true);
-      if (v.paidAmount && !isPf && opts.showPayment) h += addRow('مبلغ پرداخت شده', UI.fn(v.paidAmount) + ' ریال', false, '#16a34a');
+      if (totalPaidHtml > 0 && !isPf && opts.showPayment) h += addRow('مبلغ پرداخت شده', UI.fn(totalPaidHtml) + ' ریال', false, '#16a34a');
       if (rm > 0 && !isPf && opts.showPayment) h += addRow('مانده این فاکتور', UI.fn(rm) + ' ریال', false, '#dc2626');
       if (!isPf && Math.abs(cBal) > 0 && opts.showTotalBal) {
         var balLabel = cBal > 0 ? 'بدهکار' : 'بستانکار';
@@ -1257,13 +1289,23 @@ var Inv = {
   rm: async function(id, type) {
     /* سطح دسترسی */
     if (!Perm.require('delete', 'حذف')) return;
-    var pays = await DB.all('payments');
+    var pays = (await DB.all('payments')) || [];
     var linked = pays.filter(function(p) {
       return p.sourceInvoiceId === id;
     });
+    var manualAllocPays = pays.filter(function(p) {
+      return p && !p.sourceInvoiceId && Array.isArray(p.invoiceAllocations) &&
+        p.invoiceAllocations.some(function(a) { return a && a.invoiceId === id; });
+    });
     var msg = 'این فاکتور حذف شود؟ موجودی انبار هم اصلاح می‌شود.';
     if (linked.length) msg += '\nسند دریافت/پرداخت خودکار مربوط به آن هم حذف می‌شود.';
+    if (manualAllocPays.length) msg += '\nاتصال ' + manualAllocPays.length + ' سند دریافت/پرداخت دستی به این فاکتور نیز برداشته می‌شود (خود اسناد حفظ می‌مانند).';
     if (!await UI.confirm(msg)) return;
+    for (var mi = 0; mi < manualAllocPays.length; mi++) {
+      var mp = manualAllocPays[mi];
+      mp.invoiceAllocations = (mp.invoiceAllocations || []).filter(function(a) { return a && a.invoiceId !== id; });
+      await DB.put('payments', mp);
+    }
     await this.removeAutoPayment(id);
     await DB.del('invoices', id);
     UI.toast('فاکتور حذف شد');

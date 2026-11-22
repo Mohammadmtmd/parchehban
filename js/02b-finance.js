@@ -748,6 +748,172 @@ var FinanceEngine = (function() {
   }
 
   /**
+   * ══════════════════════════════════════════════════════════════════════════════
+   * محاسبه تسویه و مانده واقعی فاکتورها با لحاظ دریافت‌ها و پرداخت‌های متصل (Pure)
+   * ══════════════════════════════════════════════════════════════════════════════
+   * قوانین:
+   * ۱. فیلد paidAmount روی خود فاکتور (= سند خودکار sourceInvoiceId) مستقیماً شمرده می‌شود
+   *    و سند sourceInvoiceId دوباره جمع زده نمی‌شود (جلوگیری از شمارش مضاعف).
+   * ۲. دریافت‌ها/پرداخت‌های بعدی که از بخش پرداخت و دریافت به صورت دستی یا چندفاکتوری
+   *    به فاکتورها تخصیص داده شده‌اند (p.invoiceAllocations) به totalPaid اضافه می‌شوند.
+   * ۳. حواله‌های بین‌بانکی و اسناد خودکار فاکتور/چک به عنوان تخصیص دستی دوباره شمرده نمی‌شوند.
+   * ۴. با ارسال options.excludePaymentId می‌توان مانده پیش از اثر یک سند مشخص را هنگام ویرایش محاسبه کرد.
+   */
+  function calculateInvoiceSettlements(invoices, payments, options) {
+    var invs = invoices || [];
+    var pays = payments || [];
+    var opts = options || {};
+    var excludeId = opts.excludePaymentId != null ? String(opts.excludePaymentId) : null;
+
+    var byInvoiceId = {};
+    var byInvoiceUid = {};
+    var list = [];
+
+    invs.forEach(function(inv) {
+      if (!inv || inv.id == null) return;
+      var grand = Math.max(0, safeNum(inv.grandTotal));
+      var directPaid = (inv.type === 'proforma') ? 0 : Math.max(0, safeNum(inv.paidAmount));
+      var entry = {
+        invoiceId: inv.id,
+        invoiceUid: inv.uid || null,
+        invoiceNumber: inv.invoiceNumber || '',
+        type: inv.type || '',
+        date: inv.date || '',
+        contactId: inv.contactId || null,
+        grandTotal: grand,
+        directPaid: directPaid,
+        linkedPaid: 0,
+        totalPaid: directPaid,
+        remaining: grand - directPaid,
+        overpaid: Math.max(0, directPaid - grand),
+        status: 'open',
+        statusLabel: 'باز',
+        allocations: []
+      };
+      byInvoiceId[inv.id] = entry;
+      if (inv.uid) byInvoiceUid[inv.uid] = entry;
+      list.push(entry);
+    });
+
+    pays.forEach(function(p) {
+      if (!p) return;
+      if (excludeId !== null && String(p.id) === excludeId) return;
+      if (p.sourceInvoiceId || p.sourceCheckId) return;
+      if (p.transferId || p.transferTo || p.transferFrom) return;
+      if (!Array.isArray(p.invoiceAllocations) || !p.invoiceAllocations.length) return;
+
+      p.invoiceAllocations.forEach(function(alloc) {
+        if (!alloc) return;
+        var allocAmt = safeNum(alloc.amount);
+        if (allocAmt <= 0) return;
+
+        var entry = (alloc.invoiceId != null ? byInvoiceId[alloc.invoiceId] : null) ||
+                    (alloc.invoiceUid ? byInvoiceUid[alloc.invoiceUid] : null);
+        if (!entry || entry.type === 'proforma') return;
+
+        // تطابق نوع سند با نوع فاکتور: فروش با دریافت، خرید با پرداخت
+        var expectedPayType = entry.type === 'sale' ? 'receipt' : (entry.type === 'purchase' ? 'payment' : null);
+        if (!expectedPayType || p.type !== expectedPayType) return;
+
+        entry.linkedPaid += allocAmt;
+        entry.allocations.push({
+          paymentId: p.id,
+          date: p.date || '',
+          amount: allocAmt,
+          bankId: p.bankId || null,
+          description: p.description || p.notes || ''
+        });
+      });
+    });
+
+    list.forEach(function(entry) {
+      entry.totalPaid = entry.directPaid + entry.linkedPaid;
+      var rawRem = entry.grandTotal - entry.totalPaid;
+      if (Math.abs(rawRem) < 0.01) rawRem = 0;
+      entry.remaining = rawRem;
+      entry.overpaid = rawRem < 0 ? Math.abs(rawRem) : 0;
+      if (entry.remaining <= 0) {
+        entry.status = 'settled';
+        entry.statusLabel = 'تسویه';
+      } else if (entry.totalPaid > 0) {
+        entry.status = 'partial';
+        entry.statusLabel = 'جزئی';
+      } else {
+        entry.status = 'open';
+        entry.statusLabel = 'باز';
+      }
+    });
+
+    return {
+      byInvoiceId: byInvoiceId,
+      byInvoiceUid: byInvoiceUid
+    };
+  }
+
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════
+   * تخصیص آبشاری (چندفاکتوری به ترتیب انتخاب) یک مبلغ دریافت/پرداخت به فاکتورها
+   * ══════════════════════════════════════════════════════════════════════════════
+   * ترتیب انتخاب کاربر دقیقاً حفظ می‌شود: فاکتور اول تا صفر شدن مانده پر می‌شود،
+   * سپس باقیمانده به فاکتور دوم، سوم و... سرریز می‌کند و هر مازاد اضافه به عنوان
+   * مبلغ تخصیص‌نیافته (علی‌الحساب در حساب شخص) باقی می‌ماند.
+   */
+  function allocatePaymentToInvoices(paymentAmount, orderedInvoices) {
+    var pool = Math.max(0, safeNum(paymentAmount));
+    var list = Array.isArray(orderedInvoices) ? orderedInvoices : [];
+    var items = [];
+    var totalAllocated = 0;
+
+    list.forEach(function(invItem) {
+      if (!invItem) return;
+      var invId = invItem.invoiceId != null ? invItem.invoiceId : invItem.id;
+      if (invId == null) return;
+      var remBefore = Math.max(0, safeNum(
+        invItem.remainingBeforePayment != null
+          ? invItem.remainingBeforePayment
+          : (invItem.remaining != null ? invItem.remaining : (safeNum(invItem.grandTotal) - safeNum(invItem.paidAmount)))
+      ));
+      var allocAmt = Math.min(pool, remBefore);
+      if (allocAmt < 0.01) allocAmt = 0;
+      pool = Math.max(0, pool - allocAmt);
+      if (pool < 0.01) pool = 0;
+      var remAfter = Math.max(0, remBefore - allocAmt);
+      if (remAfter < 0.01) remAfter = 0;
+
+      totalAllocated += allocAmt;
+      items.push({
+        invoiceId: invId,
+        invoiceUid: invItem.invoiceUid || invItem.uid || null,
+        invoiceNumber: invItem.invoiceNumber || '',
+        date: invItem.date || '',
+        grandTotal: safeNum(invItem.grandTotal),
+        remainingBefore: remBefore,
+        allocatedAmount: allocAmt,
+        remainingAfter: remAfter,
+        isFullySettled: remAfter <= 0
+      });
+    });
+
+    var allocations = items.filter(function(r) {
+      return r.allocatedAmount > 0;
+    }).map(function(r) {
+      return {
+        invoiceId: r.invoiceId,
+        invoiceUid: r.invoiceUid || null,
+        invoiceNumber: r.invoiceNumber,
+        amount: r.allocatedAmount
+      };
+    });
+
+    return {
+      items: items,
+      allocations: allocations,
+      totalAllocated: totalAllocated,
+      unallocatedAmount: pool
+    };
+  }
+
+  /**
    * پالایش دقیق هزینه‌های عملیاتی دوره‌ای و تفکیک جریان‌های نامربوط
    * @param {Array} payments - آرایه رکوردهای جدول payments
    * @param {number} startNum - تاریخ آغاز دوره به صورت عدد
@@ -797,9 +963,10 @@ var FinanceEngine = (function() {
         return;
       }
 
-      // ۳. پرداخت متصل به فاکتور خرید یا دارای سرفصل تسویه بستانکاران / تأمین‌کنندگان
+      // ۳. پرداخت متصل به فاکتور خرید (خودکار یا تخصیص دستی/چندفاکتوری) یا دارای سرفصل تسویه بستانکاران
       var cat = (p.category || '').trim();
-      if (p.sourceInvoiceId || isSupplierSettlementCategory(cat)) {
+      var hasInvAllocs = Array.isArray(p.invoiceAllocations) && p.invoiceAllocations.some(function(a) { return a && safeNum(a.amount) > 0; });
+      if (p.sourceInvoiceId || hasInvAllocs || isSupplierSettlementCategory(cat)) {
         supplierSettlements += amt;
         return;
       }
@@ -2428,6 +2595,8 @@ var FinanceEngine = (function() {
     findLatestValidPurchaseForProduct: findLatestValidPurchaseForProduct,
     suggestSaleBuyPrice: suggestSaleBuyPrice,
     detectDuplicatePurchaseShipping: detectDuplicatePurchaseShipping,
+    calculateInvoiceSettlements: calculateInvoiceSettlements,
+    allocatePaymentToInvoices: allocatePaymentToInvoices,
     calculateItemProfit: calculateItemProfit,
     calculateInvoiceProfit: calculateInvoiceProfit,
     filterOperatingExpenses: filterOperatingExpenses,
