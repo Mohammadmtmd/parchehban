@@ -145,22 +145,118 @@ console.log('✓ تمامی ۱۲ آزمون تخصصی مانده بانک و ن
 
 console.log('\n--- راه‌اندازی محیط Mock ایزوله در رم جهت آزمون‌های واقعی توابع سیستم ---');
 // شبیه‌سازی متغیرها و ماک دیتابیس در حافظه
+globalThis.toEnDigits = function(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/[۰-۹]/g, function(ch) { return String('۰۱۲۳۴۵۶۷۸۹'.indexOf(ch)); })
+    .replace(/[٠-٩]/g, function(ch) { return String('٠١٢٣٤٥٦٧٨٩'.indexOf(ch)); });
+};
 globalThis.numOf = function(val) {
+  if (typeof val === 'number') return isFinite(val) ? val : 0;
   if (val === null || val === undefined || val === '') return 0;
-  var n = parseFloat(String(val).replace(/,/g, '').trim());
+  var t = globalThis.toEnDigits(val).replace(/\u066B/g, '.').replace(/[,\u066C\u060C\u2009\u00A0\s_]/g, '');
+  var n = parseFloat(t);
   return isNaN(n) ? 0 : n;
 };
 globalThis.intOf = function(val) {
-  var n = parseInt(val, 10);
+  var n = parseInt(globalThis.toEnDigits(val), 10);
   return isNaN(n) ? 0 : n;
+};
+globalThis.num2fa = function(n) {
+  return (n || 0).toLocaleString('fa-IR') + ' ریال';
 };
 globalThis.esc = function(val) { return String(val || ''); };
 globalThis.todayJ = function() { return '1404/01/15'; };
 globalThis.Jalali = {
-  parse: function(d) { return d; },
-  today: function() { return '1404/01/15'; },
-  addMonths: function(d, m) { return '1403/12/15'; },
-  toJDN: function(y, m, d) { return y * 365 + (m - 1) * 30 + d; }
+  _breaks: [-61, 9, 38, 199, 426, 686, 756, 818, 1111, 1181, 1210, 1635, 2060, 2097, 2192, 2262, 2324, 2394, 2456, 3178],
+  _div: function(a, b) { return ~~(a / b); },
+  _mod: function(a, b) { return a - ~~(a / b) * b; },
+  _cal: function(jy) {
+    var bl = this._breaks.length, gy = jy + 621, leapJ = -14, jp = this._breaks[0], jm, jump = 0, leap, n, i;
+    for (i = 1; i < bl; i += 1) {
+      jm = this._breaks[i]; jump = jm - jp;
+      if (jy < jm) break;
+      leapJ = leapJ + this._div(jump, 33) * 8 + this._div(this._mod(jump, 33), 4);
+      jp = jm;
+    }
+    n = jy - jp;
+    leapJ = leapJ + this._div(n, 33) * 8 + this._div(this._mod(n, 33) + 3, 4);
+    if (this._mod(jump, 33) === 4 && jump - n === 4) leapJ += 1;
+    var leapG = this._div(gy, 4) - this._div((this._div(gy, 100) + 1) * 3, 4) - 150;
+    var march = 20 + leapJ - leapG;
+    if (jump - n < 6) n = n - jump + this._div(jump + 4, 33) * 33;
+    leap = this._mod(this._mod(n + 1, 33) - 1, 4);
+    if (leap === -1) leap = 4;
+    return { leap: leap, gy: gy, march: march };
+  },
+  isLeap: function(jy) { return this._cal(jy).leap === 0; },
+  monthDays: function(jy, jm) {
+    if (jm <= 6) return 31;
+    if (jm <= 11) return 30;
+    return this.isLeap(jy) ? 30 : 29;
+  },
+  dateToJDN: function(gy, gm, gd) {
+    var d = this._div((gy + this._div(gm - 8, 6) + 100100) * 1461, 4) +
+      this._div(153 * this._mod(gm + 9, 12) + 2, 5) + gd - 34840408;
+    return d - this._div(this._div(gy + 100100 + this._div(gm - 8, 6), 100) * 3, 4) + 752;
+  },
+  jdnToDate: function(jdn) {
+    var j = 4 * jdn + 139361631;
+    j = j + this._div(this._div(4 * jdn + 183187720, 146097) * 3, 4) * 4 - 3908;
+    var i = this._div(this._mod(j, 1461), 4) * 5 + 308;
+    var gd = this._div(this._mod(i, 153), 5) + 1;
+    var gm = this._mod(this._div(i, 153), 12) + 1;
+    var gy = this._div(j, 1461) - 100100 + this._div(8 - gm, 6);
+    return new Date(gy, gm - 1, gd);
+  },
+  toJDN: function(jy, jm, jd) {
+    var r = this._cal(jy);
+    return this.dateToJDN(r.gy, 3, r.march) + (jm - 1) * 31 - this._div(jm, 7) * (jm - 7) + jd - 1;
+  },
+  fromJDN: function(jdn) {
+    var gy = this.jdnToDate(jdn).getFullYear(), jy = gy - 621;
+    var r = this._cal(jy), jdn1f = this.dateToJDN(gy, 3, r.march), jd, jm, k;
+    k = jdn - jdn1f;
+    if (k >= 0) {
+      if (k <= 185) { jm = 1 + this._div(k, 31); jd = this._mod(k, 31) + 1; return [jy, jm, jd]; }
+      else k -= 186;
+    } else {
+      jy -= 1; k += 179;
+      if (r.leap === 1) k += 1;
+    }
+    jm = 7 + this._div(k, 30); jd = this._mod(k, 30) + 1;
+    return [jy, jm, jd];
+  },
+  format: function(jy, jm, jd) {
+    return jy + '/' + String(jm).padStart(2, '0') + '/' + String(jd).padStart(2, '0');
+  },
+  parse: function(s) {
+    if (!s) return null;
+    var c = globalThis.toEnDigits(String(s).trim()).replace(/[-.]/g, '/');
+    var m = c.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+    if (!m && /^\d{8}$/.test(c)) m = [null, c.slice(0, 4), c.slice(4, 6), c.slice(6, 8)];
+    if (!m) return null;
+    var jy = parseInt(m[1], 10), jm = parseInt(m[2], 10), jd = parseInt(m[3], 10);
+    if (jy < 1200 || jy > 1700 || jm < 1 || jm > 12 || jd < 1 || jd > this.monthDays(jy, jm)) return null;
+    return this.format(jy, jm, jd);
+  },
+  addDays: function(dateStr, days) {
+    var norm = this.parse(dateStr);
+    if (!norm) return null;
+    var p = norm.split('/').map(Number);
+    var r = this.fromJDN(this.toJDN(p[0], p[1], p[2]) + days);
+    return this.format(r[0], r[1], r[2]);
+  },
+  addMonths: function(dateStr, months) {
+    var norm = this.parse(dateStr);
+    if (!norm) return '1403/12/15';
+    var p = norm.split('/').map(Number);
+    var total = (p[0] * 12 + (p[1] - 1)) + months;
+    var jy = Math.floor(total / 12), jm = (total % 12) + 1;
+    var jd = Math.min(p[2], this.monthDays(jy, jm));
+    return this.format(jy, jm, jd);
+  },
+  today: function() { return '1404/01/15'; }
 };
 globalThis.Perm = { require: function() { return true; }, can: function() { return true; } };
 globalThis.STATE = { yearId: 1 };
@@ -361,6 +457,7 @@ globalThis.F = {
 await import('../js/12-invoices.js');
 await import('../js/13-payments.js');
 await import('../js/14-checks.js');
+await import('../js/14b-rasgiri.js');
 await import('../js/15-ledger.js');
 await import('../js/17-product-ledger.js');
 await import('../js/18-reports.js');
@@ -371,6 +468,7 @@ await import('../js/03c-sync.js');
 const Inv = globalThis.Inv;
 const Pay = globalThis.Pay;
 const Chk = globalThis.Chk;
+const Rasgiri = globalThis.Rasgiri;
 const Led = globalThis.Led;
 const PLed = globalThis.PLed;
 const Rep = globalThis.Rep;
@@ -381,6 +479,7 @@ const Sync = globalThis.Sync;
 assert(Inv && typeof Inv.syncAutoPayment === 'function', 'ماژول Inv باید در دسترس باشد');
 assert(Pay && typeof Pay.save === 'function', 'ماژول Pay باید در دسترس باشد');
 assert(Chk && typeof Chk.save === 'function', 'ماژول Chk باید در دسترس باشد');
+assert(Rasgiri && typeof Rasgiri.generateCheckSchedule === 'function', 'ماژول Rasgiri باید در دسترس باشد');
 assert(Led && typeof Led.show === 'function', 'ماژول Led باید در دسترس باشد');
 assert(PLed && typeof PLed.show === 'function', 'ماژول PLed باید در دسترس باشد');
 assert(Rep && typeof Rep.summary === 'function', 'ماژول Rep باید در دسترس باشد');
@@ -388,7 +487,7 @@ assert(Bank && typeof Bank.balance === 'function', 'ماژول Bank باید د�
 assert(Dash && typeof Dash.load === 'function', 'ماژول Dash باید در دسترس باشد');
 assert(Sync && typeof Sync.refreshCurrentView === 'function', 'ماژول Sync باید در دسترس باشد');
 
-console.log('✓ محیط Mock در رم و ماژول‌های Inv، Pay، Chk، Led، PLed، Rep، Bank، Dash و Sync با موفقیت مقداردهی شدند.');
+console.log('✓ محیط Mock در رم و ماژول‌های Inv، Pay، Chk، Rasgiri، Led، PLed، Rep، Bank، Dash و Sync با موفقیت مقداردهی شدند.');
 
 console.log('\n--- اجرای آزمون واقعی ۲: رفتار دقیق Inv.syncAutoPayment در ویرایش و حذف ---');
 await (async () => {
@@ -2003,6 +2102,212 @@ await runPhase4AsyncTest('همگام‌سازی — آزمون ۳: حفظ زیر
     memStore.checks = [];
     memStore.payments = [];
   }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// آزمون ۲۹: راس‌گیری معکوس — تولید تمام ۶ الگوی قابل رفرش با جمع و راس دقیق
+// ═══════════════════════════════════════════════════════════════
+await runPhase4AsyncTest('آزمون ۲۹: راس‌گیری معکوس — تمام ۶ الگو در رفرش پیشنهادهای متفاوت با جمع و راس دقیق می‌دهند', async () => {
+  const sigs = new Set();
+  for (let v = 0; v < 6; v++) {
+    const plan = Rasgiri.generateCheckSchedule({
+      baseDate: '1404/01/15',
+      targetDays: 60,
+      totalAmount: 150000000,
+      cashAmount: 0,
+      checkCount: 4,
+      roundStep: 1000000,
+      avoidFriday: true,
+      variant: v
+    });
+    assert.strictEqual(plan.valid, true, `الگوی ${v} باید معتبر باشد`);
+    assert.strictEqual(plan.rows.length, 4, `الگوی ${v} باید ۴ چک داشته باشد`);
+    const sumAmt = plan.rows.reduce((s, r) => s + r.amount, 0);
+    assert.strictEqual(sumAmt, 150000000, `الگوی ${v}: جمع مبلغ چک‌ها باید دقیقاً ۱۵۰٬۰۰۰٬۰۰۰ باشد`);
+    assert.strictEqual(plan.actualAvgDays, 60, `الگوی ${v}: راس محاسبه‌شده باید دقیقاً ۶۰ روز باشد`);
+    assert.strictEqual(plan.actualRasDate, plan.targetRasDate, `الگوی ${v}: تاریخ دقیق راس باید منطبق بر تاریخ هدف باشد`);
+
+    // هیچ سررسیدی نباید جمعه باشد و تاریخ‌ها صعودی اکید باشند
+    for (let i = 0; i < plan.rows.length; i++) {
+      const p = plan.rows[i].date.split('/').map(Number);
+      const dow = Jalali.jdnToDate(Jalali.toJDN(p[0], p[1], p[2])).getDay();
+      assert.notStrictEqual(dow, 5, `چک ${i + 1} در الگوی ${v} نباید به جمعه بیفتد (${plan.rows[i].date})`);
+      if (i > 0) {
+        assert(plan.rows[i].days > plan.rows[i - 1].days, `تاریخ سررسید چک‌ها در الگوی ${v} باید صعودی باشد`);
+      }
+    }
+    sigs.add(plan.rows.map(r => r.amount + '@' + r.date).join('|'));
+  }
+  assert(sigs.size >= 5, `حداقل ۵ پیشنهاد متمایز از ۶ رفرش باید تولید شود (تعداد متمایز: ${sigs.size})`);
+});
+
+// ═══════════════════════════════════════════════════════════════
+// آزمون ۳۰: راس‌گیری معکوس با تاریخ راس هدف (targetMode='date')، پیش‌پرداخت نقدی و موارد مرزی
+// ═══════════════════════════════════════════════════════════════
+await runPhase4AsyncTest('آزمون ۳۰: پشتیبانی از تاریخ راس هدف، پیش‌پرداخت نقدی و موارد مرزی تک‌چک/روز صفر/رُند بزرگ', async () => {
+  // ۱) تاریخ هدف: 1404/01/15 + 45 روز = 1404/02/29 + با ۳۵M نقدی از کل ۱۲۰M
+  const targetDt = Jalali.addDays('1404/01/15', 45);
+  const planCash = Rasgiri.generateCheckSchedule({
+    baseDate: '1404/01/15',
+    targetMode: 'date',
+    targetDate: targetDt,
+    totalAmount: 120000000,
+    cashAmount: 30000000,
+    checkCount: 3,
+    roundStep: 1000000,
+    avoidFriday: true,
+    variant: 0
+  });
+  assert.strictEqual(planCash.valid, true);
+  assert.strictEqual(planCash.targetDays, 45);
+  const chkSum = planCash.rows.reduce((s, r) => s + r.amount, 0);
+  assert.strictEqual(chkSum, 90000000, 'جمع چک‌ها باید پس از کسر نقدی ۹۰M باشد');
+  assert.strictEqual(chkSum + planCash.cashAmount, 120000000);
+  assert.strictEqual(planCash.actualAvgDays, 45, 'راس وزنی کل (نقدی روز صفر + ۳ چک) باید دقیقاً ۴۵ روز شود');
+
+  // ۲) تک‌چک (checkCount = 1)
+  const oneChk = Rasgiri.generateCheckSchedule({
+    baseDate: '1404/01/15',
+    targetDays: 30,
+    totalAmount: 50000000,
+    checkCount: 1,
+    avoidFriday: false
+  });
+  assert.strictEqual(oneChk.rows.length, 1);
+  assert.strictEqual(oneChk.rows[0].amount, 50000000);
+  assert.strictEqual(oneChk.actualAvgDays, 30);
+
+  // ۳) گام رُند بزرگ‌تر از سهم هر چک (roundStep=50M ولی کل فاکتور ۱۰M با ۴ چک)
+  const tinyInv = Rasgiri.generateCheckSchedule({
+    baseDate: '1404/01/15',
+    targetDays: 40,
+    totalAmount: 10000000,
+    checkCount: 4,
+    roundStep: 50000000,
+    avoidFriday: true
+  });
+  assert.strictEqual(tinyInv.valid, true);
+  assert.strictEqual(tinyInv.rows.reduce((s, r) => s + r.amount, 0), 10000000);
+  assert.strictEqual(tinyInv.actualAvgDays, 40);
+
+  // ۴) روز راس = صفر
+  const zeroDay = Rasgiri.generateCheckSchedule({
+    baseDate: '1404/01/15',
+    targetDays: 0,
+    totalAmount: 30000000,
+    checkCount: 2
+  });
+  assert.strictEqual(zeroDay.valid, true);
+  assert.strictEqual(zeroDay.rows.reduce((s, r) => s + r.amount, 0), 30000000);
+  assert.strictEqual(zeroDay.actualAvgDays, 0);
+});
+
+// ═══════════════════════════════════════════════════════════════
+// آزمون ۳۱: اتصال به فاکتور و صدور مستقیم چک‌ها از راس‌گیری با تضمین عدم بیش‌تخصیص و عدم دوباره‌شماری
+// ═══════════════════════════════════════════════════════════════
+await runPhase4AsyncTest('آزمون ۳۱: انتخاب فاکتور و صدور مستقیم چک‌ها در سیستم با تخصیص ایمن بدون دوباره‌شماری', async () => {
+  memStore.invoices = {};
+  memStore.payments = [];
+  memStore.checks = [];
+  memStore.contacts = [{ id: 1, name: 'مشتری تست', type: 'customer' }];
+  memStore.banks = { 1: { id: 1, name: 'بانک ملت', openingBalance: 0 } };
+
+  memStore.invoices[9901] = {
+    id: 9901,
+    uid: 'u-inv-9901',
+    invoiceNumber: 'ف-۹۹۰۱',
+    type: 'sale',
+    contactId: 1,
+    date: '1404/01/20',
+    grandTotal: 100000000,
+    paidAmount: 0
+  };
+  // پیش‌پرداخت قبلی ۲۰M برای تست محاسبه مانده واقعی ۸۰M
+  memStore.payments.push({
+    id: 9950,
+    type: 'receipt',
+    contactId: 1,
+    date: '1404/01/20',
+    amount: 20000000,
+    bankAccountId: 1,
+    invoiceAllocations: [{ invoiceId: 9901, invoiceUid: 'u-inv-9901', invoiceNumber: 'ف-۹۹۰۱', amount: 20000000 }]
+  });
+
+  const origElVal = globalThis.elVal;
+  try {
+    Rasgiri._mode = 'suggest';
+    Rasgiri._baseDate = '1404/01/20';
+    Rasgiri._pickInvoices = [memStore.invoices[9901]];
+    Rasgiri._pickSettle = FinanceEngine.calculateInvoiceSettlements(Object.values(memStore.invoices), memStore.payments, { checks: memStore.checks }).byInvoiceId;
+    Rasgiri.pickInvoice(9901);
+
+    assert.strictEqual(Rasgiri._planCfg.totalAmount, 80000000, 'مبلغ پیشنهادی باید برابر مانده واقعی فاکتور (۸۰M) باشد');
+    assert.strictEqual(Rasgiri._baseDate, '1404/01/20', 'تاریخ مبنا باید از تاریخ فاکتور پر شود');
+    assert.strictEqual(Rasgiri._planRows.reduce((s, r) => s + r.amount, 0), 80000000);
+
+    const nRows = Rasgiri._planRows.length;
+    globalThis.elVal = (id) => {
+      if (id === 'rgIssType') return 'received';
+      if (id === 'rgIssContact') return '1';
+      if (id === 'rgIssBankName') return 'ملت';
+      if (id === 'rgIssBankAcc') return '1';
+      if (id === 'rgIssDate') return '1404/01/20';
+      if (id === 'rgIssInvId') return '9901';
+      if (id && id.startsWith('rgIssNo_')) {
+        const idx = parseInt(id.split('_')[1], 10);
+        return String(501001 + idx);
+      }
+      return '';
+    };
+
+    const created = await Rasgiri.submitIssuedChecks();
+    assert.strictEqual(created.length, nRows, 'تعداد چک‌های ثبت‌شده باید با ردیف‌های برنامه برابر باشد');
+    assert.strictEqual(memStore.checks.length, nRows);
+
+    // بررسی تخصیص و نبود دوباره‌شماری
+    const postSettle = FinanceEngine.calculateInvoiceSettlements(Object.values(memStore.invoices), memStore.payments, { checks: memStore.checks }).byInvoiceId[9901];
+    assert.strictEqual(postSettle.linkedPaid, 100000000);
+    assert.strictEqual(postSettle.totalPaid, 100000000);
+    const payAllocSum = postSettle.allocations.filter(a => a.paymentId).reduce((s, a) => s + a.amount, 0);
+    const chkAllocSum = postSettle.allocations.filter(a => a.checkId).reduce((s, a) => s + a.amount, 0);
+    assert.strictEqual(payAllocSum, 20000000);
+    assert.strictEqual(chkAllocSum, 80000000);
+    assert.strictEqual(postSettle.remaining, 0, 'مانده فاکتور پس از ثبت چک‌ها باید دقیقاً صفر شود (بدون دوباره‌شماری)');
+  } finally {
+    globalThis.elVal = origElVal;
+    Rasgiri.resetPlan();
+    memStore.invoices = {};
+    memStore.payments = [];
+    memStore.checks = [];
+    memStore.contacts = null;
+    memStore.banks = {};
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// آزمون ۳۲: حفظ وضعیت صفحه راس‌گیری هنگام همگام‌سازی خودکار پس‌زمینه (Sync.refreshCurrentView)
+// ═══════════════════════════════════════════════════════════════
+await runPhase4AsyncTest('آزمون ۳۲: حفظ ورودی‌ها و پیشنهادهای فعال صفحه راس‌گیری هنگام همگام‌سازی پس‌زمینه', async () => {
+  currentPage = 'rasgiri';
+  Rasgiri._mode = 'suggest';
+  Rasgiri._baseDate = '1404/02/01';
+  Rasgiri._planCfg.totalAmount = 95000000;
+  Rasgiri._planCfg.targetDays = 75;
+  Rasgiri._planCfg.checkCount = 3;
+  Rasgiri.generateSuggestion(true);
+
+  const beforeSig = Rasgiri._planRows.map(r => r.amount + '@' + r.date).join('|');
+  capturedUIContent = '';
+  await Sync.refreshCurrentView();
+
+  assert.strictEqual(capturedUIContent, '', 'همگام‌سازی نباید فرم و پیشنهادهای فعال راس‌گیری را بازنویسی کند');
+  assert.strictEqual(Rasgiri._mode, 'suggest');
+  assert.strictEqual(Rasgiri._planCfg.totalAmount, 95000000);
+  assert.strictEqual(Rasgiri._planRows.map(r => r.amount + '@' + r.date).join('|'), beforeSig);
+
+  Rasgiri.resetPlan();
+  Rasgiri._mode = 'manual';
+  currentPage = '';
 });
 
 // استخراج داینامیک و دقیق شمارش آزمون‌ها از آرایه ردیابی

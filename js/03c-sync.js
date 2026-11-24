@@ -660,6 +660,7 @@ var Sync = {
             if (Rep._btns) Rep._btns();
           }
           return;
+        case 'rasgiri':
         case 'free-invoice':
         case 'settings':
         case 'users':
