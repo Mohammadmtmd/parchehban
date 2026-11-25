@@ -806,7 +806,6 @@ var FinanceEngine = (function() {
       if (!p) return;
       if (excludeId !== null && String(p.id) === excludeId) return;
       if (p.sourceInvoiceId || p.sourceCheckId) return;
-      if (p.transferId || p.transferTo || p.transferFrom) return;
       if (!Array.isArray(p.invoiceAllocations) || !p.invoiceAllocations.length) return;
 
       p.invoiceAllocations.forEach(function(alloc) {

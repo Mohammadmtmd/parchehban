@@ -143,16 +143,28 @@ var Pay = {
            صفحه چک‌ها اصلاح گردد تا دو طرف ناهماهنگ نشوند. */
         actions = '<button class="bi2" title="رفتن به چک‌ها" onclick="location.hash=\'#checks\'"><i class="bi bi-card-checklist"></i></button>' +
           ' <button class="bi2" title="ویرایش از طریق چک" onclick="Pay.autoNoteChk()"><i class="bi bi-lock"></i></button>';
+      } else if (p.transferId) {
+        var trArg = typeof p.transferId === 'number' ? p.transferId : ('\'' + esc(String(p.transferId)) + '\'');
+        actions = '<button class="bi2" title="ویرایش حواله و تخصیص فاکتور" onclick="Pay.showTransfer(' + trArg + ')"><i class="bi bi-pencil"></i></button>' +
+          ' <button class="bi2 d" onclick="Pay.rm(' + p.id + ')"><i class="bi bi-trash3"></i></button>';
       } else {
-        actions = '<button class="bi2" onclick="Pay.showF(\'' + p.type + '\',' + p.id + ')"><i class="bi bi-pencil"></i></button>' +
+        actions = '<button class="bi2" title="ویرایش سند و تخصیص به فاکتور" onclick="Pay.showF(\'' + p.type + '\',' + p.id + ')"><i class="bi bi-pencil"></i></button>' +
           ' <button class="bi2 d" onclick="Pay.rm(' + p.id + ')"><i class="bi bi-trash3"></i></button>';
       }
       var srcTag = isAuto ? ' <span class="tg tg-b" title="' + (isAutoChk ? 'سند خودکار وصول چک' : 'سند خودکار فاکتور') + '">خودکار</span>' : '';
       var catTag = (p.category && !p.transferId)
         ? ' <span class="tg tg-p" style="font-size:10px;margin-inline-start:4px" title="سرفصل: ' + esc(p.category) + '">' + esc(p.category) + '</span>'
         : '';
+      var trDirTag = '';
+      if (p.transferId) {
+        if (p.transferTo && cm[p.transferTo]) {
+          trDirTag = ' <span class="tg tg-o" style="font-size:10px" title="پرداخت‌کننده حواله">به ' + esc(cm[p.transferTo]) + '</span>';
+        } else if (p.transferFrom && cm[p.transferFrom]) {
+          trDirTag = ' <span class="tg tg-g" style="font-size:10px" title="دریافت‌کننده حواله">از ' + esc(cm[p.transferFrom]) + '</span>';
+        }
+      }
       var allocHtml = '';
-      if (!isAuto && !p.transferId && Array.isArray(p.invoiceAllocations) && p.invoiceAllocations.length) {
+      if (!isAuto && Array.isArray(p.invoiceAllocations) && p.invoiceAllocations.length) {
         allocHtml = '<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">' +
           p.invoiceAllocations.map(function(al) {
             if (!al || !numOf(al.amount)) return '';
@@ -161,11 +173,7 @@ var Pay = {
           }).join('') +
         '</div>';
       }
-      if (!isAutoInv && !isAutoChk && !p.transferId) {
-        actions = '<button class="bi2" title="ویرایش سند و تخصیص به فاکتور" onclick="Pay.showF(\'' + p.type + '\',' + p.id + ')"><i class="bi bi-pencil"></i></button>' +
-          ' <button class="bi2 d" onclick="Pay.rm(' + p.id + ')"><i class="bi bi-trash3"></i></button>';
-      }
-      r += '<tr><td>' + (((pg.page - 1) * pg.per) + i + 1) + '</td><td><span class="tg ' + tt + '">' + tl + '</span>' + catTag + srcTag + '</td><td>' + p.date + '</td><td>' + esc(cm[p.contactId] || '—') + '</td><td style="font-weight:700">' + UI.fn(p.amount) + '</td><td>' + esc(p.description || p.notes || '—') + allocHtml + '</td><td style="white-space:nowrap">' + actions + '</td></tr>';
+      r += '<tr><td>' + (((pg.page - 1) * pg.per) + i + 1) + '</td><td><span class="tg ' + tt + '">' + tl + '</span>' + trDirTag + catTag + srcTag + '</td><td>' + p.date + '</td><td>' + esc(cm[p.contactId] || '—') + '</td><td style="font-weight:700">' + UI.fn(p.amount) + '</td><td>' + esc(p.description || p.notes || '—') + allocHtml + '</td><td style="white-space:nowrap">' + actions + '</td></tr>';
     }
 
     var contactOpts = '<option value="">همه اشخاص</option>' +
@@ -174,7 +182,8 @@ var Pay = {
       return String(a.name || '').localeCompare(String(b.name || ''), 'fa');
     }).forEach(function(c) {
       if (!c || c.id == null) return;
-      contactOpts += '<option value="' + c.id + '"' + (String(fContact) === String(c.id) ? ' selected' : '') + '>' + esc(c.name) + '</option>';
+      var roleTag = c.type === 'broker' ? ' (واسطه)' : '';
+      contactOpts += '<option value="' + c.id + '"' + (String(fContact) === String(c.id) ? ' selected' : '') + '>' + esc(c.name) + roleTag + '</option>';
     });
     var hasActiveFilter = (fl !== 'all' || !!fContact || !!fDateFrom || !!fDateTo || fStatus !== 'all');
     var filterBar = '<div style="display:flex;align-items:flex-end;flex-wrap:wrap;gap:10px;margin-bottom:14px;background:var(--sf);padding:10px 14px;border-radius:10px;border:1px solid var(--bd)">' +
@@ -726,41 +735,435 @@ var Pay = {
     }
     await this.ll();
   },
-  showTransfer: async function() {
-    var ct = await DB.all('contacts');
-    var balMap = await Con.allBalances();
-    var customers = ct.filter(function(c) {
-      return c.type === 'customer' || c.type === 'both';
+  _trCtx: null,
+  _getEligibleTrInvoices: function(toId) {
+    var ctx = this._trCtx;
+    if (!ctx || !toId) return [];
+    var selOrder = ctx.selectedOrder || [];
+    var settleById = ctx.settleById || {};
+    var eligible = [];
+    (ctx.allInvs || []).forEach(function(inv) {
+      if (!inv || inv.type !== 'purchase' || inv.contactId !== toId) return;
+      var st = settleById[inv.id];
+      var remBefore = st ? Math.max(0, st.remaining) : Math.max(0, numOf(inv.grandTotal) - numOf(inv.paidAmount));
+      var isSelected = selOrder.indexOf(inv.id) !== -1;
+      if (remBefore > 0.01 || isSelected) {
+        eligible.push({
+          invoiceId: inv.id,
+          invoiceUid: inv.uid || null,
+          invoiceNumber: inv.invoiceNumber || ('#' + inv.id),
+          date: inv.date || '',
+          grandTotal: numOf(inv.grandTotal),
+          paidBefore: st ? st.totalPaid : numOf(inv.paidAmount),
+          remainingBeforePayment: remBefore,
+          isSelected: isSelected
+        });
+      }
     });
-    var suppliers = ct.filter(function(c) {
-      return c.type === 'supplier' || c.type === 'both';
+    eligible.sort(function(a, b) {
+      return (pn(a.date) - pn(b.date)) || ((a.invoiceId || 0) - (b.invoiceId || 0));
     });
-    var cO = '<option value="">— مشتری —</option>';
-    customers.forEach(function(c) {
-      cO += '<option value="' + c.id + '">' + esc(c.name) + Con.balTag(balMap[c.id] || 0) + '</option>';
-    });
-    var sO = '<option value="">— تأمین‌کننده —</option>';
-    suppliers.forEach(function(c) {
-      sO += '<option value="' + c.id + '">' + esc(c.name) + Con.balTag(balMap[c.id] || 0) + '</option>';
-    });
-    var td = todayJ();
-    var h = '<div class="fr mb"><div class="fg"><label>تاریخ</label><input class="fc" id="trDt" value="' + esc(td) + '"></div><div class="fg"><label>مبلغ</label><input class="fc" id="trAm" type="number" dir="ltr"></div></div>';
-    h += '<div class="fr mb"><div class="fg"><label>از مشتری</label><select class="fc" id="trFrom">' + cO + '</select></div><div class="fg"><label>به تأمین‌کننده</label><select class="fc" id="trTo">' + sO + '</select></div></div>';
-    h += '<div class="fg"><label>شرح</label><input class="fc" id="trNt" placeholder="بابت..."></div>';
-    UI.open('حواله بانکی', h, '<button class="btn bw" onclick="Pay.saveTransfer()">ثبت حواله</button><button class="btn bo" onclick="UI.close()">انصراف</button>');
+    return eligible;
   },
-  saveTransfer: async function() {
+  _computeTrAllocations: function(toId, amount, settleByIdOverride, allInvsOverride) {
+    var ctx = this._trCtx;
+    if (!ctx || !toId) {
+      return { items: [], allocations: [], totalAllocated: 0, unallocatedAmount: Math.max(0, numOf(amount)) };
+    }
+    var invList = allInvsOverride || ctx.allInvs || [];
+    var settleMap = settleByIdOverride || ctx.settleById || {};
+    var orderedItems = [];
+    (ctx.selectedOrder || []).forEach(function(invId) {
+      var inv = invList.find(function(x) { return x && x.id === invId; });
+      if (!inv || inv.type !== 'purchase' || inv.contactId !== toId) return;
+      var st = settleMap[inv.id];
+      var remBefore = st ? Math.max(0, st.remaining) : Math.max(0, numOf(inv.grandTotal) - numOf(inv.paidAmount));
+      orderedItems.push({
+        invoiceId: inv.id,
+        invoiceUid: inv.uid || null,
+        invoiceNumber: inv.invoiceNumber || ('#' + inv.id),
+        date: inv.date || '',
+        grandTotal: numOf(inv.grandTotal),
+        remainingBeforePayment: remBefore
+      });
+    });
+    if (typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.allocatePaymentToInvoices === 'function') {
+      return FinanceEngine.allocatePaymentToInvoices(amount, orderedItems);
+    }
+    return { items: [], allocations: [], totalAllocated: 0, unallocatedAmount: Math.max(0, numOf(amount)) };
+  },
+  onTransferTargetChange: function() {
+    var toId = intOf(elVal('trTo')) || null;
+    if (this._trCtx) {
+      if (this._trCtx.toId !== toId) {
+        this._trCtx.toId = toId;
+        this._trCtx.selectedOrder = [];
+      }
+    }
+    this._renderTrInvAllocUI();
+  },
+  toggleTrInv: function(invId) {
+    var ctx = this._trCtx;
+    if (!ctx) return;
+    invId = intOf(invId);
+    var idx = ctx.selectedOrder.indexOf(invId);
+    if (idx !== -1) ctx.selectedOrder.splice(idx, 1);
+    else ctx.selectedOrder.push(invId);
+    this._renderTrInvAllocUI();
+  },
+  moveTrInv: function(invId, delta) {
+    var ctx = this._trCtx;
+    if (!ctx) return;
+    invId = intOf(invId);
+    var idx = ctx.selectedOrder.indexOf(invId);
+    var targetIdx = idx + delta;
+    if (idx === -1 || targetIdx < 0 || targetIdx >= ctx.selectedOrder.length) return;
+    var tmp = ctx.selectedOrder[idx];
+    ctx.selectedOrder[idx] = ctx.selectedOrder[targetIdx];
+    ctx.selectedOrder[targetIdx] = tmp;
+    this._renderTrInvAllocUI();
+  },
+  autoSelectTrInvs: function() {
+    var ctx = this._trCtx;
+    if (!ctx) return;
+    var toId = intOf(elVal('trTo')) || ctx.toId || null;
+    if (!toId) return;
+    var eligible = this._getEligibleTrInvoices(toId).filter(function(it) {
+      return it.remainingBeforePayment > 0.01;
+    });
+    var am = elNum('trAm');
+    var nextOrder = [];
+    if (am > 0) {
+      var acc = 0;
+      for (var i = 0; i < eligible.length; i++) {
+        nextOrder.push(eligible[i].invoiceId);
+        acc += eligible[i].remainingBeforePayment;
+        if (acc >= am - 0.01) break;
+      }
+    } else {
+      eligible.forEach(function(it) {
+        nextOrder.push(it.invoiceId);
+      });
+    }
+    ctx.selectedOrder = nextOrder;
+    this._renderTrInvAllocUI();
+  },
+  clearTrInvSelection: function() {
+    if (!this._trCtx) return;
+    this._trCtx.selectedOrder = [];
+    this._renderTrInvAllocUI();
+  },
+  fillTrAmountFromSelected: function() {
+    var ctx = this._trCtx;
+    if (!ctx) return;
+    var toId = intOf(elVal('trTo')) || ctx.toId || null;
+    var eligible = this._getEligibleTrInvoices(toId);
+    var elMap = {};
+    eligible.forEach(function(e) { elMap[e.invoiceId] = e; });
+    var totalRem = 0;
+    (ctx.selectedOrder || []).forEach(function(id) {
+      if (elMap[id]) totalRem += elMap[id].remainingBeforePayment;
+    });
+    var amEl = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('trAm') : null;
+    if (amEl && totalRem > 0) {
+      amEl.value = UI.fn(Math.round(totalRem));
+      var wEl = document.getElementById('trAm_w');
+      if (wEl && typeof num2fa === 'function') wEl.textContent = num2fa(Math.round(totalRem));
+    }
+    this._renderTrInvAllocUI();
+  },
+  _renderTrInvAllocUI: function() {
+    var ctx = this._trCtx;
+    if (!ctx || typeof document === 'undefined' || !document.getElementById) return;
+    var fromId = intOf(elVal('trFrom')) || null;
+    var toId = intOf(elVal('trTo')) || null;
+    var am = elNum('trAm');
+
+    /* پیش‌نمایش زنده اثر حسابداری روی مبدأ (مثلاً واسطه) و مقصد (مثلاً تأمین‌کننده) */
+    var prevBox = document.getElementById('trPreviewBox');
+    if (prevBox) {
+      var cMap = ctx.contactMap || {};
+      var fromC = fromId ? cMap[fromId] : null;
+      var toC = toId ? cMap[toId] : null;
+      if (fromC || toC) {
+        var amTxt = am > 0 ? ('<strong>' + UI.fn(am) + ' ریال</strong>') : 'مبلغ حواله';
+        var lines = [];
+        if (fromC) {
+          var fRole = fromC.type === 'broker' ? 'واسطه ' : '';
+          lines.push('<span><i class="bi bi-person-plus" style="color:var(--ok)"></i> حساب <strong>' + esc(fRole + fromC.name) + '</strong> به میزان ' + amTxt + ' <strong style="color:var(--ok)">بستانکار</strong> (طلبکار از شما) می‌شود.</span>');
+        }
+        if (toC) {
+          var tRole = toC.type === 'broker' ? 'واسطه ' : '';
+          lines.push('<span><i class="bi bi-person-dash" style="color:var(--p)"></i> بدهی شما به <strong>' + esc(tRole + toC.name) + '</strong> به میزان ' + amTxt + ' <strong style="color:var(--p)">کسر / تسویه</strong> می‌گردد.</span>');
+        }
+        prevBox.innerHTML = '<div style="margin:10px 0;padding:9px 12px;border-radius:8px;background:rgba(37,99,235,.06);border:1px solid rgba(37,99,235,.22);font-size:.78rem;display:flex;flex-direction:column;gap:4px">' + lines.join('') + '</div>';
+      } else {
+        prevBox.innerHTML = '';
+      }
+    }
+
+    var box = document.getElementById('trInvSec');
+    if (!box) return;
+    if (!toId) {
+      box.innerHTML = '<div class="hint-box" style="font-size:.78rem;color:var(--txs)">' +
+        '<i class="bi bi-receipt"></i> پس از انتخاب دریافت‌کننده حواله (تأمین‌کننده)، فاکتورهای خرید بازِ او برای تسویه مستقیم در اینجا نمایش داده می‌شوند.' +
+        '</div>';
+      return;
+    }
+
+    var eligible = this._getEligibleTrInvoices(toId);
+    if (!eligible.length) {
+      box.innerHTML = '<div class="hint-box" style="font-size:.78rem;color:var(--txs)">' +
+        '<i class="bi bi-check-circle"></i> فاکتور خرید تسویه‌نشده‌ای برای این شخص وجود ندارد (حواله در حساب کل شخص ثبت می‌شود).' +
+        '</div>';
+      return;
+    }
+
+    var allocRes = this._computeTrAllocations(toId, am);
+    var allocById = {};
+    (allocRes.items || []).forEach(function(it) { allocById[it.invoiceId] = it; });
+    var selOrder = ctx.selectedOrder || [];
+    var sumSelectedRem = 0;
+    eligible.forEach(function(e) {
+      if (selOrder.indexOf(e.invoiceId) !== -1) sumSelectedRem += e.remainingBeforePayment;
+    });
+
+    var h = '<div style="border:1px solid var(--bd);border-radius:8px;padding:10px 12px;background:var(--bg)">';
+    h += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:8px">';
+    h += '<strong style="font-size:.82rem"><i class="bi bi-receipt-cutoff"></i> تسویه فاکتورهای خریدِ دریافت‌کننده (اختیاری — به ترتیب انتخاب)</strong>';
+    h += '<div style="display:flex;gap:6px;flex-wrap:wrap">';
+    h += '<button type="button" class="btn bs bo" onclick="Pay.autoSelectTrInvs()" title="انتخاب فاکتورهای باز از قدیمی‌ترین به جدیدترین">انتخاب خودکار قدیمی‌ترین</button>';
+    if (selOrder.length) {
+      h += '<button type="button" class="btn bs bo" onclick="Pay.fillTrAmountFromSelected()">تنظیم مبلغ = ' + UI.fn(Math.round(sumSelectedRem)) + '</button>';
+      h += '<button type="button" class="btn bs bo" onclick="Pay.clearTrInvSelection()">پاک کردن</button>';
+    }
+    h += '</div></div>';
+
+    h += '<div style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto">';
+    eligible.forEach(function(inv) {
+      var orderIdx = selOrder.indexOf(inv.invoiceId);
+      var isSel = orderIdx !== -1;
+      var al = allocById[inv.invoiceId];
+      var borderCol = isSel ? 'var(--p)' : 'var(--bd)';
+      var bgCol = isSel ? 'rgba(37,99,235,.05)' : '#fff';
+
+      h += '<div style="border:1px solid ' + borderCol + ';background:' + bgCol + ';border-radius:6px;padding:7px 10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;font-size:.78rem">';
+      h += '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;flex:1;min-width:190px">';
+      h += '<input type="checkbox" ' + (isSel ? 'checked' : '') + ' onchange="Pay.toggleTrInv(' + inv.invoiceId + ')">';
+      if (isSel) {
+        h += '<span class="tg tg-b" style="font-size:10px;min-width:22px;text-align:center">#' + UI.fn(orderIdx + 1) + '</span>';
+      }
+      h += '<div><div style="font-weight:700">' + esc(inv.invoiceNumber) +
+        ' <span style="font-weight:400;color:var(--txs)">(' + esc(inv.date) + ')</span></div>' +
+        '<div style="font-size:.72rem;color:var(--txs)">جمع: ' + UI.fn(inv.grandTotal) + ' | مانده فعلی: <strong style="color:var(--d)">' + UI.fn(inv.remainingBeforePayment) + '</strong></div></div>';
+      h += '</label>';
+
+      h += '<div style="display:flex;align-items:center;gap:6px">';
+      if (isSel && selOrder.length > 1) {
+        h += '<div style="display:flex;gap:2px">';
+        if (orderIdx > 0) h += '<button type="button" class="bi2" style="width:24px;height:24px" title="اولویت بالاتر" onclick="Pay.moveTrInv(' + inv.invoiceId + ',-1)"><i class="bi bi-arrow-up"></i></button>';
+        if (orderIdx < selOrder.length - 1) h += '<button type="button" class="bi2" style="width:24px;height:24px" title="اولویت پایین‌تر" onclick="Pay.moveTrInv(' + inv.invoiceId + ',1)"><i class="bi bi-arrow-down"></i></button>';
+        h += '</div>';
+      }
+      if (isSel && al) {
+        if (am > 0) {
+          var remAfter = al.remainingAfter;
+          h += '<div style="text-align:left;font-size:.74rem">' +
+            '<div style="color:var(--p);font-weight:700">تخصیص: ' + UI.fn(al.allocatedAmount) + '</div>' +
+            '<div style="color:' + (remAfter <= 0 ? 'var(--ok)' : 'var(--w)') + ';font-weight:700">' +
+            (remAfter <= 0 ? 'تسویه کامل (مانده: ۰)' : 'مانده جدید: ' + UI.fn(remAfter)) + '</div></div>';
+        } else {
+          h += '<span style="font-size:.72rem;color:var(--txs)">منتظر ورود مبلغ</span>';
+        }
+      }
+      h += '</div></div>';
+    });
+    h += '</div>';
+
+    h += '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--bd);font-size:.76rem;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">';
+    if (selOrder.length) {
+      h += '<span>تخصیص‌یافته به <strong>' + UI.fn(selOrder.length) + '</strong> فاکتور خرید: <strong style="color:var(--ok)">' + UI.fn(allocRes.totalAllocated) + ' ریال</strong></span>';
+      if (allocRes.unallocatedAmount > 0 && am > 0) {
+        h += '<span style="color:var(--w)">مازاد علی‌الحساب: <strong>' + UI.fn(allocRes.unallocatedAmount) + ' ریال</strong></span>';
+      }
+    } else {
+      h += '<span style="color:var(--txs)">هیچ فاکتوری انتخاب نشده — پرداخت روی حساب کل شخص ثبت می‌شود و مانده فاکتورها تغییر نمی‌کند.</span>';
+    }
+    h += '</div></div>';
+    box.innerHTML = h;
+  },
+  showTransfer: async function(editTransferId) {
+    var ct = (await DB.all('contacts')) || [];
+    var balMap = await Con.allBalances();
+    var allInvs = (await FY.byYear('invoices')) || [];
+    var allPays = (await FY.byYear('payments')) || [];
+    var allChks = (await FY.byYear('checks')) || [];
+
+    var fromLeg = null;
+    var toLeg = null;
+    var hasEdit = (editTransferId !== undefined && editTransferId !== null && editTransferId !== '');
+    if (hasEdit) {
+      var pair = allPays.filter(function(x) { return x && String(x.transferId) === String(editTransferId); });
+      fromLeg = pair.find(function(x) { return x.type === 'receipt' || x.transferTo; }) || null;
+      toLeg = pair.find(function(x) { return x.type === 'payment' || x.transferFrom; }) || null;
+    }
+
+    var contactMap = {};
+    ct.forEach(function(c) { if (c && c.id != null) contactMap[c.id] = c; });
+
+    var preFromId = fromLeg ? (fromLeg.contactId || (toLeg ? toLeg.transferFrom : null)) : null;
+    var preToId = toLeg ? (toLeg.contactId || (fromLeg ? fromLeg.transferTo : null)) : null;
+    var preDate = (toLeg && toLeg.date) || (fromLeg && fromLeg.date) || todayJ();
+    var preAmount = (toLeg && toLeg.amount) || (fromLeg && fromLeg.amount) || '';
+    var preNote = '';
+    if (toLeg || fromLeg) {
+      var rawDesc = (toLeg && toLeg.notes) || (fromLeg && fromLeg.notes) || (toLeg && toLeg.description) || '';
+      var parts = rawDesc.split('—');
+      preNote = parts.length > 1 ? parts.slice(1).join('—').trim() : '';
+    }
+
+    var paysWithoutEdit = hasEdit
+      ? allPays.filter(function(x) { return x && String(x.transferId) !== String(editTransferId); })
+      : allPays;
+    var settleRes = (typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.calculateInvoiceSettlements === 'function')
+      ? FinanceEngine.calculateInvoiceSettlements(allInvs, paysWithoutEdit, { checks: allChks })
+      : { byInvoiceId: {} };
+
+    var initialOrder = [];
+    if (toLeg && Array.isArray(toLeg.invoiceAllocations)) {
+      toLeg.invoiceAllocations.forEach(function(a) {
+        if (!a) return;
+        var matchedInv = null;
+        if (a.invoiceId != null) matchedInv = allInvs.find(function(x) { return x && x.id === a.invoiceId; });
+        if (!matchedInv && a.invoiceUid) matchedInv = allInvs.find(function(x) { return x && x.uid === a.invoiceUid; });
+        if (matchedInv && initialOrder.indexOf(matchedInv.id) === -1) initialOrder.push(matchedInv.id);
+      });
+    }
+
+    this._trCtx = {
+      editTransferId: hasEdit ? editTransferId : null,
+      fromId: preFromId,
+      toId: preToId,
+      allInvs: allInvs,
+      settleById: settleRes.byInvoiceId || {},
+      selectedOrder: initialOrder,
+      contactMap: contactMap
+    };
+
+    var brokers = ct.filter(function(c) { return c && c.type === 'broker'; });
+    var customers = ct.filter(function(c) { return c && c.type === 'customer'; });
+    var suppliers = ct.filter(function(c) { return c && c.type === 'supplier'; });
+    var both = ct.filter(function(c) { return c && c.type === 'both'; });
+
+    var cO = '<option value="">— انتخاب واسطه یا مشتری —</option>';
+    if (brokers.length) {
+      cO += '<optgroup label="واسطه‌ها (' + brokers.length + ')">';
+      brokers.forEach(function(c) {
+        cO += '<option value="' + c.id + '"' + (c.id === preFromId ? ' selected' : '') + '>' + esc(c.name) + ' (واسطه)' + Con.balTag(balMap[c.id] || 0) + '</option>';
+      });
+      cO += '</optgroup>';
+    }
+    if (customers.length) {
+      cO += '<optgroup label="مشتریان (' + customers.length + ')">';
+      customers.forEach(function(c) {
+        cO += '<option value="' + c.id + '"' + (c.id === preFromId ? ' selected' : '') + '>' + esc(c.name) + Con.balTag(balMap[c.id] || 0) + '</option>';
+      });
+      cO += '</optgroup>';
+    }
+    if (both.length) {
+      cO += '<optgroup label="دوطرفه (مشتری و تأمین‌کننده)">';
+      both.forEach(function(c) {
+        cO += '<option value="' + c.id + '"' + (c.id === preFromId ? ' selected' : '') + '>' + esc(c.name) + ' (دوطرفه)' + Con.balTag(balMap[c.id] || 0) + '</option>';
+      });
+      cO += '</optgroup>';
+    }
+    if (preFromId && contactMap[preFromId] && contactMap[preFromId].type === 'supplier') {
+      var pf = contactMap[preFromId];
+      cO += '<option value="' + pf.id + '" selected>' + esc(pf.name) + ' (تأمین‌کننده)' + Con.balTag(balMap[pf.id] || 0) + '</option>';
+    }
+
+    var sO = '<option value="">— انتخاب تأمین‌کننده یا واسطه —</option>';
+    if (suppliers.length) {
+      sO += '<optgroup label="تأمین‌کنندگان (' + suppliers.length + ')">';
+      suppliers.forEach(function(c) {
+        sO += '<option value="' + c.id + '"' + (c.id === preToId ? ' selected' : '') + '>' + esc(c.name) + Con.balTag(balMap[c.id] || 0) + '</option>';
+      });
+      sO += '</optgroup>';
+    }
+    if (brokers.length) {
+      sO += '<optgroup label="واسطه‌ها (' + brokers.length + ')">';
+      brokers.forEach(function(c) {
+        sO += '<option value="' + c.id + '"' + (c.id === preToId ? ' selected' : '') + '>' + esc(c.name) + ' (واسطه)' + Con.balTag(balMap[c.id] || 0) + '</option>';
+      });
+      sO += '</optgroup>';
+    }
+    if (both.length) {
+      sO += '<optgroup label="دوطرفه (مشتری و تأمین‌کننده)">';
+      both.forEach(function(c) {
+        sO += '<option value="' + c.id + '"' + (c.id === preToId ? ' selected' : '') + '>' + esc(c.name) + ' (دوطرفه)' + Con.balTag(balMap[c.id] || 0) + '</option>';
+      });
+      sO += '</optgroup>';
+    }
+    if (preToId && contactMap[preToId] && contactMap[preToId].type === 'customer') {
+      var pt = contactMap[preToId];
+      sO += '<option value="' + pt.id + '" selected>' + esc(pt.name) + ' (مشتری)' + Con.balTag(balMap[pt.id] || 0) + '</option>';
+    }
+
+    var editArg = hasEdit ? (typeof editTransferId === 'number' ? editTransferId : ('\'' + esc(String(editTransferId)) + '\'')) : 'null';
+    var h = '<div style="margin-bottom:10px;padding:8px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--bd);font-size:.79rem;color:var(--txs)">' +
+      '<i class="bi bi-info-circle"></i> حواله برای ثبت پرداخت مستقیم توسط <strong>واسطه</strong> یا <strong>مشتری</strong> به حساب <strong>تأمین‌کننده</strong> (بدون گردش بانک ما) استفاده می‌شود؛ پس از آن می‌توانید بدهی واسطه را با چک دریافتی یا پرداخت نقدی تسویه کنید.' +
+      '</div>';
+    h += '<div class="fr mb">' +
+      '<div class="fg"><label>تاریخ <span class="req">*</span></label><input class="fc" id="trDt" dir="ltr" data-date="1" maxlength="10" value="' + esc(preDate) + '"></div>' +
+      '<div class="fg"><label>مبلغ (ریال) <span class="req">*</span></label><div class="fwrap"><input class="fc money has-suf" id="trAm" inputmode="numeric" dir="ltr" data-money="1" data-words="trAm_w" value="' + (preAmount ? UI.fn(preAmount) : '') + '" placeholder="۰"><span class="fsuf">ریال</span></div><div class="fwords" id="trAm_w" style="font-size:.73rem;color:var(--p);margin-top:3px">' + (preAmount > 0 && typeof num2fa === 'function' ? esc(num2fa(preAmount)) : '') + '</div></div>' +
+      '</div>';
+    h += '<div class="fr mb">' +
+      '<div class="fg"><label>از (پرداخت‌کننده: واسطه یا مشتری) <span class="req">*</span></label><select class="fc" id="trFrom">' + cO + '</select></div>' +
+      '<div class="fg"><label>به (دریافت‌کننده: تأمین‌کننده یا واسطه) <span class="req">*</span></label><select class="fc" id="trTo">' + sO + '</select></div>' +
+      '</div>';
+    h += '<div id="trPreviewBox"></div>';
+    h += '<div id="trInvSec" style="margin:10px 0"></div>';
+    h += '<div class="fg"><label>شرح <span class="fnote">اختیاری</span></label><input class="fc" id="trNt" value="' + esc(preNote) + '" placeholder="بابت تسویه فاکتور خرید توسط واسطه..."></div>';
+
+    UI.open(hasEdit ? 'ویرایش حواله و تسویه فاکتور' : 'حواله (پرداخت واسطه / مشتری به تأمین‌کننده)', h,
+      '<button class="btn bw" onclick="Pay.saveTransfer(' + editArg + ')"><i class="bi bi-check-lg"></i> ' + (hasEdit ? 'ذخیره تغییرات حواله' : 'ثبت حواله') + '</button>' +
+      '<button class="btn bo" onclick="UI.close()">انصراف</button>', true);
+
+    if (typeof document !== 'undefined' && document.getElementById) {
+      var trFromEl = document.getElementById('trFrom');
+      if (trFromEl && trFromEl.addEventListener) {
+        trFromEl.addEventListener('change', function() { Pay._renderTrInvAllocUI(); });
+      }
+      var trToEl = document.getElementById('trTo');
+      if (trToEl && trToEl.addEventListener) {
+        trToEl.addEventListener('change', function() { Pay.onTransferTargetChange(); });
+      }
+      var trAmEl = document.getElementById('trAm');
+      if (trAmEl && trAmEl.addEventListener) {
+        trAmEl.addEventListener('input', function() { Pay._renderTrInvAllocUI(); });
+        trAmEl.addEventListener('change', function() { Pay._renderTrInvAllocUI(); });
+      }
+    }
+    this._renderTrInvAllocUI();
+  },
+  saveTransfer: async function(editTransferId) {
+    if (!Perm.require('edit', 'ثبت یا ویرایش حواله')) return;
+    if (!await FY.assertOpen()) return;
     var fromId = intOf(elVal('trFrom')) || null;
     var toId = intOf(elVal('trTo')) || null;
     var am = elNum('trAm');
     var dt = Jalali.parse(elVal('trDt'));
     var nt = elVal('trNt').trim();
     if (!fromId) {
-      UI.toast('مشتری را انتخاب کنید', 'e');
+      UI.toast('پرداخت‌کننده حواله (واسطه یا مشتری) را انتخاب کنید', 'e');
       return;
     }
     if (!toId) {
-      UI.toast('تأمین‌کننده را انتخاب کنید', 'e');
+      UI.toast('دریافت‌کننده حواله (تأمین‌کننده) را انتخاب کنید', 'e');
+      return;
+    }
+    if (fromId === toId) {
+      UI.toast('مبدأ و مقصد حواله نمی‌توانند یک شخص باشند', 'e');
       return;
     }
     if (am <= 0) {
@@ -771,31 +1174,108 @@ var Pay = {
       UI.toast('تاریخ نامعتبر است (نمونه صحیح: 1404/01/05)', 'e');
       return;
     }
-    var tid = Date.now();
-    await DB.add('payments', {
+
+    var ct = (await DB.all('contacts')) || [];
+    var fromC = ct.find(function(x) { return x && x.id === fromId; });
+    var toC = ct.find(function(x) { return x && x.id === toId; });
+    var fromLabel = fromC ? ((fromC.type === 'broker' ? 'واسطه ' : '') + fromC.name) : 'شخص';
+    var toLabel = toC ? ((toC.type === 'broker' ? 'واسطه ' : '') + toC.name) : 'تأمین‌کننده';
+
+    var hasEdit = (editTransferId !== undefined && editTransferId !== null && editTransferId !== '');
+    var allInvs = (await FY.byYear('invoices')) || [];
+    var allPays = (await FY.byYear('payments')) || [];
+    var allChks = (await FY.byYear('checks')) || [];
+    var paysWithoutEdit = hasEdit
+      ? allPays.filter(function(x) { return x && String(x.transferId) !== String(editTransferId); })
+      : allPays;
+
+    var toAllocations = [];
+    if (this._trCtx && Array.isArray(this._trCtx.selectedOrder) && this._trCtx.selectedOrder.length) {
+      var freshSettle = (typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.calculateInvoiceSettlements === 'function')
+        ? FinanceEngine.calculateInvoiceSettlements(allInvs, paysWithoutEdit, { checks: allChks }).byInvoiceId
+        : (this._trCtx.settleById || {});
+      toAllocations = this._computeTrAllocations(toId, am, freshSettle, allInvs).allocations || [];
+    } else if (hasEdit && !this._trCtx) {
+      var oldTo = allPays.find(function(x) { return x && String(x.transferId) === String(editTransferId) && x.type === 'payment'; });
+      if (oldTo && Array.isArray(oldTo.invoiceAllocations) && oldTo.contactId === toId && oldTo.invoiceAllocations.length) {
+        var fMap = (typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.calculateInvoiceSettlements === 'function')
+          ? FinanceEngine.calculateInvoiceSettlements(allInvs, paysWithoutEdit, { checks: allChks }).byInvoiceId
+          : {};
+        var ord = [];
+        oldTo.invoiceAllocations.forEach(function(al) {
+          if (!al) return;
+          var inv = allInvs.find(function(x) { return x && x.id === al.invoiceId && x.contactId === toId && x.type === 'purchase'; });
+          if (!inv) return;
+          var st = fMap[inv.id];
+          ord.push({
+            invoiceId: inv.id,
+            invoiceUid: inv.uid || null,
+            invoiceNumber: inv.invoiceNumber || ('#' + inv.id),
+            date: inv.date || '',
+            grandTotal: numOf(inv.grandTotal),
+            remainingBeforePayment: st ? Math.max(0, st.remaining) : Math.max(0, numOf(inv.grandTotal) - numOf(inv.paidAmount))
+          });
+        });
+        if (typeof FinanceEngine !== 'undefined' && typeof FinanceEngine.allocatePaymentToInvoices === 'function') {
+          toAllocations = FinanceEngine.allocatePaymentToInvoices(am, ord).allocations || [];
+        }
+      }
+    }
+
+    var tid = hasEdit ? editTransferId : Date.now();
+    var descFrom = 'حواله به ' + toLabel + (nt ? ' — ' + nt : '');
+    var descTo = 'حواله از ' + fromLabel + (nt ? ' — ' + nt : '');
+    var noteBoth = 'حواله' + (nt ? ' — ' + nt : (' (' + fromLabel + ' ← ' + toLabel + ')'));
+
+    var fromPayload = {
       type: 'receipt',
       fiscalYearId: STATE.yearId,
       contactId: fromId,
       amount: am,
       date: dt,
-      description: 'حواله به ' + nt,
-      notes: 'حواله بانکی — ' + nt,
+      description: descFrom,
+      notes: noteBoth,
       transferId: tid,
-      transferTo: toId
-    });
-    await DB.add('payments', {
+      transferTo: toId,
+      invoiceAllocations: []
+    };
+    var toPayload = {
       type: 'payment',
       fiscalYearId: STATE.yearId,
       contactId: toId,
       amount: am,
       date: dt,
-      description: 'حواله از مشتری — ' + nt,
-      notes: 'حواله بانکی — ' + nt,
+      description: descTo,
+      notes: noteBoth,
       transferId: tid,
-      transferFrom: fromId
-    });
+      transferFrom: fromId,
+      invoiceAllocations: toAllocations
+    };
+
+    if (hasEdit) {
+      var pair = allPays.filter(function(x) { return x && String(x.transferId) === String(editTransferId); });
+      var existingFrom = pair.find(function(x) { return x.type === 'receipt' || x.transferTo; });
+      var existingTo = pair.find(function(x) { return x.type === 'payment' || x.transferFrom; });
+      if (existingFrom) {
+        Object.assign(existingFrom, fromPayload);
+        await DB.put('payments', existingFrom);
+      } else {
+        await DB.add('payments', fromPayload);
+      }
+      if (existingTo) {
+        Object.assign(existingTo, toPayload);
+        await DB.put('payments', existingTo);
+      } else {
+        await DB.add('payments', toPayload);
+      }
+    } else {
+      await DB.add('payments', fromPayload);
+      await DB.add('payments', toPayload);
+    }
+
+    this._trCtx = null;
     UI.close();
-    UI.toast('حواله ثبت شد');
+    UI.toast(hasEdit ? 'حواله ویرایش شد' : 'حواله ثبت شد');
     await this.ll();
   }
 };

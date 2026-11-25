@@ -16,6 +16,11 @@ var Con = {
       broker: 'tg-p'
     } [t] || 'tg-b';
   },
+  _filter: 'all',
+  setFilter: async function(f) {
+    this._filter = f || 'all';
+    await this.render();
+  },
   render: async function() {
     currentPage = 'contacts';
     UI.nav('contacts');
@@ -27,17 +32,60 @@ var Con = {
       return;
     }
     var balMap = await this.allBalances();
+    var fl = this._filter || 'all';
+    var counts = {
+      all: ls.length,
+      customer: 0,
+      supplier: 0,
+      broker: 0,
+      both: 0,
+      creditors: 0,
+      debtors: 0
+    };
+    ls.forEach(function(c) {
+      if (c.type === 'customer') counts.customer++;
+      else if (c.type === 'supplier') counts.supplier++;
+      else if (c.type === 'broker') counts.broker++;
+      else if (c.type === 'both') counts.both++;
+      var b = balMap[c.id] || 0;
+      if (b < 0) counts.creditors++;
+      else if (b > 0) counts.debtors++;
+    });
+
+    var filtered = ls.filter(function(c) {
+      if (fl === 'all') return true;
+      if (fl === 'customer' || fl === 'supplier' || fl === 'broker' || fl === 'both') return c.type === fl;
+      var b = balMap[c.id] || 0;
+      if (fl === 'creditors') return b < 0;
+      if (fl === 'debtors') return b > 0;
+      return true;
+    });
+
+    var tabBar = '<div class="tab-bar" style="margin-bottom:14px">' +
+      '<button class="tab-btn' + (fl === 'all' ? ' active' : '') + '" onclick="Con.setFilter(\'all\')">همه (' + UI.fn(counts.all) + ')</button>' +
+      '<button class="tab-btn' + (fl === 'customer' ? ' active' : '') + '" onclick="Con.setFilter(\'customer\')">مشتریان (' + UI.fn(counts.customer) + ')</button>' +
+      '<button class="tab-btn' + (fl === 'supplier' ? ' active' : '') + '" onclick="Con.setFilter(\'supplier\')">تأمین‌کنندگان (' + UI.fn(counts.supplier) + ')</button>' +
+      '<button class="tab-btn' + (fl === 'broker' ? ' active' : '') + '" onclick="Con.setFilter(\'broker\')">واسطه‌ها (' + UI.fn(counts.broker) + ')</button>' +
+      (counts.both ? '<button class="tab-btn' + (fl === 'both' ? ' active' : '') + '" onclick="Con.setFilter(\'both\')">دوطرفه (' + UI.fn(counts.both) + ')</button>' : '') +
+      '<button class="tab-btn' + (fl === 'creditors' ? ' active' : '') + '" onclick="Con.setFilter(\'creditors\')">بستانکاران (' + UI.fn(counts.creditors) + ')</button>' +
+      '<button class="tab-btn' + (fl === 'debtors' ? ' active' : '') + '" onclick="Con.setFilter(\'debtors\')">بدهکاران (' + UI.fn(counts.debtors) + ')</button>' +
+      '</div>';
+
     var me = this,
       r = '';
-    for (var i = 0; i < ls.length; i++) {
-      var c = ls[i];
+    for (var i = 0; i < filtered.length; i++) {
+      var c = filtered[i];
       var bal = balMap[c.id] || 0;
       var bColor = bal > 0 ? 'var(--d)' : (bal < 0 ? 'var(--ok)' : 'var(--txs)');
       var bLabel = bal > 0 ? 'بدهکار' : (bal < 0 ? 'بستانکار' : 'تسویه');
       var bStr = bal === 0 ? 'تسویه' : (UI.fn(Math.abs(bal)) + ' ریال ' + bLabel);
-      r += '<tr><td>' + (i + 1) + '</td><td><strong>' + esc(c.name) + '</strong></td><td><span class="tg ' + me.tt(c.type) + '">' + me.tl(c.type) + '</span></td><td>' + esc(c.phone || '—') + '</td><td style="font-weight:700;color:' + bColor + '">' + bStr + '</td><td style="white-space:nowrap"><button class="bi2" title="دفتر معین" onclick="Led.show(' + c.id + ')"><i class="bi bi-journal-text"></i></button> <button class="bi2" title="ویرایش" onclick="Con.form(' + c.id + ')"><i class="bi bi-pencil"></i></button> <button class="bi2 d" title="حذف" onclick="Con.rm(' + c.id + ')"><i class="bi bi-trash3"></i></button></td></tr>';
+      var trBtn = c.type === 'broker' ? '<button class="bi2" title="ثبت حواله واسطه به تأمین‌کننده" onclick="Pay.showTransfer()"><i class="bi bi-arrow-left-right"></i></button> ' : '';
+      r += '<tr><td>' + (i + 1) + '</td><td><strong>' + esc(c.name) + '</strong></td><td><span class="tg ' + me.tt(c.type) + '">' + me.tl(c.type) + '</span></td><td>' + esc(c.phone || '—') + '</td><td style="font-weight:700;color:' + bColor + '">' + bStr + '</td><td style="white-space:nowrap">' + trBtn + '<button class="bi2" title="دفتر معین" onclick="Led.show(' + c.id + ')"><i class="bi bi-journal-text"></i></button> <button class="bi2" title="ویرایش" onclick="Con.form(' + c.id + ')"><i class="bi bi-pencil"></i></button> <button class="bi2 d" title="حذف" onclick="Con.rm(' + c.id + ')"><i class="bi bi-trash3"></i></button></td></tr>';
     }
-    UI.content('<div class="cd"><div class="cd-h">اشخاص</div><div class="tw"><table><thead><tr><th>#</th><th>نام</th><th>نوع</th><th>تلفن</th><th>مانده حساب</th><th></th></tr></thead><tbody>' + r + '</tbody></table></div></div>');
+    var body = filtered.length
+      ? '<div class="tw"><table><thead><tr><th>#</th><th>نام</th><th>نوع</th><th>تلفن</th><th>مانده حساب</th><th></th></tr></thead><tbody>' + r + '</tbody></table></div>'
+      : '<div class="em"><i class="bi bi-people"></i><p>شخصی در این دسته ثبت نشده است</p></div>';
+    UI.content(tabBar + '<div class="cd"><div class="cd-h">اشخاص (' + UI.fn(filtered.length) + ')</div>' + body + '</div>');
   },
   /* ══ متد مرجع و واحد مانده‌گیری حساب کلیه اشخاص (مشتری و تامین‌کننده) ══ */
   allBalances: async function() {
@@ -201,3 +249,11 @@ var Con = {
     await this.render();
   }
 };
+
+if (typeof window !== 'undefined') {
+  window.Con = Con;
+}
+if (typeof globalThis !== 'undefined') {
+  globalThis.Con = Con;
+}
+

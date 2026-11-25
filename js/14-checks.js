@@ -61,7 +61,7 @@ var Chk = {
     if (!c) return '';
     if (c.status === 'passed') {
       if (this.isTransferred(c)) {
-        return '<span class="tg tg-g" title="چک واگذارشده به تامین‌کننده که موعد آن رسیده و وصول گردیده است"><i class="bi bi-check-circle-fill"></i> وصول (واگذارشده)</span>';
+        return '<span class="tg tg-g" title="چک واگذارشده به غیر که موعد آن رسیده و وصول گردیده است"><i class="bi bi-check-circle-fill"></i> وصول (واگذارشده)</span>';
       }
       return '<span class="tg tg-g"><i class="bi bi-check-circle-fill"></i> وصول</span>';
     }
@@ -238,7 +238,7 @@ var Chk = {
     UI.act(
       '<button class="btn bg" onclick="Chk.form(\'received\')"><i class="bi bi-plus-lg"></i>چک دریافتی</button> ' +
       '<button class="btn bdn" onclick="Chk.form(\'issued\')"><i class="bi bi-plus-lg"></i>چک پرداختی</button> ' +
-      '<button class="btn bo" onclick="Chk.openTransferModal()" title="انتقال و واگذاری چک‌های انتخابی به مشتری یا تامین‌کننده"><i class="bi bi-arrow-left-right"></i> انتقال چک</button> ' +
+      '<button class="btn bo" onclick="Chk.openTransferModal()" title="انتقال و واگذاری چک‌های انتخابی به واسطه، تامین‌کننده یا مشتری"><i class="bi bi-arrow-left-right"></i> انتقال چک</button> ' +
       '<button class="btn bo" onclick="Chk.openPrintModal()" title="چاپ قبض پرداخت چک‌های انتخابی"><i class="bi bi-printer"></i> قبض پرداخت چک</button>'
     );
     this._fl = filterMode || 'all';
@@ -339,7 +339,7 @@ var Chk = {
       '<span style="font-size:.85rem;color:var(--txs)">مجموع مبالغ: <strong style="color:var(--tx)">' + UI.fn(sum) + ' ریال</strong></span>' +
       '</div>' +
       '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
-      '<button class="btn bp bs" onclick="Chk.openTransferModal()"><i class="bi bi-arrow-left-right"></i> انتقال چک (به مشتری یا تامین‌کننده)</button>' +
+      '<button class="btn bp bs" onclick="Chk.openTransferModal()"><i class="bi bi-arrow-left-right"></i> انتقال چک (به واسطه، تامین‌کننده یا مشتری)</button>' +
       '<button class="btn bg bs" onclick="Chk.openPrintModal()"><i class="bi bi-printer-fill"></i> قبض پرداخت چک (پرینت)</button>' +
       '<button class="btn bo bs" onclick="Chk.clearSelection()" style="padding:6px 10px"><i class="bi bi-x-lg"></i> لغو</button>' +
       '</div>';
@@ -575,7 +575,7 @@ var Chk = {
 
       var isTrItem = me.isTransferred(c);
       if (c.type === 'received') {
-        r += '<button class="bi2" onclick="Chk.openTransferModal(' + c.id + ')" title="' + (isTrItem ? 'مدیریت واگذاری یا عودت چک' : 'انتقال و واگذاری به مشتری یا تامین‌کننده') + '"><i class="bi bi-arrow-left-right"></i></button> ';
+        r += '<button class="bi2" onclick="Chk.openTransferModal(' + c.id + ')" title="' + (isTrItem ? 'مدیریت واگذاری یا عودت چک' : 'انتقال و واگذاری به واسطه، تامین‌کننده یا مشتری') + '"><i class="bi bi-arrow-left-right"></i></button> ';
       }
       if (isTrItem) {
         r += '<button class="bi2" onclick="Chk.printSingleVoucher(' + c.id + ')" title="چاپ قبض پرداخت چک واگذارشده"><i class="bi bi-printer"></i></button> ';
@@ -636,7 +636,8 @@ var Chk = {
       return String(a.name || '').localeCompare(String(b.name || ''), 'fa');
     }).forEach(function(cc) {
       if (!cc || cc.id == null) return;
-      contactFilterOpts += '<option value="' + cc.id + '"' + (String(fContact) === String(cc.id) ? ' selected' : '') + '>' + esc(cc.name) + '</option>';
+      var roleSuffix = cc.type === 'broker' ? ' (واسطه)' : '';
+      contactFilterOpts += '<option value="' + cc.id + '"' + (String(fContact) === String(cc.id) ? ' selected' : '') + '>' + esc(cc.name) + roleSuffix + '</option>';
     });
 
     /* نوار ابزار جستجو، فیلترهای طرف حساب/نوع/وضعیت و مرتب‌سازی */
@@ -942,7 +943,7 @@ var Chk = {
     var ct = await DB.all('contacts');
     var rl = ct.filter(function(cc) {
       if (c) return true;
-      return type === 'received' ? (cc.type === 'customer' || cc.type === 'both') : (cc.type === 'supplier' || cc.type === 'both');
+      return cc.type === 'broker' || (type === 'received' ? (cc.type === 'customer' || cc.type === 'both') : (cc.type === 'supplier' || cc.type === 'both'));
     });
     var banks = await DB.all('banks');
     var isR = type === 'received';
@@ -982,19 +983,13 @@ var Chk = {
       selectedOrder: initialOrder
     };
 
-    /* بازنویسی با ابزار مشترک فرم (js/05b-form.js).
-       دو مشکل جدی فرم قبلی رفع شد:
-       ۱) دو فیلد هر دو «بانک» نام داشتند — یکی بانکِ روی برگه چک و
-          یکی حساب بانکی خودمان. حالا برچسب‌ها صریح‌اند.
-       ۲) «مرتبط» معلوم نبود یعنی چه؛ حالا بسته به نوع چک
-          «دریافت از» یا «پرداخت به» نوشته می‌شود. */
-
     var people = rl.map(function(cc) {
       var bal = balMap[cc.id] || 0;
-      return { v: cc.id, t: cc.name + Con.balTag(bal) };
+      var roleTag = cc.type === 'broker' ? ' (واسطه)' : '';
+      return { v: cc.id, t: cc.name + roleTag + Con.balTag(bal) };
     });
     var allRecipients = ct.map(function(cc) {
-      var tag = cc.type === 'customer' ? ' (مشتری)' : (cc.type === 'supplier' ? ' (تامین‌کننده)' : ' (دوطرفه)');
+      var tag = ' (' + Con.tl(cc.type) + ')';
       var bal = balMap[cc.id] || 0;
       return { v: cc.id, t: cc.name + tag + Con.balTag(bal) };
     });
@@ -1084,11 +1079,11 @@ var Chk = {
       h += F.section('وضعیت واگذاری / انتقال چک (اختیاری)', 'bi-arrow-left-right') +
         F.row(
           F.select({
-            id: 'kTrTo', label: 'واگذار شده به (مشتری یا تامین‌کننده)',
+            id: 'kTrTo', label: 'واگذار شده به (واسطه، تامین‌کننده یا مشتری)',
             value: c ? (c.transferToId || '') : '',
             items: allRecipients,
             empty: '— واگذار نشده (نزد صندوق) —',
-            hint: 'اگر چک به مشتری یا تامین‌کننده دیگری واگذار شده، او را انتخاب نمایید'
+            hint: 'اگر چک به واسطه، تامین‌کننده یا شخص دیگری واگذار شده، او را انتخاب نمایید'
           }),
           F.date({
             id: 'kTrD', label: 'تاریخ واگذاری',
@@ -1304,9 +1299,9 @@ var Chk = {
 
     /* گیرنده برای حالت واگذاری */
     var balMap = await Con.allBalances();
-    var trOp = '<option value="">— انتخاب مشتری یا تامین‌کننده —</option>';
+    var trOp = '<option value="">— انتخاب واسطه، تامین‌کننده یا مشتری —</option>';
     ct.forEach(function(cc) {
-      var tag = cc.type === 'customer' ? ' (مشتری)' : (cc.type === 'supplier' ? ' (تامین‌کننده)' : '');
+      var tag = ' (' + Con.tl(cc.type) + ')';
       var bal = balMap[cc.id] || 0;
       trOp += '<option value="' + cc.id + '"' + (cc.id === (c.transferToId || prevRecipient) ? ' selected' : '') + '>' + esc(cc.name) + tag + Con.balTag(bal) + '</option>';
     });
@@ -1343,14 +1338,14 @@ var Chk = {
       '<select class="fc" id="nSt" onchange="Chk.onStatusChangeInModal(this.value)">' + op + '</select>' +
       '</div>' +
 
-      /* فیلدهای اختصاصی واگذاری به تامین‌کننده */
+      /* فیلدهای اختصاصی واگذاری به واسطه یا تامین‌کننده */
       '<div id="secTrFields" style="display:' + (c.status === 'transferred' ? 'block' : 'none') + ';background:rgba(59,130,246,.04);border:1px dashed var(--p);border-radius:8px;padding:12px;margin-bottom:12px">' +
-      '<div class="fg"><label>واگذارشده به (تامین‌کننده یا شخص)</label><select class="fc" id="nTrTo">' + trOp + '</select></div>' +
+      '<div class="fg"><label>واگذارشده به (واسطه، تامین‌کننده یا مشتری)</label><select class="fc" id="nTrTo">' + trOp + '</select></div>' +
       '<div class="fr">' +
       '<div class="fg"><label>تاریخ واگذاری</label><input class="fc" id="nTrDate" value="' + esc(c.transferDate || todayJ()) + '" style="direction:ltr;text-align:center"></div>' +
-      '<div class="fg"><label>توضیحات واگذاری</label><input class="fc" id="nTrNotes" value="' + esc(c.transferNotes || '') + '" placeholder="بابت فاکتور، تسویه..."></div>' +
+      '<div class="fg"><label>توضیحات واگذاری</label><input class="fc" id="nTrNotes" value="' + esc(c.transferNotes || '') + '" placeholder="بابت تسویه، واسطه‌گری..."></div>' +
       '</div>' +
-      '<div style="font-size:.78rem;color:var(--p);line-height:1.6"><i class="bi bi-info-circle-fill"></i> اثر حسابداری: مبلغ چک به عنوان پاس‌شده به حساب مشتری منظور می‌شود، از حساب تامین‌کننده کسر می‌گردد، و سوابق انتقال دائم ثبت می‌ماند.</div>' +
+      '<div style="font-size:.78rem;color:var(--p);line-height:1.6"><i class="bi bi-info-circle-fill"></i> اثر حسابداری: مبلغ چک به حساب صادرکننده بستانکار می‌شود و به حساب گیرنده (واسطه/تامین‌کننده) منظور می‌گردد؛ سوابق انتقال نیز دائم ثبت می‌ماند.</div>' +
       '</div>' +
 
       /* فیلدهای اختصاصی عودت یا برگشت چک */
@@ -1452,7 +1447,7 @@ var Chk = {
       return p.sourceCheckId === checkId;
     });
     var i;
-    if (!c || c.status !== 'passed' || !c.bankAccountId || !(c.amount > 0)) {
+    if (!c || c.status !== 'passed' || !c.bankAccountId || !(c.amount > 0) || (c.type === 'received' && this.isTransferred(c))) {
       for (i = 0; i < linked.length; i++) await DB.del('payments', linked[i].id);
       return;
     }
@@ -1520,13 +1515,38 @@ var Chk = {
       }
     }
 
-    var customers = ct.filter(function(cc) { return cc.type === 'customer'; });
+    var brokers = ct.filter(function(cc) { return cc.type === 'broker'; });
     var suppliers = ct.filter(function(cc) { return cc.type === 'supplier'; });
+    var customers = ct.filter(function(cc) { return cc.type === 'customer'; });
     var both = ct.filter(function(cc) { return cc.type === 'both'; });
-    var others = ct.filter(function(cc) { return cc.type !== 'customer' && cc.type !== 'supplier' && cc.type !== 'both'; });
+    var others = ct.filter(function(cc) { return cc.type !== 'broker' && cc.type !== 'customer' && cc.type !== 'supplier' && cc.type !== 'both'; });
     var balMap = await Con.allBalances();
+    var ctTypeMap = {};
+    var alreadyOnMap = {};
+    ct.forEach(function(cc) { ctTypeMap[cc.id] = cc.type; });
+    checks.forEach(function(c) {
+      var isRet = (c.status === 'returned' || c.status === 'returned_to_me' || c.status === 'returned_to_customer');
+      var isAct = (c.status === 'transferred' || (c.status === 'passed' && c.transferToId)) && !isRet;
+      if (isAct && c.transferToId) {
+        alreadyOnMap[c.transferToId] = (alreadyOnMap[c.transferToId] || 0) + numOf(c.amount);
+      }
+    });
 
-    var op = '<option value="">— انتخاب مشتری یا تامین‌کننده (دریافت‌کننده چک) —</option>';
+    var op = '<option value="">— انتخاب واسطه، تامین‌کننده یا مشتری (دریافت‌کننده چک) —</option>';
+    if (brokers.length) {
+      op += '<optgroup label="واسطه‌ها (' + brokers.length + ')">';
+      brokers.forEach(function(s) {
+        op += '<option value="' + s.id + '"' + (s.id === preSelectedTo ? ' selected' : '') + '>' + esc(s.name) + ' (واسطه)' + Con.balTag(balMap[s.id] || 0) + '</option>';
+      });
+      op += '</optgroup>';
+    }
+    if (suppliers.length) {
+      op += '<optgroup label="تامین‌کنندگان (' + suppliers.length + ')">';
+      suppliers.forEach(function(s) {
+        op += '<option value="' + s.id + '"' + (s.id === preSelectedTo ? ' selected' : '') + '>' + esc(s.name) + ' (تأمین‌کننده)' + Con.balTag(balMap[s.id] || 0) + '</option>';
+      });
+      op += '</optgroup>';
+    }
     if (customers.length) {
       op += '<optgroup label="مشتریان (' + customers.length + ')">';
       customers.forEach(function(s) {
@@ -1534,17 +1554,10 @@ var Chk = {
       });
       op += '</optgroup>';
     }
-    if (suppliers.length) {
-      op += '<optgroup label="تامین‌کنندگان (' + suppliers.length + ')">';
-      suppliers.forEach(function(s) {
-        op += '<option value="' + s.id + '"' + (s.id === preSelectedTo ? ' selected' : '') + '>' + esc(s.name) + ' (تامین‌کننده)' + Con.balTag(balMap[s.id] || 0) + '</option>';
-      });
-      op += '</optgroup>';
-    }
     if (both.length) {
       op += '<optgroup label="مشتری و تامین‌کننده (دوطرفه)">';
       both.forEach(function(s) {
-        op += '<option value="' + s.id + '"' + (s.id === preSelectedTo ? ' selected' : '') + '>' + esc(s.name) + ' (دوطرفه)' + Con.balTag(balMap[s.id] || 0) + '</option>';
+        op += '<option value="' + s.id + '"' + (s.id === preSelectedTo ? ' selected' : '') + '>' + esc(s.name) + ' (هر دو)' + Con.balTag(balMap[s.id] || 0) + '</option>';
       });
       op += '</optgroup>';
     }
@@ -1574,33 +1587,58 @@ var Chk = {
       '<span>مجموع مبالغ: <strong style="color:var(--p);font-size:.95rem">' + UI.fn(sum) + ' ریال</strong></span>' +
       '<span>راس تاریخ چک‌ها: <strong style="color:var(--tx)">' + ras.rasDate + '</strong> (' + (ras.avgDays >= 0 ? UI.fn(ras.avgDays) + ' روز مانده' : UI.fn(Math.abs(ras.avgDays)) + ' روز گذشته') + ')</span>' +
       '</div></div>' +
-      '<div class="fg"><label>واگذاری و انتقال به (مشتری یا تامین‌کننده) <span style="color:var(--d)">*</span></label>' +
-      '<select class="fc" id="chkTrTo">' + op + '</select>' +
-      '<span class="form-hint" style="font-size:.78rem;color:var(--txs);margin-top:4px;display:block">می‌توانید هر یک از مشتریان یا تامین‌کنندگان را به عنوان گیرنده جدید چک انتخاب کنید.</span>' +
+      '<div class="fg"><label>واگذاری و انتقال به (واسطه، تامین‌کننده یا مشتری) <span style="color:var(--d)">*</span></label>' +
+      '<select class="fc" id="chkTrTo" onchange="Chk.updateTransferPreview()">' + op + '</select>' +
+      '<span class="form-hint" style="font-size:.78rem;color:var(--txs);margin-top:4px;display:block">می‌توانید واسطه، تامین‌کننده یا مشتری را به عنوان گیرنده جدید چک انتخاب کنید (مثلاً برای تسویه پرداخت نقدی واسطه با چک مشتری).</span>' +
+      '<div id="chkTrBalPreview" style="margin-top:8px"></div>' +
       '</div>' +
       '<div class="fr"><div class="fg"><label>تاریخ پرداخت و واگذاری</label>' +
       '<input class="fc" id="chkTrDate" value="' + esc(preTransferDate) + '" style="text-align:center;direction:ltr"></div>' +
       '<div class="fg"><label>بابت / توضیحات سند (اختیاری)</label>' +
-      '<input class="fc" id="chkTrNotes" value="' + esc(preTransferNotes) + '" placeholder="مثلاً: بابت تسویه فاکتور یا بدهی..."></div></div>';
+      '<input class="fc" id="chkTrNotes" value="' + esc(preTransferNotes) + '" placeholder="مثلاً: تسویه پرداخت نقدی واسطه به تامین‌کننده..."></div></div>';
 
     this._pendingTransferIds = ids;
+    this._trPreviewCtx = { sum: sum, balMap: balMap, ctMap: cm, typeMap: ctTypeMap, alreadyOnMap: alreadyOnMap };
     var footerButtons =
       '<button class="btn bp" onclick="Chk.execTransfer(true)"><i class="bi bi-printer-fill"></i> انتقال و چاپ قبض پرداخت</button>' +
       '<button class="btn bo" onclick="Chk.execTransfer(false)"><i class="bi bi-check-lg"></i> فقط انتقال و ذخیره</button>';
     if (isTransferred) {
       footerButtons +=
-        '<button class="btn bo" style="color:var(--o,#ea580c);border-color:var(--o,#ea580c)" onclick="Chk.returnFromSupplier(null,\'me\')" title="چک پاس نشد و از تامین‌کننده تحویل گرفته شد"><i class="bi bi-arrow-return-left"></i> عودت به خود (کسر از تامین‌کننده / افزودن به طلب مشتری)</button>' +
+        '<button class="btn bo" style="color:var(--o,#ea580c);border-color:var(--o,#ea580c)" onclick="Chk.returnFromSupplier(null,\'me\')" title="چک پاس نشد و از گیرنده تحویل گرفته شد"><i class="bi bi-arrow-return-left"></i> عودت به خود (کسر از گیرنده / افزودن به طلب مشتری)</button>' +
         '<button class="btn bo bd" onclick="Chk.returnFromSupplier(null,\'customer\')" title="برگشت لاشه چک به مشتری صادرکننده"><i class="bi bi-person-x"></i> عودت به مشتری</button>' +
         '<button class="btn bo" onclick="Chk.cancelTransfer()"><i class="bi bi-arrow-counterclockwise"></i> لغو واگذاری (صندوق)</button>';
     }
     footerButtons += '<button class="btn bo" onclick="UI.close()">انصراف</button>';
 
     UI.open(
-      isTransferred ? ('ویرایش واگذاری ' + UI.fn(checks.length) + ' چک') : ('انتقال و واگذاری ' + UI.fn(checks.length) + ' چک به مشتری یا تامین‌کننده'),
+      isTransferred ? ('ویرایش واگذاری ' + UI.fn(checks.length) + ' چک') : ('انتقال و واگذاری ' + UI.fn(checks.length) + ' چک به واسطه، تامین‌کننده یا مشتری'),
       h,
       footerButtons,
       true
     );
+    this.updateTransferPreview();
+  },
+  updateTransferPreview: function() {
+    if (typeof document === 'undefined' || !document.getElementById) return;
+    var box = document.getElementById('chkTrBalPreview');
+    if (!box || !this._trPreviewCtx) return;
+    var toId = intOf(elVal('chkTrTo'));
+    if (!toId) {
+      box.innerHTML = '';
+      return;
+    }
+    var ctx = this._trPreviewCtx;
+    var curBal = ctx.balMap[toId] || 0;
+    var alreadyAmt = ctx.alreadyOnMap[toId] || 0;
+    var delta = ctx.sum - alreadyAmt;
+    var nextBal = curBal + delta;
+    var roleLbl = Con.tl(ctx.typeMap[toId] || '');
+    var name = ctx.ctMap[toId] || '—';
+    box.innerHTML = '<div style="padding:8px 12px;border-radius:8px;background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.22);font-size:.78rem;display:flex;flex-wrap:wrap;gap:12px;align-items:center">' +
+      '<span><span class="tg ' + Con.tt(ctx.typeMap[toId]) + '" style="font-size:10px">' + esc(roleLbl) + '</span> <strong>' + esc(name) + '</strong></span>' +
+      '<span>مانده فعلی: <strong>' + esc(Con.formatBal(curBal)) + '</strong></span>' +
+      '<span>مانده پس از انتقال: <strong style="color:' + (nextBal > 0 ? 'var(--d)' : nextBal < 0 ? 'var(--ok)' : 'var(--p)') + '">' + esc(Con.formatBal(nextBal)) + '</strong></span>' +
+      '</div>';
   },
   execTransfer: async function(andPrint) {
     if (!Perm.require('edit', 'انتقال چک')) return;
@@ -1608,7 +1646,7 @@ var Chk = {
 
     var toId = intOf(elVal('chkTrTo'));
     if (!toId) {
-      UI.toast('لطفاً مشتری یا تامین‌کننده (دریافت‌کننده چک) را انتخاب کنید', 'e');
+      UI.toast('لطفاً واسطه، تامین‌کننده یا مشتری (دریافت‌کننده چک) را انتخاب کنید', 'e');
       return;
     }
     var payDate = Jalali.parse(elVal('chkTrDate')) || todayJ();
@@ -1628,7 +1666,9 @@ var Chk = {
       c.transferToId = toId;
       c.transferDate = payDate;
       c.transferNotes = notes;
+      c.bankAccountId = null;
       await DB.put('checks', c);
+      await this.syncAutoPayment(c.id);
     }
 
     var ct = await DB.get('contacts', toId);
@@ -1636,7 +1676,7 @@ var Chk = {
 
     this.clearSelection();
     UI.close();
-    UI.toast(UI.fn(checks.length) + ' چک با موفقیت به ' + esc(recipientName) + ' واگذار گردید (پاس‌شده به حساب مشتری)', 's');
+    UI.toast(UI.fn(checks.length) + ' چک با موفقیت به ' + esc(recipientName) + ' واگذار گردید', 's');
 
     if (andPrint) {
       await this.previewVoucher(checks, recipientName, payDate, notes);

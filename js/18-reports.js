@@ -6,7 +6,7 @@ var Rep = {
     UI.nav('reports');
     UI.title('bi-bar-chart-line-fill', 'گزارشات');
     UI.act('');
-    UI.content('<div class="tab-bar"><button class="tab-btn active" onclick="Rep.tab(this,\'summary\')">خلاصه</button><button class="tab-btn" onclick="Rep.tab(this,\'purchases\')">خرید</button><button class="tab-btn" onclick="Rep.tab(this,\'sales\')">فروش</button><button class="tab-btn" onclick="Rep.tab(this,\'stock\')">موجودی</button><button class="tab-btn" onclick="Rep.tab(this,\'profit\')">سود و زیان</button><button class="tab-btn" onclick="Rep.tab(this,\'debtors\')">بدهکاران</button><button class="tab-btn" onclick="Rep.tab(this,\'creditors\')">بستانکاران</button><button class="tab-btn" onclick="Rep.tab(this,\'diagnostics\')"><i class="bi bi-shield-check"></i> آزمونگر تشخیصی</button></div><div id="rC"></div>');
+    UI.content('<div class="tab-bar"><button class="tab-btn active" onclick="Rep.tab(this,\'summary\')">خلاصه</button><button class="tab-btn" onclick="Rep.tab(this,\'purchases\')">خرید</button><button class="tab-btn" onclick="Rep.tab(this,\'sales\')">فروش</button><button class="tab-btn" onclick="Rep.tab(this,\'stock\')">موجودی</button><button class="tab-btn" onclick="Rep.tab(this,\'profit\')">سود و زیان</button><button class="tab-btn" onclick="Rep.tab(this,\'debtors\')">بدهکاران</button><button class="tab-btn" onclick="Rep.tab(this,\'creditors\')">بستانکاران</button><button class="tab-btn" onclick="Rep.tab(this,\'brokers\')">واسطه‌ها</button><button class="tab-btn" onclick="Rep.tab(this,\'diagnostics\')"><i class="bi bi-shield-check"></i> آزمونگر تشخیصی</button></div><div id="rC"></div>');
     this._c = 'summary';
     await this.summary();
     this._btns();
@@ -39,6 +39,7 @@ var Rep = {
     profit: 'سود و زیان',
     debtors: 'بدهکاران',
     creditors: 'بستانکاران',
+    brokers: 'گزارش حساب واسطه‌ها',
     diagnostics: 'آزمونگر تشخیصی ۱۰ سناریوی مالی'
   },
 
@@ -680,6 +681,127 @@ var Rep = {
     var h = '<div class="cd"><div class="cd-h">' + lb + ' <span class="tg ' + (w === 'debtors' ? 'tg-r' : 'tg-g') + '">' + res.length + ' نفر — جمع: ' + UI.fn(Math.abs(tot)) + ' ریال</span></div>';
     if (res.length) h += '<div class="tw"><table><thead><tr><th>#</th><th>نام</th><th>نوع</th><th>تلفن</th><th>مانده حساب</th><th></th></tr></thead><tbody>' + tr + '</tbody></table></div></div>';
     else h += '<div class="cd-b"><p>موردی نیست</p></div></div>';
+    setHTML('rC', h);
+  },
+  brokers: async function() {
+    var ct = await DB.all('contacts');
+    var invs = await FY.byYear('invoices');
+    var pays = await FY.byYear('payments');
+    var chks = await FY.byYear('checks');
+    var balMap = await Con.allBalances();
+
+    var brokerIdsWithActivity = {};
+    invs.forEach(function(inv) {
+      if (inv && inv.type !== 'proforma' && inv.brokerId && inv.brokerCommission) {
+        brokerIdsWithActivity[inv.brokerId] = true;
+      }
+    });
+    var brokers = ct.filter(function(c) {
+      return c && (c.type === 'broker' || brokerIdsWithActivity[c.id]);
+    });
+
+    var stats = {};
+    brokers.forEach(function(b) {
+      stats[b.id] = {
+        contact: b,
+        openBal: 0,
+        commission: 0,
+        transferToSuppliers: 0,
+        directReceipts: 0,
+        cashPaidToBroker: 0,
+        checksGivenOrTransferred: 0,
+        netBal: balMap[b.id] || 0
+      };
+    });
+
+    for (var i = 0; i < brokers.length; i++) {
+      stats[brokers[i].id].openBal = await getOpenBal(brokers[i].id);
+    }
+
+    invs.forEach(function(inv) {
+      if (!inv || inv.type === 'proforma') return;
+      if (inv.brokerId && stats[inv.brokerId] && inv.brokerCommission) {
+        stats[inv.brokerId].commission += numOf(inv.brokerCommission);
+      }
+    });
+
+    pays.forEach(function(p) {
+      if (!p || p.sourceCheckId || !p.contactId || !stats[p.contactId]) return;
+      var amt = numOf(p.amount);
+      if (p.type === 'receipt') {
+        if (p.transferId) stats[p.contactId].transferToSuppliers += amt;
+        else stats[p.contactId].directReceipts += amt;
+      } else {
+        stats[p.contactId].cashPaidToBroker += amt;
+      }
+    });
+
+    chks.forEach(function(chk) {
+      if (!chk) return;
+      var isRet = (chk.status === 'returned' || chk.status === 'returned_to_me' || chk.status === 'returned_to_customer');
+      if (isRet) return;
+      var amt = numOf(chk.amount);
+      if (chk.type === 'issued' && chk.contactId && stats[chk.contactId]) {
+        stats[chk.contactId].checksGivenOrTransferred += amt;
+      }
+      var isTrAct = (chk.status === 'transferred' || (chk.status === 'passed' && chk.transferToId));
+      if (isTrAct && chk.transferToId && stats[chk.transferToId]) {
+        stats[chk.transferToId].checksGivenOrTransferred += amt;
+      }
+    });
+
+    var list = brokers.map(function(b) { return stats[b.id]; });
+    list.sort(function(a, b) {
+      return Math.abs(b.netBal) - Math.abs(a.netBal);
+    });
+
+    var totComm = 0, totTr = 0, totSettled = 0, totNetCred = 0, totNetDebt = 0;
+    list.forEach(function(s) {
+      totComm += s.commission;
+      totTr += s.transferToSuppliers;
+      totSettled += s.cashPaidToBroker + s.checksGivenOrTransferred;
+      if (s.netBal < 0) totNetCred += Math.abs(s.netBal);
+      else if (s.netBal > 0) totNetDebt += s.netBal;
+    });
+
+    var h = '<div class="sg" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin-bottom:18px">' +
+      '<div class="sc"><div class="si b"><i class="bi bi-people-fill"></i></div><div class="sti"><h3>' + UI.fn(list.length) + '</h3><p>تعداد واسطه‌ها</p></div></div>' +
+      '<div class="sc"><div class="si o"><i class="bi bi-percent"></i></div><div class="sti"><h3>' + UI.fn(totComm) + '</h3><p>جمع پورسانت فروش</p></div></div>' +
+      '<div class="sc"><div class="si g"><i class="bi bi-arrow-left-right"></i></div><div class="sti"><h3>' + UI.fn(totTr) + '</h3><p>حواله نقدی به تأمین‌کنندگان</p></div></div>' +
+      '<div class="sc"><div class="si b"><i class="bi bi-credit-card-2-front"></i></div><div class="sti"><h3>' + UI.fn(totSettled) + '</h3><p>پرداختی و چک‌های واگذارشده به واسطه</p></div></div>' +
+      '<div class="sc"><div class="si ' + (totNetCred >= totNetDebt ? 'g' : 'r') + '"><i class="bi bi-wallet2"></i></div><div class="sti"><h3>' + UI.fn(totNetCred) + '</h3><p>جمع بستانکاری واسطه‌ها' + (totNetDebt > 0 ? ' (بدهی: ' + UI.fn(totNetDebt) + ')' : '') + '</p></div></div>' +
+      '</div>';
+
+    var tr = '';
+    list.forEach(function(s, idx) {
+      var c = s.contact;
+      var bal = s.netBal;
+      var bColor = bal < 0 ? 'var(--ok)' : (bal > 0 ? 'var(--d)' : 'var(--txs)');
+      var bLbl = bal < 0 ? 'بستانکار (طلب واسطه)' : (bal > 0 ? 'بدهکار' : 'تسویه');
+      var bTxt = bal === 0 ? 'تسویه' : (UI.fn(Math.abs(bal)) + ' ریال ' + bLbl);
+      tr += '<tr class="clk" onclick="Led.show(' + c.id + ')">' +
+        '<td>' + (idx + 1) + '</td>' +
+        '<td><strong>' + esc(c.name) + '</strong> <span class="tg ' + Con.tt(c.type) + '" style="font-size:10px">' + esc(Con.tl(c.type)) + '</span></td>' +
+        '<td>' + UI.fn(s.commission) + '</td>' +
+        '<td style="color:var(--ok);font-weight:600">' + UI.fn(s.transferToSuppliers) + '</td>' +
+        '<td>' + UI.fn(s.directReceipts) + '</td>' +
+        '<td>' + UI.fn(s.cashPaidToBroker) + '</td>' +
+        '<td style="color:var(--p);font-weight:600">' + UI.fn(s.checksGivenOrTransferred) + '</td>' +
+        '<td style="font-weight:700;color:' + bColor + '">' + bTxt + '</td>' +
+        '<td style="white-space:nowrap">' +
+          '<button class="bi2" title="دفتر معین" onclick="event.stopPropagation();Led.show(' + c.id + ')"><i class="bi bi-journal-text"></i></button> ' +
+          '<button class="bi2" title="ثبت حواله جدید" onclick="event.stopPropagation();Pay.showTransfer()"><i class="bi bi-arrow-left-right"></i></button>' +
+        '</td>' +
+      '</tr>';
+    });
+
+    h += '<div class="cd"><div class="cd-h"><span><i class="bi bi-person-badge-fill" style="margin-inline-end:6px;color:var(--p)"></i>کارنامه و حساب تفصیلی واسطه‌ها</span><button class="btn bp bs" onclick="Pay.showTransfer()"><i class="bi bi-arrow-left-right"></i> ثبت حواله واسطه به تأمین‌کننده</button></div>';
+    if (list.length) {
+      h += '<div class="tw"><table><thead><tr><th>#</th><th>نام واسطه</th><th>کمیسیون فروش</th><th>حواله به تأمین‌کننده</th><th>دریافت مستقیم</th><th>پرداخت نقدی به واسطه</th><th>چک واگذارشده/صادره</th><th>مانده خالص</th><th></th></tr></thead><tbody>' + tr + '</tbody></table></div>';
+    } else {
+      h += '<div class="cd-b"><p style="color:var(--txs)">هنوز شخصی با نقش «واسطه» ثبت نشده است. از بخش اشخاص می‌توانید واسطه جدید ثبت کنید.</p></div>';
+    }
+    h += '</div>';
     setHTML('rC', h);
   }
 };

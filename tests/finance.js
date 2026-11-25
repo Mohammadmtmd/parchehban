@@ -2310,6 +2310,224 @@ await runPhase4AsyncTest('آزمون ۳۲: حفظ ورودی‌ها و پیشن�
   currentPage = '';
 });
 
+// ═══════════════════════════════════════════════════════════════
+// آزمون ۳۳: چرخه کامل واسطه — کمیسیون + حواله واسطه به تأمین‌کننده با تسویه فاکتور + ویرایش حواله + واگذاری چک دریافتی و حفاظت موجودی بانک
+// ═══════════════════════════════════════════════════════════════
+await runPhase4AsyncTest('آزمون ۳۳: چرخه کامل واسطه (کمیسیون، حواله به تأمین‌کننده با تسویه فاکتور، ویرایش حواله، واگذاری چک و عدم واریز کاذب به بانک)', async () => {
+  await import('../js/11-contacts.js');
+  const RealCon = globalThis.Con;
+
+  memStore.contacts = [
+    { id: 1, name: 'مشتری اول', type: 'customer' },
+    { id: 2, name: 'تأمین‌کننده پارچه', type: 'supplier' },
+    { id: 3, name: 'واسطه کریمی', type: 'broker' }
+  ];
+  memStore.banks = { 1: { id: 1, name: 'بانک ملت', openingBalance: 10000000 } };
+  memStore.invoices = {
+    99001: {
+      id: 99001,
+      uid: 'u-sale-99001',
+      invoiceNumber: 'ف-۹۹۰۰۱',
+      type: 'sale',
+      date: '1404/01/05',
+      contactId: 1,
+      brokerId: 3,
+      brokerCommission: 10000000,
+      grandTotal: 60000000,
+      paidAmount: 0,
+      items: []
+    },
+    99002: {
+      id: 99002,
+      uid: 'u-pur-99002',
+      invoiceNumber: 'خ-۹۹۰۰۲',
+      type: 'purchase',
+      date: '1404/01/06',
+      contactId: 2,
+      grandTotal: 50000000,
+      paidAmount: 0,
+      items: []
+    }
+  };
+  memStore.payments = [];
+  memStore.checks = [
+    {
+      id: 99010,
+      docNumber: '2001',
+      type: 'received',
+      checkNumber: 'CHK-BRK-1',
+      bank: 'ملی',
+      amount: 60000000,
+      issueDate: '1404/01/05',
+      dueDate: '1404/02/10',
+      contactId: 1,
+      bankAccountId: 1,
+      status: 'pending'
+    }
+  ];
+  memStore.bankTransfers = [];
+
+  const origElVal = globalThis.elVal;
+  const origElNum = globalThis.elNum;
+  try {
+    // ۱) باز کردن مودال حواله: واسطه کریمی باید در بخش «از» دیده شود
+    capturedUIContent = '';
+    await Pay.showTransfer();
+    assert(capturedUIContent.includes('واسطه کریمی (واسطه)'), 'واسطه باید در فهرست پرداخت‌کننده حواله دیده شود');
+
+    // ۲) ثبت حواله ۴۰ میلیون از واسطه (۳) به تأمین‌کننده (۲) با انتخاب فاکتور خرید خ-۹۹۰۰۲
+    globalThis.elVal = (fid) => {
+      if (fid === 'trFrom') return '3';
+      if (fid === 'trTo') return '2';
+      if (fid === 'trDt') return '1404/01/08';
+      if (fid === 'trNt') return 'پرداخت نقدی واسطه بابت خرید';
+      return '';
+    };
+    globalThis.elNum = (fid) => (fid === 'trAm' ? 40000000 : 0);
+    Pay.onTransferTargetChange();
+    Pay.toggleTrInv(99002);
+    await Pay.saveTransfer(null);
+
+    assert.strictEqual(memStore.payments.length, 2, 'حواله باید دقیقاً ۲ سند هم‌جفت بسازد');
+    const tid = memStore.payments[0].transferId;
+    assert(tid, 'هر دو سند حواله باید دارای transferId مشترک باشند');
+
+    // بررسی تسویه جزئی ۴۰M روی فاکتور خ-۹۹۰۰۲ (مانده ۱۰M) و بدون دوباره‌شماری
+    let st = FinanceEngine.calculateInvoiceSettlements(Object.values(memStore.invoices), memStore.payments, { checks: memStore.checks });
+    assert.strictEqual(st.byInvoiceId[99002].linkedPaid, 40000000);
+    assert.strictEqual(st.byInvoiceId[99002].remaining, 10000000);
+
+    // ۳) ویرایش همان حواله به مبلغ ۵۰M و بررسی حفظ جفت و صفر شدن مانده فاکتور خ-۹۹۰۰۲
+    await Pay.showTransfer(tid);
+    assert.strictEqual(Pay._trCtx.selectedOrder[0], 99002, 'هنگام ویرایش حواله، فاکتور خرید متصل باید از قبل انتخاب‌شده باشد');
+    globalThis.elNum = (fid) => (fid === 'trAm' ? 50000000 : 0);
+    await Pay.saveTransfer(tid);
+
+    assert.strictEqual(memStore.payments.length, 2, 'ویرایش حواله نباید رکورد تکراری اضافه کند');
+    assert.strictEqual(memStore.payments[0].transferId, tid);
+    assert.strictEqual(memStore.payments[1].transferId, tid);
+
+    st = FinanceEngine.calculateInvoiceSettlements(Object.values(memStore.invoices), memStore.payments, { checks: memStore.checks });
+    assert.strictEqual(st.byInvoiceId[99002].linkedPaid, 50000000);
+    assert.strictEqual(st.byInvoiceId[99002].remaining, 0, 'فاکتور خرید خ-۹۹۰۰۲ باید با حواله ۵۰M واسطه کاملاً تسویه شود');
+
+    // حواله‌ها نباید به عنوان هزینه عملیاتی (OpEx) یا پرداخت طبقه‌بندی‌نشده حساب شوند
+    const opex = FinanceEngine.filterOperatingExpenses(memStore.payments, 0, 0);
+    assert.strictEqual(opex.classifiedOpEx, 0);
+    assert.strictEqual(opex.unclassifiedPayments, 0);
+
+    // ۴) کنترل مانده اشخاص قبل از واگذاری چک به واسطه:
+    // مشتری ۱ = ۶۰M فروش - ۶۰M چک = ۰ | تأمین‌کننده ۲ = -۵۰M خرید + ۵۰M حواله = ۰ | واسطه ۳ = -۱۰M کمیسیون - ۵۰M حواله = -۶۰M (بستانکار)
+    let bals = await RealCon.allBalances();
+    assert.strictEqual(bals[1], 0);
+    assert.strictEqual(bals[2], 0);
+    assert.strictEqual(bals[3], -60000000, 'واسطه باید ۶۰M بستانکار باشد (۱۰M کمیسیون + ۵۰M حواله به تأمین‌کننده)');
+
+    // ۵) واگذاری چک ۶۰M مشتری به واسطه کریمی
+    capturedUIContent = '';
+    await Chk.openTransferModal(99010);
+    assert(capturedUIContent.includes('واسطه‌ها') && capturedUIContent.includes('واسطه کریمی (واسطه)'));
+
+    globalThis.elVal = (fid) => {
+      if (fid === 'chkTrTo') return '3';
+      if (fid === 'chkTrDate') return '1404/01/09';
+      if (fid === 'chkTrNotes') return 'تسویه با واسطه کریمی';
+      return '';
+    };
+    await Chk.execTransfer(false);
+
+    assert.strictEqual(memStore.checks[0].status, 'transferred');
+    assert.strictEqual(memStore.checks[0].transferToId, 3);
+    assert.strictEqual(memStore.checks[0].bankAccountId, null, 'چک واگذارشده نباید حساب بانکی ما را اشغال کند');
+
+    // ۶) رسیدن سررسید چک واگذارشده (حتی اگر bankAccountId قدیمی داشته باشد) نباید موجودی بانک ما را بالا ببرد!
+    memStore.checks[0].dueDate = '1404/01/10';
+    memStore.checks[0].bankAccountId = 1;
+    await Chk.autoPassDueChecks();
+    assert.strictEqual(memStore.checks[0].status, 'passed');
+    assert.strictEqual(memStore.checks[0].transferToId, 3);
+    assert.strictEqual(memStore.payments.some(p => p.sourceCheckId === 99010), false, 'چک واگذارشده پس از پاس شدن نباید سند واریز بانکی بسازد');
+    assert.strictEqual(await Bank.balance(1), 10000000, 'موجودی بانک ما باید ثابت بماند (۱۰M)');
+
+    // ۷) مانده نهایی واسطه باید دقیقاً صفر (تسویه) شود: -۱۰M کمیسیون - ۵۰M حواله + ۶۰M چک = ۰
+    bals = await RealCon.allBalances();
+    assert.strictEqual(bals[3], 0, 'حساب واسطه پس از واگذاری چک ۶۰M باید دقیقاً تسویه شود');
+
+    // ۸) در لیست دریافت/پرداخت، دکمه ویرایش حواله باید Pay.showTransfer را صدا بزند نه Pay.showF
+    await Pay.render();
+    assert(capturedUIContent.includes('Pay.showTransfer(' + tid + ')'), 'ویرایش ردیف حواله در لیست باید Pay.showTransfer را فراخوانی کند');
+  } finally {
+    globalThis.elVal = origElVal;
+    globalThis.elNum = origElNum;
+    Pay._trCtx = null;
+    Chk._trPreviewCtx = null;
+    Chk._pendingTransferIds = null;
+    memStore.contacts = null;
+    memStore.invoices = {};
+    memStore.payments = [];
+    memStore.checks = [];
+    memStore.banks = {};
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// آزمون ۳۴: گزارش اختصاصی واسطه‌ها (Rep.brokers)، نمایش نام واسطه در دفتر معین (Led) و فیلتر اشخاص (Con)
+// ═══════════════════════════════════════════════════════════════
+await runPhase4AsyncTest('آزمون ۳۴: گزارش اختصاصی واسطه‌ها (Rep.brokers)، دفتر معین چک واگذارشده به واسطه و فیلتر تب اشخاص', async () => {
+  const RealCon = globalThis.Con;
+  memStore.contacts = [
+    { id: 1, name: 'مشتری آلفا', type: 'customer' },
+    { id: 2, name: 'تأمین‌کننده بتا', type: 'supplier' },
+    { id: 3, name: 'واسطه کریمی', type: 'broker' }
+  ];
+  memStore.invoices = {
+    99101: { id: 99101, invoiceNumber: 'ف-۹۹۱۰۱', type: 'sale', date: '1404/01/05', contactId: 1, brokerId: 3, brokerCommission: 5000000, grandTotal: 25000000, items: [] }
+  };
+  memStore.payments = [
+    { id: 99110, type: 'receipt', contactId: 3, amount: 15000000, date: '1404/01/06', transferId: 'tr-test-1', transferTo: 2, description: 'حواله نقدی به تأمین‌کننده بتا' },
+    { id: 99111, type: 'payment', contactId: 3, amount: 2000000, date: '1404/01/07', description: 'پرداخت علی‌الحساب به واسطه' }
+  ];
+  memStore.checks = [
+    { id: 99120, docNumber: '3001', type: 'received', checkNumber: 'CHK-LED-9', amount: 10000000, issueDate: '1404/01/05', dueDate: '1404/02/05', contactId: 1, transferToId: 3, transferDate: '1404/01/08', status: 'transferred' }
+  ];
+
+  try {
+    // ۱) گزارش واسطه‌ها: مانده واسطه کریمی = -۵M کمیسیون - ۱۵M حواله + ۲M نقدی + ۱۰M چک = -۸M (بستانکار)
+    await Rep.brokers();
+    const repHtml = capturedHTML['rC'] || '';
+    assert(repHtml.includes('واسطه کریمی'), 'گزارش واسطه‌ها باید نام واسطه کریمی را نمایش دهد');
+    assert(repHtml.includes(UI.fn(5000000)), 'باید جمع کمیسیون (۵M) نمایش داده شود');
+    assert(repHtml.includes(UI.fn(15000000)), 'باید حواله به تأمین‌کننده (۱۵M) نمایش داده شود');
+    assert(repHtml.includes(UI.fn(10000000)), 'باید چک واگذارشده (۱۰M) نمایش داده شود');
+    assert(repHtml.includes(UI.fn(8000000) + ' ریال بستانکار'), 'مانده خالص واسطه باید ۸M بستانکار باشد');
+
+    // ۲) دفتر معین مشتری ۱ باید نام دقیق «واسطه کریمی» را در شرح چک واگذارشده نشان دهد (نه تامین‌کننده)
+    capturedUIContent = '';
+    await Led.show(1);
+    assert(capturedUIContent.includes('چک واگذارشده به واسطه کریمی'), 'دفتر معین مشتری باید نام دقیق گیرنده چک (واسطه کریمی) را بنویسد');
+
+    // ۳) دفتر معین واسطه ۳ باید کمیسیون، حواله، پرداخت نقدی و انتقال چک را نشان دهد
+    capturedUIContent = '';
+    await Led.show(3);
+    assert(capturedUIContent.includes('کمیسیون ف-۹۹۱۰۱'));
+    assert(capturedUIContent.includes('حواله'));
+    assert(capturedUIContent.includes('انتقال چک #CHK-LED-9'));
+
+    // ۴) فیلتر اشخاص روی واسطه‌ها
+    await RealCon.setFilter('broker');
+    assert(capturedUIContent.includes('واسطه کریمی'));
+    assert(!capturedUIContent.includes('مشتری آلفا'));
+    assert(!capturedUIContent.includes('تأمین‌کننده بتا'));
+  } finally {
+    await RealCon.setFilter('all');
+    Led._currentCid = null;
+    memStore.contacts = null;
+    memStore.invoices = {};
+    memStore.payments = [];
+    memStore.checks = [];
+  }
+});
+
 // استخراج داینامیک و دقیق شمارش آزمون‌ها از آرایه ردیابی
 const totalExecuted = executedTestTracker.length;
 const totalPassed = executedTestTracker.filter(t => t.passed).length;
